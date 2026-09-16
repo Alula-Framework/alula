@@ -140,14 +140,11 @@ struct PipelineLaneTests {
             MiddlewareRegistration.lane(.default, [DefaultLaneMarker()])
             + MiddlewareRegistration.lane("bare", [BareLaneMarker()])
             + MiddlewareRegistration.lane("admin", [AdminLaneMarker()])
-        let routes: [RouteRegistration] = [
-            pingRoute,
-            BareLaneController._flightRoute_bare_0 { _ in BareLaneController() },
-            AdminController._flightRoute_admin_0 { _ in AdminController() },
-            RouteLaneController._flightRoute_inherits_0 { _ in RouteLaneController() },
-            RouteLaneController._flightRoute_replaced_1 { _ in RouteLaneController() },
-            RouteLaneController._flightRoute_explicitlyPublic_2 { _ in RouteLaneController() },
-        ]
+        let routes: [RouteRegistration] =
+            [pingRoute]
+            + BareLaneController.flightRoutes { _ in BareLaneController() }
+            + AdminController.flightRoutes { _ in AdminController() }
+            + RouteLaneController.flightRoutes { _ in RouteLaneController() }
         return try TestClient(routes: routes, middleware: middleware)
     }
 

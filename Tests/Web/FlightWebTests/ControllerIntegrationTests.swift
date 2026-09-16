@@ -175,17 +175,8 @@ private func userRoutes() -> [RouteRegistration] {
     let make: @Sendable (RequestContext) throws -> UserController = { _ in
         UserController(userService: userService, tracer: RequestTracer())
     }
-    return [
-        UserController._flightRoute_getUser_0(make),
-        UserController._flightRoute_createUser_1(make),
-        UserController._flightRoute_deleteUser_2(make),
-        UserController._flightRoute_renameUser_3(make),
-        UserController._flightRoute_listUsers_4(make),
-        UserController._flightRoute_whoami_5(make),
-        UserController._flightRoute_scopedPair_6(make),
-        UserController._flightRoute_events_7(make),
-        EchoSocketController._flightRoute_echo_0 { _ in EchoSocketController() },
-    ]
+    return UserController.flightRoutes(make)
+        + EchoSocketController.flightRoutes { _ in EchoSocketController() }
 }
 
 /// Rejects an unauthenticated request before routing — the value form of the
@@ -429,7 +420,7 @@ struct WebSocketIntegrationTests {
         // attach upgrade headers. The route table now answers first.
         SideEffect.reset()
         let dispatch = try TestClient(
-            routes: [SideEffectController._flightRoute_run_0 { _ in SideEffectController() }]
+            routes: SideEffectController.flightRoutes { _ in SideEffectController() }
         ).dispatch
 
         let request = Request(method: .get, path: "/side-effect")
@@ -491,12 +482,8 @@ struct GadgetController {
 }
 
 private func widgetRoutes() -> [RouteRegistration] {
-    [
-        WidgetController._flightRoute_index_0 { _ in WidgetController() },
-        WidgetController._flightRoute_show_1 { _ in WidgetController() },
-        WidgetController._flightRoute_create_2 { _ in WidgetController() },
-        GadgetController._flightRoute_show_0 { _ in GadgetController() },
-    ]
+    WidgetController.flightRoutes { _ in WidgetController() }
+        + GadgetController.flightRoutes { _ in GadgetController() }
 }
 
 @Suite("@Controller base path (§4 addendum)", .serialized)

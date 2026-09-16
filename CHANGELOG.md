@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`Controller.flightRoutes(_:)`** — `@Controller` now generates one aggregate
+  beside the per-route `_flightRoute_<method>_<index>` factories, so a caller
+  that wants a whole controller's routes writes
+  `TestClient(routes: UserController.flightRoutes { _ in … })` instead of naming
+  each factory. The index in those names is a *position*: naming one pins the
+  caller to the order routes happen to appear in, and inserting a route above it
+  renumbers its neighbours. The index is also derived twice — by the macro and
+  again by the registration generator scanning the same source — and the two must
+  agree or the build fails at link time with an undefined symbol. The aggregate
+  has neither hazard.
+
+  The individual factories remain and are still what the composition root emits:
+  registering a *subset* of a controller's routes is a real thing tests do (to
+  isolate one middleware lane, say), and the aggregate cannot express it.
+  Purely additive — no generated composition root changes.
+
 - **`Response.header(_:)` and `Response.headerValues(_:)`** in
   `FlightWebTesting`, for asserting on a response's headers by name.
   `HTTPFields` is keyed by `HTTPField.Name`, which has statics for the

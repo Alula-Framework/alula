@@ -79,7 +79,50 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         let parameterInit = parameterizedInitializer(
             properties: properties, access: access, declaration: declaration)
-        return [parameterInit].compactMap { $0 } + factories
+        let aggregate = routesAggregate(for: combinedRoutes, access: access)
+        return [parameterInit].compactMap { $0 } + factories + [aggregate].compactMap { $0 }
+    }
+
+    /// Every route this controller declares, in one call.
+    ///
+    /// The per-route factories are named `_flightRoute_<method>_<index>`, and
+    /// that index is a *position*: a caller naming one is pinned to the order
+    /// the routes happen to appear in, so inserting a route above it silently
+    /// renumbers its neighbours. Worse, the index is derived twice — here, and
+    /// again by the registration generator scanning the same source — and the
+    /// two must agree or the build fails at link time with an undefined symbol.
+    ///
+    /// This is the same list without either hazard. A test that wants the whole
+    /// controller hands over one `make` closure and gets every route back:
+    ///
+    /// ```swift
+    /// TestClient(routes: UserController.flightRoutes { _ in
+    ///     UserController(users: MockUserService())
+    /// })
+    /// ```
+    ///
+    /// The individual factories remain, because registering a *subset*
+    /// deliberately — one route of a controller, to isolate a middleware lane —
+    /// is a real thing tests do, and this cannot express it.
+    private static func routesAggregate(
+        for combinedRoutes: [(route: ScannedRoute, path: String)], access: String
+    ) -> DeclSyntax? {
+        guard !combinedRoutes.isEmpty else { return nil }
+        let calls =
+            combinedRoutes
+            .enumerated()
+            .map { "Self.\(factoryName(for: $0.element.route, index: $0.offset))(make)" }
+            .joined(separator: ",\n                ")
+        return DeclSyntax(
+            stringLiteral: """
+                \(access)static func flightRoutes(\
+                _ make: @escaping @Sendable (FlightWeb.RequestContext) throws -> Self\
+                ) -> [FlightWeb.RouteRegistration] {
+                    [
+                        \(calls)
+                    ]
+                }
+                """)
     }
 
     /// The name of one route's factory. Unique per route rather than per

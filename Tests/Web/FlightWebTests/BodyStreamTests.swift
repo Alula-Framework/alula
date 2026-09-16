@@ -37,14 +37,17 @@ struct StreamFixtureController {
 /// buffered-delivery route whose handler asks for a stream, which must fail
 /// loudly rather than hang.
 private func streamRoutes() -> [RouteRegistration] {
-    [
-        StreamFixtureController._flightRoute_ingest_0 { _ in StreamFixtureController() },
-        StreamFixtureController._flightRoute_bounded_1 { _ in StreamFixtureController() },
-        RouteRegistration(method: "POST", path: "/mismatched", source: "StreamModule") { context in
-            _ = try FlightWeb.decodeRequestBody(RequestBodyStream.self, from: context)
-            return .text("unreachable")
-        },
-    ]
+    StreamFixtureController.flightRoutes { _ in StreamFixtureController() }
+        + [
+            // Hand-built rather than from a controller, so it stays a literal
+            // registration: a buffered-delivery route whose handler asks for a
+            // stream, which must fail loudly rather than hang.
+            RouteRegistration(method: "POST", path: "/mismatched", source: "StreamModule") {
+                context in
+                _ = try FlightWeb.decodeRequestBody(RequestBodyStream.self, from: context)
+                return .text("unreachable")
+            }
+        ]
 }
 
 @Suite("streaming request bodies — in process")

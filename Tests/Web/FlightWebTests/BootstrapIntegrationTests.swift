@@ -20,6 +20,10 @@ struct BootstrapIntegrationTests {
         let configuration = Configuration()
         let web = try FlightWebModule<InMemoryTransport>(
             configuration: configuration,
+            // Deliberately the per-route factories, not `UserController
+            // .flightRoutes(_:)`: this registers three of the controller's eight
+            // routes on purpose, and the aggregate would quietly publish all
+            // eight — changing what the test exercises without failing.
             routes: [
                 UserController._flightRoute_getUser_0 {
                     _ in UserController(userService: users, tracer: tracer)

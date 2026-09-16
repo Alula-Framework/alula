@@ -118,16 +118,7 @@ enum WireModule {
 /// module, and what the transport dispatches. `WireController` takes no
 /// dependencies, so a bare init per request.
 func wireRoutes() -> [RouteRegistration] {
-    var routes: [RouteRegistration] = [
-        WireController._flightRoute_hello_0 { _ in WireController() },
-        WireController._flightRoute_echo_1 { _ in WireController() },
-        WireController._flightRoute_sse_2 { _ in WireController() },
-        WireController._flightRoute_counted_3 { _ in WireController() },
-        WireController._flightRoute_alphabet_4 { _ in WireController() },
-        WireController._flightRoute_uploadStream_5 { _ in WireController() },
-        WireController._flightRoute_uploadImpatient_6 { _ in WireController() },
-        WireController._flightRoute_socket_7 { _ in WireController() },
-    ]
+    var routes: [RouteRegistration] = WireController.flightRoutes { _ in WireController() }
     if let store = WireModule.uploadStore.withLock({ $0 }) {
         routes += RouteRegistration.uploads(at: "/uploads", store: store) { options in
             options.maxSize = 64 << 20

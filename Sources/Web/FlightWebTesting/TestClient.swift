@@ -222,3 +222,40 @@ extension Response {
         }
     }
 }
+
+// MARK: - Header inspection
+
+extension Response {
+    /// The first value for `name`, matched case-insensitively.
+    ///
+    /// `HTTPFields` is keyed by `HTTPField.Name`, which carries statics for the
+    /// well-known headers — `headers[.contentType]` reads fine. An
+    /// application's *own* headers have no static, so asserting on one meant
+    /// `headers[HTTPField.Name("x-request-id")!]`: a force-unwrap in the middle
+    /// of an assertion, in a test, which is the worst place to put one.
+    ///
+    /// This is that lookup without the trap. A name that is not a legal header
+    /// yields `nil` rather than crashing, so a test that misspells one fails on
+    /// its assertion — naming the header it expected — instead of taking the
+    /// whole suite down with a force-unwrap.
+    ///
+    /// ```swift
+    /// #expect(response.header("x-request-id") != nil)
+    /// #expect(response.header("content-type")?.contains("application/json") == true)
+    /// ```
+    public func header(_ name: String) -> String? {
+        guard let field = HTTPField.Name(name) else { return nil }
+        return headers[field]
+    }
+
+    /// Every value for `name`, in order.
+    ///
+    /// Some headers legitimately repeat — `Set-Cookie` above all, which a login
+    /// route may emit more than once. ``header(_:)`` would show only the first
+    /// and quietly hide the rest, so asserting "both cookies were set" needs
+    /// this instead. Empty for an absent header *or* an illegal name.
+    public func headerValues(_ name: String) -> [String] {
+        guard let field = HTTPField.Name(name) else { return [] }
+        return headers[values: field]
+    }
+}

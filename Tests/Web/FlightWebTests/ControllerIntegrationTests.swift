@@ -301,6 +301,46 @@ struct ControllerIntegrationTests {
         #expect(honored.headers[.xRequestID] == "abc-123")
     }
 
+    @Test("header(_:) reads a header by name, with no force-unwrap in the assertion")
+    func headerByName() async throws {
+        let client = try client()
+        let response = await client.get("/users/1")
+
+        // Asserted as equivalence with the keyed lookup rather than against a
+        // literal: what matters is that the string form finds exactly what
+        // `HTTPField.Name` finds, not what this particular route happens to send.
+        #expect(response.header("x-request-id") == response.headers[.xRequestID])
+        #expect(response.header("content-type") == response.headers[.contentType])
+
+        // Field names are case-insensitive, and the accessor honours that.
+        #expect(response.header("X-Request-ID") == response.header("x-request-id"))
+
+        // An absent header is nil — and so is a name that could never be a
+        // header, so a misspelling fails the expectation instead of trapping
+        // the suite the way `HTTPField.Name("…")!` would.
+        #expect(response.header("x-not-set") == nil)
+        #expect(response.header("not a legal header name") == nil)
+    }
+
+    @Test("headerValues(_:) keeps every value for a header that repeats")
+    func headerValuesKeepsRepeats() throws {
+        let response = Response.text("ok")
+            .settingCookie(Cookie(name: "session", value: "abc"))
+            .settingCookie(Cookie(name: "csrf", value: "xyz"))
+
+        let values = response.headerValues("set-cookie")
+        #expect(values.count == 2)
+        #expect(values.contains { $0.hasPrefix("session=abc") })
+        #expect(values.contains { $0.hasPrefix("csrf=xyz") })
+
+        // The trap this exists to avoid: `header` shows only the first, so a
+        // test asserting on it would pass while silently missing the second
+        // cookie entirely.
+        #expect(response.header("set-cookie")?.hasPrefix("session=abc") == true)
+
+        #expect(response.headerValues("x-not-set").isEmpty)
+    }
+
     @Test("every mapped method produces exactly one route value")
     func everyMappingProducesOneRoute() throws {
         // Routes are function calls now (§4): the controller emits one factory

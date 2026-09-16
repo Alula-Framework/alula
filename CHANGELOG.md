@@ -4,6 +4,28 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`Response.header(_:)` and `Response.headerValues(_:)`** in
+  `FlightWebTesting`, for asserting on a response's headers by name.
+  `HTTPFields` is keyed by `HTTPField.Name`, which has statics for the
+  well-known headers but nothing for an application's own — so asserting on one
+  meant `headers[HTTPField.Name("x-request-id")!]`, a force-unwrap in the middle
+  of a test assertion. The new accessors return `nil`/`[]` for an absent or
+  illegal name, so a misspelled header fails the assertion instead of trapping.
+  `headerValues` is the form for headers that legitimately repeat, `Set-Cookie`
+  above all.
+
+### Documentation
+
+- `FlightWebTesting`'s overview example no longer passes a `Request` to a
+  controller method — handlers take a `RequestContext`, so the example could not
+  compile as written. It now uses `RequestContext.mock(…)`, shows asserting on
+  the returned domain value, and gains a section on inspecting a response's
+  status, headers and decoded body.
+
 ## [0.17.0] - 2026-09-09
 
 Finishes the container migration's cleanup: the last container-era references

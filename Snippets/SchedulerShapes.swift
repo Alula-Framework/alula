@@ -11,7 +11,7 @@ import Foundation
 // snippet.hide
 struct RoomActivity: Sendable {}
 
-@Service(scope: .singleton)
+@Service
 struct ReportService {
     func rollUpYesterday() async throws {}
     func warmCache() async {}

@@ -84,7 +84,7 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
                     name: $0.name, typeText: $0.typeText,
                     kind: {
                         switch $0.kind {
-                        case .inject(let qualifier): return .inject(qualifier: qualifier)
+                        case .inject: return .inject
                         case .configValue(let key, let defaultValue):
                             return .configValue(key: key, defaultValue: defaultValue)
                         }

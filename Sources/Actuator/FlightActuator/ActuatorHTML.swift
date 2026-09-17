@@ -80,15 +80,13 @@ private func renderComponentsSection(_ components: [ComponentDescriptor]) -> Str
         section += """
         <h3>\(stereotype.actuatorSectionTitle) (\(group.count))</h3>
         <table>
-        <thead><tr><th>Type</th><th>Scope</th><th>Qualifier</th><th>Source module</th></tr></thead>
+        <thead><tr><th>Type</th><th>Source module</th></tr></thead>
         <tbody>
 
         """
         for component in group {
             section += """
             <tr><td><code>\(htmlEscaped(component.typeName))</code></td>\
-            <td>\(component.scope.actuatorLabel)</td>\
-            <td>\(component.qualifier.map { "<code>\(htmlEscaped($0))</code>" } ?? "&mdash;")</td>\
             <td>\(htmlEscaped(component.sourceModule))</td></tr>
 
             """
@@ -99,8 +97,8 @@ private func renderComponentsSection(_ components: [ComponentDescriptor]) -> Str
 }
 
 /// Minimal, complete HTML escaping for text and attribute positions. Every
-/// dynamic string on the page passes through here — type names, qualifiers,
-/// module names, and error descriptions are all app-controlled input.
+/// dynamic string on the page passes through here — type names, module names,
+/// and error descriptions are all app-controlled input.
 func htmlEscaped(_ string: String) -> String {
     var escaped = ""
     escaped.reserveCapacity(string.count)

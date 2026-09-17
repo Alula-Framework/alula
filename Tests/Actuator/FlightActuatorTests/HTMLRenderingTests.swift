@@ -42,15 +42,17 @@ struct HTMLRenderingTests {
         #expect(body.contains("<h3>Settings (1)</h3>"))
         #expect(body.contains("FlightActuatorTests.SampleMiddleware"))
         #expect(body.contains("FlightActuatorTests.SampleSettings"))
-        // Qualified registrations render distinguishably.
-        #expect(body.contains("primary"))
-        #expect(body.contains("secondary"))
+        // Two registrations of one type render as two rows, not one.
+        let duplicatedRows = body.components(
+            separatedBy: "FlightActuatorTests.SampleDuplicated"
+        ).count - 1
+        #expect(duplicatedRows == 2)
     }
 
     @Test("all dynamic strings are HTML-escaped")
     func escapesHostileContent() async throws {
         let actuator = ActuatorModule(
-            environment: .dev, components: HostileQualifierModule.components)
+            environment: .dev, components: HostileNameModule.components)
         let client = try TestClient(routes: actuator.routes)
         let body = await client.get("/actuator").bodyText
 

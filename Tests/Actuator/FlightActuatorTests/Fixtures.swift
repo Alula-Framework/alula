@@ -7,7 +7,10 @@ import ServiceLifecycle
 // Actuator is a consumer of the stack, and so are its tests.
 
 /// The components one sample app would contribute — one of each stereotype
-/// the dashboard needs to distinguish, plus a qualified duplicate-type pair.
+/// the dashboard needs to distinguish, plus a duplicate-type pair: two
+/// registrations of one type are two rows, not one deduplicated row. They used
+/// to be told apart by their qualifiers, which the descriptor no longer
+/// carries (0.20.0); that they both still appear is the part that mattered.
 ///
 /// This is the shape the generated `flightComponentDescriptors()` produces
 /// and the composition root hands `ActuatorModule(components:)`. Written out
@@ -16,32 +19,32 @@ import ServiceLifecycle
 enum SampleAppModule {
     static let components: [ComponentDescriptor] = [
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleService", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: nil, stereotype: .service),
+            typeName: "FlightActuatorTests.SampleService",
+            sourceModule: "SampleAppModule", stereotype: .service),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleRepository", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: nil, stereotype: .repository),
+            typeName: "FlightActuatorTests.SampleRepository",
+            sourceModule: "SampleAppModule", stereotype: .repository),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleQualified", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: "primary", stereotype: .component),
+            typeName: "FlightActuatorTests.SampleDuplicated",
+            sourceModule: "SampleAppModule", stereotype: .component),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleQualified", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: "secondary", stereotype: .component),
+            typeName: "FlightActuatorTests.SampleDuplicated",
+            sourceModule: "SampleAppModule", stereotype: .component),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleMiddleware", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: nil, stereotype: .middleware),
+            typeName: "FlightActuatorTests.SampleMiddleware",
+            sourceModule: "SampleAppModule", stereotype: .middleware),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleSettings", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: nil, stereotype: .settings),
+            typeName: "FlightActuatorTests.SampleSettings",
+            sourceModule: "SampleAppModule", stereotype: .settings),
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleController", scope: .singleton,
-            sourceModule: "SampleAppModule", qualifier: nil, stereotype: .controller),
+            typeName: "FlightActuatorTests.SampleController",
+            sourceModule: "SampleAppModule", stereotype: .controller),
     ]
 }
 
 struct SampleService: Sendable {}
 struct SampleRepository: Sendable {}
-struct SampleQualified: Sendable {}
+struct SampleDuplicated: Sendable {}
 struct SampleMiddleware: Sendable {}
 struct SampleSettings: Sendable {}
 
@@ -53,15 +56,20 @@ struct SampleController {
     func ping(_ context: RequestContext) -> String { "pong" }
 }
 
-/// The components for a module whose qualifier is an XSS probe — the SSR
+/// The components for a module whose *type name* is an XSS probe — the SSR
 /// escaping tests feed the renderer through these.
-enum HostileQualifierModule {
-    static let hostileQualifier = #"<script>alert("pwned")</script>"#
+///
+/// The probe used to ride the qualifier, which the descriptor no longer
+/// carries. It moved to the type name rather than being deleted with the
+/// field: every string on that table is still app-controlled input rendered
+/// into HTML, so the escaping guarantee is exactly as load-bearing as it was.
+enum HostileNameModule {
+    static let hostileName = #"<script>alert("pwned")</script>"#
 
     static let components: [ComponentDescriptor] = [
         ComponentDescriptor(
-            typeName: "FlightActuatorTests.SampleQualified", scope: .singleton,
-            sourceModule: "HostileQualifierModule", qualifier: hostileQualifier,
+            typeName: hostileName,
+            sourceModule: "HostileNameModule",
             stereotype: .component)
     ]
 }

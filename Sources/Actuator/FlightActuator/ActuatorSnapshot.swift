@@ -49,8 +49,7 @@ public struct ActuatorSnapshot: Sendable {
 /// {
 ///   "environment": "dev",
 ///   "modules": [{"module": "WebModule", "health": "running", "error": null}],
-///   "components": [{"type": "App.UserService", "scope": "singleton",
-///              "stereotype": "service", "qualifier": null,
+///   "components": [{"type": "App.UserService", "stereotype": "service",
 ///              "sourceModule": "AppModule"}]
 /// }
 /// ```
@@ -85,16 +84,12 @@ struct ModuleStatusRepresentation: Encodable {
 /// enums rendered as their stable labels.
 struct ComponentRepresentation: Encodable {
     let type: String
-    let scope: String
     let stereotype: String
-    let qualifier: String?
     let sourceModule: String
 
     init(_ descriptor: ComponentDescriptor) {
         self.type = descriptor.typeName
-        self.scope = descriptor.scope.actuatorLabel
         self.stereotype = descriptor.stereotype.actuatorLabel
-        self.qualifier = descriptor.qualifier
         self.sourceModule = descriptor.sourceModule
     }
 }

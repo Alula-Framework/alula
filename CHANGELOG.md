@@ -4,6 +4,72 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-09-17
+
+Three pieces of inert public API leave, plus a fourth that was worse than
+inert. Each of them parsed and was then ignored: a lifetime enum with one
+case, the `scope:` and `qualifier:` arguments that named it, and the
+property-level qualifier on `@Inject`.
+
+**Source-breaking, at every call site that spelled one of them.** The build
+plugin reports the type-level arguments at the declaration with the migration
+in the message, so an upgrade produces "the `scope:` argument was removed in
+0.20.0 … Delete the argument: `@Service`" rather than the type checker's
+"extra argument in call", which says nothing about what to do.
+
+### Removed
+
+- **`scope:` and `qualifier:` on `@Component`, `@Service` and `@Repository`.**
+  All three now take no arguments. Delete the argument at the call site:
+  `@Service(scope: .singleton)` becomes `@Service`, and
+  `@Repository(qualifier: "replica")` becomes `@Repository`. Neither reached
+  the expansion — the macro parsed both and dropped them on the floor once the
+  container-era `register` call went away.
+
+- **`Lifetime`.** A single-case enum reads as though lifetimes are still a
+  choice. Singleton is the only one: a component is built once, by the
+  composition root, in dependency order. Per-request state rides
+  `RequestContext`, and a pooled connection is leased per operation by the
+  repository that holds the pool — see the DocC *Lifetimes* guide, which
+  survives this release as the answer to "what scopes does this thing have".
+
+- **`ComponentDescriptor.scope` and `.qualifier`**, and the two matching
+  initializer parameters. The initializer is now
+  `ComponentDescriptor(typeName:sourceModule:stereotype:)`. Actuator's
+  dashboard loses its **Scope** and **Qualifier** columns, and its JSON
+  contract loses the `"scope"` and `"qualifier"` fields — a hand-rolled
+  front-end reading either must stop. `Lifetime.actuatorLabel` goes with them.
+
+- **`@Inject("name")` — the property-level qualifier.** `@Inject` now takes no
+  arguments, and two `@Inject` properties of one type are a build error at the
+  second property.
+
+  **This one is a trade, not a tidy-up, and it is worth being plain about
+  both halves.** The qualifier never reached the wiring: composition keys on
+  type, so two same-type properties received the *same* instance no matter
+  what their qualifiers said. Code that read as though it wired a primary and
+  a replica wired the primary twice, silently, at runtime. Making that a
+  compile error is the improvement, and it is the reason this is worth doing
+  now rather than later.
+
+  But the qualifier was also the only way to *spell* "two different providers
+  of one type", and an application in this ecosystem uses exactly that shape.
+  It loses the spelling with no replacement in this release: naming on the
+  providing side is a separate, later change. Until it lands, express the
+  distinction in the type system — a wrapper type per role — or have a module
+  hold both values and provide them.
+
+  Migrating: drop the argument (`@Inject("primary") var pool: DataSource`
+  becomes `@Inject var pool: DataSource`). Where that leaves two properties of
+  one type in a single component, the build error names the site, and
+  splitting the types is the fix. The `inject.ambiguous` diagnostic keeps its
+  id and changes its message, which used to advise adding a qualifier —
+  advice that no longer compiles.
+
+- **`InjectedProperty.Kind.inject(qualifier:)` is now `.inject`**, in
+  `FlightMacroSupport`. This is public API: a macro implementation outside
+  this package that pattern-matches the case must drop the binding.
+
 ## [0.19.0] - 2026-09-17
 
 Configuration naming, and a build-time check that now covers the file it is

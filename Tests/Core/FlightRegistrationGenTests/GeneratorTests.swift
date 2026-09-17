@@ -145,7 +145,7 @@ struct GeneratorTests {
         ])
         #expect(result.exitCode == 0)
         #expect(result.generated.contains("UserService"))
-        #expect(result.generated.contains(#"typeName: "UserService", stereotype: "service", scope: ".singleton", qualifier: nil"#))
+        #expect(result.generated.contains(#"typeName: "UserService", stereotype: "service""#))
     }
 
     @Test("the generated body is exactly this — indentation included")
@@ -1538,16 +1538,41 @@ struct GeneratorTests {
         #expect(!result.diagnostics.contains("pipeline lane"))
     }
 
-    // MARK: - Removed lifetimes
+    // MARK: - Removed `scope:` / `qualifier:` arguments
+
+    @Test("`scope: .singleton` is a build error naming the migration")
+    func removedScopeArgumentDiagnosed() throws {
+        // The surviving lifetime is the common case, not the exotic one: an
+        // application that never touched `.scoped` still wrote
+        // `@Service(scope: .singleton)` because the argument existed. Without
+        // this, upgrading to 0.20.0 means "extra argument in call" at every
+        // one of those sites, which says nothing about what to do.
+        let result = try generate([
+            "Sources.swift": """
+            import FlightCore
+            @Service(scope: .singleton) final class Reports: Sendable {
+            init() {}
+            }
+            """
+        ])
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("Reports"))
+        #expect(result.diagnostics.contains("removed in 0.20.0"))
+        #expect(result.diagnostics.contains("Delete the argument: `@Service`"))
+        // The migration prose survives the broadening: where the other
+        // lifetimes went is still what the author needs to know.
+        #expect(result.diagnostics.contains("RequestContext"))
+    }
 
     @Test("a removed lifetime is a build error that says what to do instead")
     func removedLifetimeDiagnosed() throws {
         // This check used to catch captive dependencies — a singleton
         // injecting a `.scoped` component. That class cannot happen now:
         // there is one lifetime, so a singleton has nothing shorter-lived to
-        // capture. What survives is the migration case. Source carrying
-        // `.scoped` otherwise meets "type 'Lifetime' has no member 'scoped'",
-        // which says what is wrong and nothing about what to do.
+        // capture. What survives is the migration case, and 0.20.0 widened it:
+        // with `Lifetime` deleted and the argument gone from the macro, source
+        // carrying `.scoped` otherwise meets "extra argument in call", which
+        // says what is malformed and nothing about what to do.
         let result = try generate([
             "Captive.swift": """
             import FlightCore
@@ -1896,8 +1921,8 @@ struct GeneratorTests {
         #expect(
             String(result.generated[start..<end]) == """
                     public static let components: [Component] = [
-                        Component(typeName: "UserController", stereotype: "controller", scope: ".singleton", qualifier: nil, dependencies: ["UserRepository"], isModuleRegistered: false, module: "AppModule"),
-                        Component(typeName: "UserRepository", stereotype: "repository", scope: ".singleton", qualifier: nil, dependencies: [], isModuleRegistered: false, module: "AppModule"),
+                        Component(typeName: "UserController", stereotype: "controller", dependencies: ["UserRepository"], isModuleRegistered: false, module: "AppModule"),
+                        Component(typeName: "UserRepository", stereotype: "repository", dependencies: [], isModuleRegistered: false, module: "AppModule"),
                     ]
                 """)
     }
@@ -1938,20 +1963,45 @@ struct GeneratorTests {
         #expect(!result.generated.contains("try Authentication._flightRegister"))
         #expect(
             result.generated.contains(
-                #"typeName: "Authentication", stereotype: "middleware", scope: ".singleton", qualifier: nil, dependencies: [], isModuleRegistered: true"#
+                #"typeName: "Authentication", stereotype: "middleware", dependencies: [], isModuleRegistered: true"#
             ))
     }
 
-    @Test("a qualified component keeps its qualifier")
-    func qualifiedComponentKeepsQualifier() throws {
+    @Test("a type-level qualifier: is a build error naming the migration")
+    func removedQualifierArgumentDiagnosed() throws {
+        // This used to assert the qualifier reached the Actuator descriptor.
+        // 0.20.0 removed the argument — it expanded to nothing, because
+        // composition wires by type — so what the generator owes the author is
+        // the migration, not the round-trip.
         let result = try generate([
             "Sources.swift": """
             import FlightCore
             @Repository(qualifier: "primary") struct Pool: Sendable {}
             """
         ])
-        #expect(result.exitCode == 0)
-        #expect(result.generated.contains(#"qualifier: "\"primary\"""#))
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("Pool"))
+        #expect(result.diagnostics.contains("removed in 0.20.0"))
+        #expect(result.diagnostics.contains("Delete the argument: `@Repository`"))
+        // Both qualifiers went in 0.20.0, and an author deleting this one will
+        // hit the other next, so the message says so rather than letting them
+        // find out one call site at a time.
+        #expect(result.diagnostics.contains("@Inject"))
+    }
+
+    @Test("`qualifier: nil` is diagnosed too — passing it at all is the error")
+    func removedQualifierArgumentSpelledNilDiagnosed() throws {
+        // The scan used to read a literal `nil` as "absent", which was right
+        // when the field fed emission and wrong now: the call site is still
+        // passing an argument that no longer exists.
+        let result = try generate([
+            "Sources.swift": """
+            import FlightCore
+            @Component(qualifier: nil) struct Pool: Sendable {}
+            """
+        ])
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("removed in 0.20.0"))
     }
 
     // MARK: - Failure modes

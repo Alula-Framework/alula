@@ -1,10 +1,3 @@
-/// Component lifetimes. Singleton is the only one — see <doc:Lifetimes>.
-public enum Lifetime: Sendable, Equatable {
-    /// One instance for the application's lifetime, built once by the
-    /// composition root, in dependency order.
-    case singleton
-}
-
 /// Errors thrown by dynamic resolution paths. The macro-generated
 /// path should never hit these at runtime in a correctly building app — they
 /// are the fallback for genuinely dynamic resolution.
@@ -62,15 +55,10 @@ public enum Stereotype: Sendable, Equatable, CaseIterable {
 /// Swift has no runtime reflection to lean on, and doesn't need it here.
 public struct ComponentDescriptor: Sendable, Equatable {
     public let typeName: String
-    public let scope: Lifetime
     /// Which FlightModule registered this (stamped by bootstrap around each
     /// module's `configure` call). "<direct>" for registrations made outside
     /// module configuration (tests, ad-hoc wiring).
     public let sourceModule: String
-    /// Additive relative to the spec doc's three fields: qualifiers are part
-    /// of a component's identity, so the Actuator dashboard needs
-    /// them to render duplicate-type registrations distinguishably.
-    public let qualifier: String?
     /// The component's layer — how Actuator groups the dashboard.
     public let stereotype: Stereotype
 
@@ -79,15 +67,11 @@ public struct ComponentDescriptor: Sendable, Equatable {
     /// runtime container to ask what it holds.
     public init(
         typeName: String,
-        scope: Lifetime,
         sourceModule: String,
-        qualifier: String?,
         stereotype: Stereotype
     ) {
         self.typeName = typeName
-        self.scope = scope
         self.sourceModule = sourceModule
-        self.qualifier = qualifier
         self.stereotype = stereotype
     }
 }

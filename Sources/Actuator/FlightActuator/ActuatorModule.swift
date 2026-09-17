@@ -201,8 +201,8 @@ public struct ActuatorModule: FlightModule {
     /// so rather than relying on the dashboard to notice a registration.
     static let ownComponents: [ComponentDescriptor] = [
         ComponentDescriptor(
-            typeName: "FlightActuator.ActuatorController", scope: .singleton,
-            sourceModule: "ActuatorModule", qualifier: nil, stereotype: .controller)
+            typeName: "FlightActuator.ActuatorController",
+            sourceModule: "ActuatorModule", stereotype: .controller)
     ]
 
     /// Stored rather than computed, because the composition root reads what a

@@ -6,13 +6,18 @@ import FlightConfig
 /// The generated composition root calls it, wiring the injected values by
 /// type — there is no container to resolve against.
 ///
+/// It takes no arguments. Composition wires by type, and singleton is the
+/// only lifetime, so there is nothing left for a type-level `scope:` or
+/// `qualifier:` to say — both were removed in 0.20.0, and a declaration still
+/// carrying one gets a build error naming the migration. The property-level
+/// `@Inject("name")` went in the same release, for its own reasons: see
+/// ``Inject``.
+///
 /// The exact expansions are pinned by Tests/Core/FlightCoreMacroTests — those
 /// fixtures are the spec, more precise than this comment.
 @attached(member, names: named(init))
-public macro Component(
-    scope: Lifetime = .singleton,
-    qualifier: String? = nil
-) = #externalMacro(module: "FlightCoreMacrosImpl", type: "ComponentMacro")
+public macro Component() =
+    #externalMacro(module: "FlightCoreMacrosImpl", type: "ComponentMacro")
 
 /// Stereotype for business logic and third-party clients. Expands
 /// *identically* to `@Component`; its build-scanned descriptor is tagged
@@ -20,30 +25,40 @@ public macro Component(
 /// pointcut; construction never consults it. Lives in Core (not Web/Data)
 /// because a service must be equally callable from a controller, a CLI
 /// command, or a background job.
+///
+/// Takes no arguments, for the same reason `@Component` takes none.
 @attached(member, names: named(init))
-public macro Service(
-    scope: Lifetime = .singleton,
-    qualifier: String? = nil
-) = #externalMacro(module: "FlightCoreMacrosImpl", type: "ServiceMacro")
+public macro Service() =
+    #externalMacro(module: "FlightCoreMacrosImpl", type: "ServiceMacro")
 
 /// Stereotype for data access. Same expansion as `@Component`; its scanned
 /// descriptor is tagged `.repository`. (`@Controller` is deliberately NOT here — it lives
 /// in Flight Web, carrying route metadata meaningless outside HTTP dispatch;
 /// only the `Stereotype.controller` case belongs to Core's vocabulary.)
+///
+/// Takes no arguments, for the same reason `@Component` takes none.
 @attached(member, names: named(init))
-public macro Repository(
-    scope: Lifetime = .singleton,
-    qualifier: String? = nil
-) = #externalMacro(module: "FlightCoreMacrosImpl", type: "RepositoryMacro")
+public macro Repository() =
+    #externalMacro(module: "FlightCoreMacrosImpl", type: "RepositoryMacro")
 
 /// Marks a property as injected at construction time — the composition root
 /// supplies it by type. A pure marker: the generated code lives in
 /// `@Component`'s initializer; this macro's own expansion is empty and exists
 /// to validate the attachment site.
-/// When two properties share a type, explicit qualifiers are *required* —
-/// `@Component` emits a compile error otherwise.
+///
+/// It takes no arguments, and two `@Inject` properties of the same type are a
+/// build error: composition wires by type, so nothing in the program could
+/// tell them apart. Give them distinct types — a wrapper per role is usually
+/// the more honest modelling — or have a module hold them as values and
+/// provide them.
+///
+/// The name-qualified form, `@Inject("primary")`, was removed in 0.20.0. It
+/// never reached the wiring: two same-type properties received the *same*
+/// instance, so the distinction it appeared to draw was not drawn, silently.
+/// Naming on the providing side is a later change; until it lands, "two
+/// different providers of one type" has no spelling.
 @attached(peer)
-public macro Inject(_ qualifier: String? = nil) =
+public macro Inject() =
     #externalMacro(module: "FlightCoreMacrosImpl", type: "InjectMacro")
 
 /// Marks a property as config-read instead. Same macro family; the value is

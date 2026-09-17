@@ -86,8 +86,7 @@ The JSON rendering is a public contract for hand-rolled front-ends. Shape
     {"module": "JobsModule", "health": "failed", "error": "…"}
   ],
   "components": [
-    {"type": "App.UserService", "scope": "singleton",
-     "stereotype": "service", "qualifier": "primary",
+    {"type": "App.UserService", "stereotype": "service",
      "sourceModule": "AppModule"}
   ]
 }
@@ -95,10 +94,14 @@ The JSON rendering is a public contract for hand-rolled front-ends. Shape
 
 - `health`: `"notStarted" | "running" | "failed"` (`error` present only for
   `"failed"`)
-- `scope`: `"singleton"` — the only lifetime
 - `stereotype`: `"component" | "service" | "repository" | "controller" |
   "settings" | "middleware"` — all six of Core's `Stereotype` cases; a
   front-end validating against this contract should accept the lot
+
+`scope` and `qualifier` were part of this contract until 0.20.0, which removed
+both from `ComponentDescriptor` — singleton was the only scope, and the
+qualifier was never wired. A front-end reading either field must stop; the
+dashboard's Scope and Qualifier columns went at the same time.
 
 The encoding is hand-written rather than retroactive `Codable` on Core's
 types, so Core can evolve its introspection structs without silently

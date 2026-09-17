@@ -138,16 +138,24 @@ struct MacroFixtureTests {
         )
     }
 
-    @Test("repository stereotype")
+    @Test("repository stereotype — and @Repository takes no arguments")
     func repositoryStereotype() {
-        // Arguments compose exactly as on @Component — and, exactly as on
-        // @Component, `qualifier:` is now parsed and then dropped
-        // (ComponentMacro.swift:75). It is still accepted by the macro
-        // declaration, so it cannot be a compile error here; it simply makes
-        // no difference to the expansion. See `qualifiedInject` below.
+        // This fixture used to spell `@Repository(qualifier: "replica")`, to
+        // document an argument that parsed and was then dropped. In 0.20.0 the
+        // argument is gone from the macro declaration, so the shape it pinned
+        // no longer exists: the bare attribute is the only one there is.
+        //
+        // Where the *rejection* is pinned is deliberately elsewhere. An
+        // argument the declaration does not have fails to type-check before
+        // expansion begins, so `assertMacroExpansion` — which runs the macro
+        // implementation against source text, with no declaration to check
+        // against — structurally cannot observe it. The build error naming the
+        // migration is the generator's, and FlightRegistrationGenTests'
+        // `removedScopeArgumentDiagnosed` / `removedQualifierArgumentDiagnosed`
+        // pin it there.
         assertMacroExpansion(
             """
-            @Repository(qualifier: "replica")
+            @Repository
             public final class InvoiceRepository {
             }
             """,
@@ -206,7 +214,7 @@ struct MacroFixtureTests {
         )
     }
 
-    // MARK: Fixture 6a — two @Inject of one type, no qualifiers: refuse
+    // MARK: Fixture 6a — two @Inject of one type: refuse
 
     @Test("ambiguous inject is compile error")
     func ambiguousInjectIsCompileError() {
@@ -227,7 +235,7 @@ struct MacroFixtureTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "Two @Inject properties of type 'DataSource' require distinct explicit qualifiers, e.g. @Inject(\"primary\").",
+                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
                     line: 4,
                     column: 5
                 )
@@ -236,26 +244,30 @@ struct MacroFixtureTests {
         )
     }
 
-    // MARK: Fixture 6b — the qualified resolution
+    // MARK: Fixture 6b — the qualified spelling does not rescue 6a
 
-    @Test("qualified inject")
-    func qualifiedInject() {
-        // What the qualifier buys has moved, and this fixture can no longer
-        // see all of it. Under the container the expansion carried it —
-        // `container.resolve(DataSource.self, qualifier: "primary")` — so
-        // pinning the expansion pinned the wiring. Constructor injection
-        // carries the distinction in the *parameter name* instead, and the
-        // macro drops the qualifier string on the floor (ComponentMacro.swift
-        // :75, `_ = (scopeExpr, qualifierExpr, stereotypeArgument)`).
+    @Test("a qualified inject is refused too — the qualifier is gone")
+    func qualifiedInjectIsRefusedToo() {
+        // This fixture used to pin the *accepted* qualified shape: 6a refused
+        // the bare pair, and adding `@Inject("primary")`/`@Inject("replica")`
+        // made it legal. What it could never pin is whether those two then
+        // resolved to two different instances — that is decided by
+        // flight-registration-gen, which no macro-expansion fixture can
+        // observe. The 2026-09-17 audit answered it: the generator keys root
+        // parameters on type text, so the pair collapsed onto *one* instance.
+        // The fixture was structurally unable to catch a live misbinding, and
+        // documented the shape that caused it as correct.
         //
-        // Whether "primary" and "replica" then resolve to two different
-        // registrations is decided by flight-registration-gen, which no
-        // macro-expansion fixture can observe. The 2026-09-17 audit found
-        // that it keys root parameters on type text, so these two properties
-        // collapse onto one instance — a live defect this fixture is
-        // structurally unable to catch. What it does still pin is that the
-        // qualified shape is *accepted* (6a proves the unqualified one is
-        // not) and that both properties become distinct parameters.
+        // 0.20.0 removed the property-level qualifier rather than wiring it,
+        // so the inverse is what is worth pinning: the qualified spelling is
+        // refused exactly like the bare one. Same diagnostic, same site. The
+        // silent misbinding is now a compile error.
+        //
+        // Note this fixture asserts more than the macro declaration does:
+        // `@Inject("primary")` no longer type-checks at all, but
+        // `assertMacroExpansion` runs the implementation against source text
+        // with no declaration to check against, so what it sees is the
+        // implementation ignoring the argument and refusing the pair.
         assertMacroExpansion(
             """
             @Component
@@ -268,13 +280,16 @@ struct MacroFixtureTests {
                 final class ReportService {
                     var primary: DataSource
                     var replica: DataSource
-
-                    init(primary: DataSource, replica: DataSource) {
-                        self.primary = primary
-                        self.replica = replica
-                    }
                 }
                 """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
+                    line: 4,
+                    column: 5
+                )
+            ],
             macroSpecs: testMacros
         )
     }
@@ -339,20 +354,23 @@ struct MacroFixtureTests {
         )
     }
 
-    // MARK: Supplementary — @Component qualifier argument
+    // MARK: Supplementary — @Component takes no arguments
 
-    @Test("component qualifier")
-    func componentQualifier() {
-        // Still spelled, still accepted by the macro declaration
-        // (`Macros.swift`'s `qualifier: String? = nil`), and since the
-        // register call went with the container it now makes no difference
-        // whatsoever to the generated code. This fixture exists to say so
-        // out loud: an argument that expands to nothing is the "shipped
-        // inert" shape, and if it is ever made to mean something again, this
-        // is the test that will notice.
+    @Test("component takes no arguments")
+    func componentTakesNoArguments() {
+        // This fixture existed to say out loud that `@Component(qualifier:)`
+        // expanded to nothing — the "shipped inert" shape — and to notice if
+        // it were ever made to mean something again. 0.20.0 took the third
+        // option and deleted it, so what is worth pinning now is the inverse:
+        // the bare attribute is the whole surface, and an expansion that ever
+        // starts *depending* on an argument would have to add one back here.
+        //
+        // The property-level `@Inject("name")` went in the same release: see
+        // `ambiguousInjectIsCompileError`, where two properties of one type
+        // are refused outright because nothing can tell them apart.
         assertMacroExpansion(
             """
-            @Component(qualifier: "primary")
+            @Component
             final class PrimarySource {
             }
             """,

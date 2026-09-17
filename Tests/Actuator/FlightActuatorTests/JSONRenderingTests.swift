@@ -16,9 +16,7 @@ struct SnapshotWire: Decodable {
     }
     struct Component: Decodable {
         let type: String
-        let scope: String
         let stereotype: String
-        let qualifier: String?
         let sourceModule: String
     }
     let environment: String
@@ -58,12 +56,16 @@ struct JSONRenderingTests {
         let service = try #require(wire.components.first {
             $0.type == "FlightActuatorTests.SampleService"
         })
-        #expect(service.scope == "singleton")
         #expect(service.stereotype == "service")
-        #expect(service.qualifier == nil)
+        #expect(service.sourceModule == "SampleAppModule")
 
-        let qualified = wire.components.filter { $0.type == "FlightActuatorTests.SampleQualified" }
-        #expect(qualified.compactMap(\.qualifier).sorted() == ["primary", "secondary"])
+        // Two registrations of one type are two entries on the wire — the
+        // encoding reports what the build scanned rather than deduplicating
+        // it. `scope` and `qualifier` left the contract in 0.20.0.
+        let duplicated = wire.components.filter {
+            $0.type == "FlightActuatorTests.SampleDuplicated"
+        }
+        #expect(duplicated.count == 2)
 
         // Actuator's own machinery is visible through the same introspection
         // as everything else — no side channel, no special casing.

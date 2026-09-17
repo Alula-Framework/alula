@@ -68,9 +68,8 @@ context as a typed value — one copy per request, never shared between them.
 - ``ModuleStatus``
 - ``ModuleHealthRegistry``
 
-### Lifetime and resolution
+### Resolution
 
-- ``Lifetime``
 - ``ResolutionError``
 
 ### Introspection

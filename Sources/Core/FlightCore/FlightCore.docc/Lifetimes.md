@@ -8,7 +8,13 @@ Singleton is the only lifetime. A component is built **once**, by the
 composition root, and shared for the application's lifetime. There is no
 `.scoped` or `.transient`: nothing needed them once per-request state had a
 better home, and removing them removed the captive-dependency class of bug
-with them. A `scope:` argument naming either is a build error.
+with them.
+
+There is no `scope:` argument either. `@Component`, `@Service` and
+`@Repository` take no arguments at all — an argument with one legal value is
+not a choice, it is ceremony — and it was removed in 0.20.0 along with the
+`Lifetime` enum it named. A declaration still carrying one is a build error
+naming the migration, rather than the type checker's "extra argument in call".
 
 ## Singleton — the only lifetime
 

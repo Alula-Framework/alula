@@ -15,7 +15,7 @@ enum Injection {
 
     struct Property {
         enum Kind {
-            case inject(qualifier: String?)
+            case inject
             case configValue(key: String, defaultValue: String?)
         }
         let name: String
@@ -67,7 +67,7 @@ enum Injection {
             else { continue }
             switch name {
             case "Inject":
-                return .inject(qualifier: firstArgument(of: attr))
+                return .inject
             case "ConfigValue":
                 guard let key = firstArgument(of: attr) else { return nil }
                 return .configValue(key: key, defaultValue: labeledArgument(of: attr, label: "default"))

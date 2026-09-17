@@ -59,13 +59,16 @@ struct ScannedComponent {
     /// and so never had to know it; emitting a static component list does.
     let attributeName: String
     let isPublic: Bool
-    /// Source text of the registrable attribute's `scope:` argument. Defaults
-    /// to `.singleton`, exactly like the macro's parseComponentArguments —
-    /// the two must agree or a synthesized bridge would mirror a scope the
-    /// thunk never registered.
-    let scopeText: String
-    /// Source text of the `qualifier:` argument, nil when absent.
-    let qualifierText: String?
+    /// Source text of a `scope:` argument the declaration still carries, nil
+    /// when it carries none. **Diagnostics only**: the argument was removed in
+    /// 0.20.0 and feeds no emission. It is scanned so that a stale call site
+    /// gets a message naming the migration rather than the type checker's
+    /// "extra argument in call", which says nothing about what to do.
+    let removedScopeText: String?
+    /// As `removedScopeText`, for the removed *type-level* `qualifier:`
+    /// argument. The property-level `@Inject("name")` was removed in the same
+    /// release; neither qualifier survives.
+    let removedQualifierText: String?
     /// Type names the declaration conforms to: its inheritance clause, plus
     /// any `extension T: P` found in scanned sources (merged after the scan —
     /// extensions are the part of the conformance picture an attached macro
@@ -765,8 +768,8 @@ final class ComponentVisitor: SyntaxVisitor {
                 attributeName: registrable.attributeName
                     .as(IdentifierTypeSyntax.self)?.name.text ?? "Component",
                 isPublic: isPublic,
-                scopeText: labeledArgumentSource(of: registrable, label: "scope") ?? ".singleton",
-                qualifierText: labeledArgumentSource(of: registrable, label: "qualifier"),
+                removedScopeText: labeledArgumentSource(of: registrable, label: "scope"),
+                removedQualifierText: labeledArgumentSource(of: registrable, label: "qualifier"),
                 conformanceNames: inheritanceClause?.inheritedTypes.map {
                     $0.type.trimmedDescription
                 } ?? [],
@@ -820,16 +823,18 @@ final class ComponentVisitor: SyntaxVisitor {
         return arguments.contains { $0.label?.text == label }
     }
 
-    /// Source text of a labeled argument, nil when absent or literally `nil` —
-    /// mirroring the macro's labeledArgumentSource, so generated bridges can
-    /// never disagree with the thunk about scope or qualifier.
+    /// Source text of a labeled argument, nil only when the label is absent.
+    ///
+    /// A literal `nil` reads as present, with text "nil". That matters for the
+    /// removed-argument diagnostic: `@Component(qualifier: nil)` is a call site
+    /// still passing an argument that no longer exists, and telling its author
+    /// so is the entire point — the value it passes is beside the point.
     private func labeledArgumentSource(of attribute: AttributeSyntax, label: String) -> String? {
         guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
             return nil
         }
         for argument in arguments where argument.label?.text == label {
-            let text = argument.expression.trimmedDescription
-            return text == "nil" ? nil : text
+            return argument.expression.trimmedDescription
         }
         return nil
     }
@@ -1189,7 +1194,10 @@ for component in components {
     }
 }
 
-// Static cycle detection over the @Inject edges (name-level, qualifier-blind).
+// Static cycle detection over the @Inject edges, at the level of type names —
+// which is now the only level there is: 0.20.0 removed the qualifiers, so an
+// edge is a type and nothing else. ("qualifier-blind" used to be a caveat
+// here; it is simply what an edge is.)
 @MainActor
 func detectCycles() {
     let byName = Dictionary(components.map { ($0.typeName, $0) }, uniquingKeysWith: { a, _ in a })
@@ -1233,27 +1241,57 @@ detectCycles()
 // is — so removing them removed the captive-dependency class of bug with them
 // (COMPOSITION-MIGRATION.md §2.2).
 //
-// A `scope: .scoped` or `.transient` argument therefore names a lifetime that
-// no longer exists. The scan reports it here, at build time and pointing at
-// the site, rather than letting a now-meaningless argument pass silently.
+// A `scope:` argument therefore names a distinction that no longer exists —
+// and as of 0.20.0 the argument itself is gone from `@Component`, `@Service`
+// and `@Repository`, along with the type-level `qualifier:` beside it, which
+// expanded to nothing because composition wires by type.
+//
+// Both are reported here, at build time and pointing at the site. Without this
+// the author of `@Service(scope: .singleton)` meets the type checker's "extra
+// argument in call", which is true and useless: it does not say the argument
+// was removed, that removing it is the whole fix, or where the lifetimes went.
 @MainActor
-func diagnoseRemovedLifetimes() {
-    for component in components
-    where component.scopeText.hasSuffix(".scoped")
-        || component.scopeText.hasSuffix(".transient")
-    {
-        let lifetime = component.scopeText.hasSuffix(".scoped") ? ".scoped" : ".transient"
-        let message =
-            "'\(component.typeName)' declares `scope: \(lifetime)`, which no longer exists. "
-            + "Singleton is the only lifetime: nothing needed the others, and removing them "
-            + "removed the captive-dependency class with them. Per-request state travels on "
-            + "`RequestContext` — the authenticated principal is the worked example — and a "
-            + "pooled connection is leased per operation by the repository that holds the pool. "
-            + "Drop the argument."
-        emit("error", message, file: component.file, line: component.line)
+func diagnoseRemovedComponentArguments() {
+    // The migration prose, shared by both `scope:` messages: where the other
+    // lifetimes went is still the question an author of `.scoped` is really
+    // asking, and it is still true.
+    let whereTheLifetimesWent =
+        "Singleton is the only lifetime: nothing needed the others, and removing them "
+        + "removed the captive-dependency class with them. Per-request state travels on "
+        + "`RequestContext` — the authenticated principal is the worked example — and a "
+        + "pooled connection is leased per operation by the repository that holds the pool."
+
+    for component in components {
+        if let scopeText = component.removedScopeText {
+            let namesARemovedLifetime =
+                scopeText.hasSuffix(".scoped") || scopeText.hasSuffix(".transient")
+            let opening =
+                namesARemovedLifetime
+                ? "'\(component.typeName)' declares `scope: \(scopeText)`, which no longer exists, "
+                    + "and `scope:` itself was removed in 0.20.0. "
+                : "'\(component.typeName)' declares `scope: \(scopeText)`. The `scope:` argument "
+                    + "was removed in 0.20.0: it had one legal value and expanded to nothing. "
+            emit(
+                "error",
+                opening + whereTheLifetimesWent
+                    + " Delete the argument: `@\(component.attributeName)`.",
+                file: component.file, line: component.line)
+        }
+
+        if let qualifierText = component.removedQualifierText {
+            emit(
+                "error",
+                "'\(component.typeName)' declares `qualifier: \(qualifierText)`. The type-level "
+                    + "`qualifier:` argument was removed in 0.20.0: it expanded to nothing, "
+                    + "because composition wires by type rather than by name. Delete the "
+                    + "argument: `@\(component.attributeName)`. The property-level "
+                    + "`@Inject(\"name\")` went in the same release — two @Inject properties of "
+                    + "one type are now a build error, because nothing distinguishes them.",
+                file: component.file, line: component.line)
+        }
     }
 }
-diagnoseRemovedLifetimes()
+diagnoseRemovedComponentArguments()
 
 // Cross-module registration requires the component be visible to the target's
 // generated code.
@@ -2449,9 +2487,9 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
     }
     out += "    ]\n"
 
-    // The component list — every scanned component with its stereotype,
-    // lifetime, qualifier, and dependency edges. The edges are what the
-    // composition root is built from (COMPOSITION-MIGRATION.md §2.1).
+    // The component list — every scanned component with its stereotype and
+    // dependency edges. The edges are what the composition root is built from
+    // (COMPOSITION-MIGRATION.md §2.1).
     out += "\n"
     out += "    /// A registrable component, as scanned.\n"
     out += "    public struct Component: Sendable {\n"
@@ -2460,9 +2498,6 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
     out += "        public let typeName: String\n"
     out += "        /// \"service\", \"repository\", \"controller\", …\n"
     out += "        public let stereotype: String\n"
-    out += "        /// Source text of the `scope:` argument.\n"
-    out += "        public let scope: String\n"
-    out += "        public let qualifier: String?\n"
     out += "        /// `@Inject` types, in declaration order — the edges a\n"
     out += "        /// composition function orders construction by.\n"
     out += "        public let dependencies: [String]\n"
@@ -2479,7 +2514,6 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
             component.module == manifest.targetModuleName
             ? component.typeName
             : "\(component.module).\(component.typeName)"
-        let qualifier = component.qualifierText.map { "\"\(escaped($0))\"" } ?? "nil"
         // Acknowledged edges are dependencies too — the marker says the type
         // is registered by hand, not that nothing depends on it.
         let dependencies = (component.injectTypeNames + component.acknowledgedTypeNames)
@@ -2487,8 +2521,6 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
         out += "        Component("
         out += "typeName: \"\(escaped(qualified))\", "
         out += "stereotype: \"\(stereotype(forAttribute: component.attributeName))\", "
-        out += "scope: \"\(escaped(component.scopeText))\", "
-        out += "qualifier: \(qualifier), "
         out += "dependencies: [\(dependencies)], "
         out += "isModuleRegistered: \(component.isModuleRegistered), "
         out += "module: \"\(escaped(component.module))\"),\n"
@@ -2518,12 +2550,9 @@ if !components.isEmpty {
             component.module == manifest.targetModuleName
             ? component.typeName
             : "\(component.module).\(component.typeName)"
-        let qualifier = component.qualifierText.map { "\"\(escaped($0))\"" } ?? "nil"
         out += "        FlightCore.ComponentDescriptor("
         out += "typeName: \"\(escaped(qualified))\", "
-        out += "scope: .singleton, "
         out += "sourceModule: \"\(escaped(component.module))\", "
-        out += "qualifier: \(qualifier), "
         out += "stereotype: .\(stereotype(forAttribute: component.attributeName))),\n"
     }
     out += "    ]\n"

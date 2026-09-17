@@ -59,12 +59,11 @@ extension RegistrationMacro {
         guard validateAttachmentTarget(declaration, in: context) else { return [] }
 
         let properties = try collectInjectedProperties(from: declaration, in: context)
-        guard validateQualifierDisambiguation(properties, in: context) else { return [] }
+        guard validateDistinctInjectedTypes(properties, in: context) else { return [] }
         guard validateNonInjectedStorage(declaration, injected: properties, in: context) else {
             return []
         }
 
-        let (scopeExpr, qualifierExpr) = parseComponentArguments(node)
         let access = registrationAccess(for: declaration)
 
         // Constructor injection: a component is built by the composition
@@ -72,7 +71,7 @@ extension RegistrationMacro {
         // _flightRegister thunk are gone with the container.
         let parameterInit = parameterizedInitializer(
             properties: properties, access: access, declaration: declaration)
-        _ = (scopeExpr, qualifierExpr, stereotypeArgument)  // no longer emitted
+        _ = stereotypeArgument  // scanned from the attribute name, not emitted here
         return [parameterInit].compactMap { $0 }
     }
 
@@ -122,34 +121,35 @@ extension RegistrationMacro {
         return false
     }
 
-    /// the fixture 6 decision: two `@Inject` properties of the same type
-    /// are a compile error unless each carries a distinct explicit qualifier.
-    private static func validateQualifierDisambiguation(
+    /// Two `@Inject` properties of the same type are a compile error.
+    private static func validateDistinctInjectedTypes(
         _ properties: [InjectedProperty],
         in context: some MacroExpansionContext
     ) -> Bool {
-        // Two properties collide when they would resolve the *same key* —
-        // same type and same qualifier, "no qualifier" being a key of its
-        // own. It used to be enough for the types to match with either
-        // qualifier absent, which refused the shape the stack's own
-        // datasource convention produces:
+        // Composition wires by type, so two properties of one type are two
+        // requests for the same instance. There is nothing in the program that
+        // could distinguish them.
         //
-        //     @Inject var pool: PostgresDataSource                    // primary
-        //     @Inject("analytics") var analytics: PostgresDataSource
+        // This shape was once permitted. `@Inject("analytics")` beside a bare
+        // `@Inject` read as two different registrations — matching flight-data's
+        // convention of registering the primary datasource unqualified *as well
+        // as* by name — and the check let that pair through. It was never true:
+        // the wiring ignored the qualifier and handed both properties the same
+        // instance, silently. 0.20.0 removed the property-level qualifier, and
+        // with it the only spelling of the distinction.
         //
-        // flight-data registers the primary pool unqualified *as well as* by
-        // name, precisely so the one-database case needs no qualifier. Those
-        // two properties name two different registrations, and refusing them
-        // made the documented convention unusable inside one type.
-        var seenPairs: Set<String> = []
+        // Recorded as history rather than rationale: the pair is not merely
+        // refused here, it is no longer expressible, and it cannot be
+        // "restored" until naming on the providing side gives it something to
+        // mean.
+        var seenTypes: Set<String> = []
         var valid = true
         for property in properties {
-            guard case .inject(let qualifier) = property.kind else { continue }
-            let pairKey = "\(property.typeText)|\(qualifier ?? "<nil>")"
-            if !seenPairs.insert(pairKey).inserted {
+            guard case .inject = property.kind else { continue }
+            if !seenTypes.insert(property.typeText).inserted {
                 context.diagnoseError(
                     "inject.ambiguous",
-                    "Two @Inject properties of type '\(property.typeText)' require distinct explicit qualifiers, e.g. @Inject(\"primary\").",
+                    "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
                     at: property.node
                 )
                 valid = false
@@ -263,7 +263,7 @@ extension RegistrationMacro {
             else { continue }
             switch name {
             case "Inject":
-                return .inject(qualifier: firstArgumentSource(of: attr))
+                return .inject
             case "ConfigValue":
                 guard let key = firstArgumentSource(of: attr) else {
                     context.diagnoseError(
@@ -307,27 +307,13 @@ extension RegistrationMacro {
         return nil
     }
 
-    // MARK: - @Component arguments
-
-    /// Returns (scope expression source, qualifier expression source?).
-    private static func parseComponentArguments(_ node: AttributeSyntax) -> (String, String?) {
-        var scope = ".singleton"
-        var qualifier: String? = nil
-        if let arguments = node.arguments?.as(LabeledExprListSyntax.self) {
-            for argument in arguments {
-                switch argument.label?.text {
-                case "scope":
-                    scope = argument.expression.trimmedDescription
-                case "qualifier":
-                    let text = argument.expression.trimmedDescription
-                    qualifier = text == "nil" ? nil : text
-                default:
-                    break
-                }
-            }
-        }
-        return (scope, qualifier)
-    }
+    // `parseComponentArguments` went with the `scope:`/`qualifier:` arguments
+    // in 0.20.0. `@Component`, `@Service` and `@Repository` take no arguments
+    // at all now, so there is nothing on the attribute to parse — a stale
+    // `scope:` is rejected by the macro declaration itself, and the generator
+    // turns that into a message naming the migration (`main.swift`'s
+    // `diagnoseRemovedComponentArguments`) before the type checker's "extra
+    // argument in call" can be the only thing the author sees.
 
     /// The generated initializer must be callable from the generated
     /// cross-module composition root — so it mirrors the type's own access

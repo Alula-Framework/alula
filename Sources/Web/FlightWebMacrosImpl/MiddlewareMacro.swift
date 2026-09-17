@@ -30,7 +30,7 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
         guard validateAttachmentTarget(declaration, in: context) else { return [] }
 
         let properties = try collectInjectedProperties(from: declaration, in: context)
-        guard validateQualifierDisambiguation(properties, in: context) else { return [] }
+        guard validateDistinctInjectedTypes(properties, in: context) else { return [] }
         guard validateNonInjectedStorage(declaration, injected: properties, in: context) else {
             return []
         }
@@ -113,7 +113,7 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
             else { continue }
             switch name {
             case "Inject":
-                return .inject(qualifier: firstArgumentSource(of: attr))
+                return .inject
             case "ConfigValue":
                 guard let key = firstArgumentSource(of: attr) else {
                     context.diagnoseError(
@@ -179,26 +179,22 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
         return false
     }
 
-    private static func validateQualifierDisambiguation(
+    /// Two `@Inject` properties of the same type are a compile error. Mirrors
+    /// `ComponentMacro`, including why: the qualified pair that used to be
+    /// permitted here was never actually wired as two registrations, and the
+    /// property-level qualifier that spelled it went in 0.20.0.
+    private static func validateDistinctInjectedTypes(
         _ properties: [InjectedProperty],
         in context: some MacroExpansionContext
     ) -> Bool {
-        // Two properties collide when they would resolve the *same key* —
-        // same type and same qualifier, "no qualifier" being a key of its
-        // own. Mirrors `ComponentMacro`, including why: flight-data registers
-        // the primary datasource unqualified as well as by name, so
-        // `@Inject var pool: PostgresDataSource` beside
-        // `@Inject("analytics") var analytics: PostgresDataSource` names two
-        // different registrations and used to be refused anyway.
-        var seenPairs: Set<String> = []
+        var seenTypes: Set<String> = []
         var valid = true
         for property in properties {
-            guard case .inject(let qualifier) = property.kind else { continue }
-            let pairKey = "\(property.typeText)|\(qualifier ?? "<nil>")"
-            if !seenPairs.insert(pairKey).inserted {
+            guard case .inject = property.kind else { continue }
+            if !seenTypes.insert(property.typeText).inserted {
                 context.diagnoseError(
                     "inject.ambiguous",
-                    "Two @Inject properties of type '\(property.typeText)' require distinct explicit qualifiers, e.g. @Inject(\"primary\").",
+                    "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
                     at: property.node
                 )
                 valid = false

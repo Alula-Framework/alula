@@ -39,10 +39,12 @@ public enum BootstrapError: Error, CustomStringConvertible {
     case moduleConfigurationFailed(module: String, underlying: any Error)
     case singletonConstructionFailed(underlying: any Error)
 
-    /// Two registrations claimed the same type and qualifier.
+    /// Two registrations claimed the same type.
     ///
     /// Usually a generated existential bridge colliding with a hand-written
-    /// registration. Give one of them a qualifier.
+    /// registration, in which case the hand-written one is now redundant and
+    /// should go. Qualifying one of them was the other answer until 0.20.0
+    /// removed qualifiers; registrations are keyed by type alone.
     case duplicateRegistration(String)
 
     /// A module named only by its type takes what it provides as initializer
@@ -58,9 +60,10 @@ public enum BootstrapError: Error, CustomStringConvertible {
             return "Eager singleton construction failed at composition: \(underlying)"
         case .duplicateRegistration(let key):
             return """
-                Duplicate registration for \(key). Two registrations claim the same type \
-                and qualifier — often a generated existential bridge colliding with a \
-                hand-written registration. Give one of them a qualifier.
+                Duplicate registration for \(key). Two registrations claim the same type — \
+                often a generated existential bridge colliding with a hand-written \
+                registration, in which case the hand-written one is redundant and should \
+                go. Registrations are keyed by type alone; qualifiers were removed in 0.20.0.
                 """
         case .moduleRequiresConstruction(let module):
             return """

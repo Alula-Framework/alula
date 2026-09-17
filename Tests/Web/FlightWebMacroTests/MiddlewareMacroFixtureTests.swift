@@ -167,7 +167,7 @@ struct MiddlewareMacroDiagnosticTests {
         )
     }
 
-    @Test("two @Inject properties of the same type need distinct qualifiers")
+    @Test("two @Inject properties of the same type are rejected")
     func ambiguousInjectIsRejected() {
         assertMacroExpansion(
             """
@@ -190,7 +190,7 @@ struct MiddlewareMacroDiagnosticTests {
                 """,
             diagnostics: [
                 DiagnosticSpec(
-                    message: "Two @Inject properties of type 'Backend' require distinct explicit qualifiers, e.g. @Inject(\"primary\").",
+                    message: "Two @Inject properties of type 'Backend'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
                     line: 4, column: 5)
             ],
             macroSpecs: testMacros

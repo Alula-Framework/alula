@@ -689,6 +689,12 @@ benefit, and it can be done any time.
 **Watch.** A one-case enum is an attractive nuisance — it reads as though
 lifetimes are still a concept. If it survives to step 9 it should go.
 
+**Resolved in 0.20.0.** It went, along with the `scope:` and `qualifier:`
+arguments that named it and `ComponentDescriptor`'s two fields. The deferred
+churn was smaller than this decision estimated: the container-era registration
+sites it worried about had already gone with the container, so what remained
+was three macro signatures, the generator's two emissions, and the fixtures.
+
 ---
 
 ## D8 — Long-lived responses are in scope, and what that requires is verified

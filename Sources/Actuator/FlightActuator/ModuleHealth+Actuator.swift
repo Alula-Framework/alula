@@ -1,9 +1,9 @@
 import FlightCore
 
 // Presentation vocabulary over Core's introspection types. Core keeps
-// `ModuleHealth`/`Lifetime`/`Stereotype` free of rendering concerns; the
-// labels both renderings share live here so JSON and SSR can never disagree
-// about what a state is called.
+// `ModuleHealth`/`Stereotype` free of rendering concerns; the labels both
+// renderings share live here so JSON and SSR can never disagree about what a
+// state is called.
 
 extension ModuleHealth {
     // `isFailed` is Flight Core's own — declaring it here too made every use
@@ -42,18 +42,6 @@ extension ModuleHealth {
     public var failureDescription: String? {
         if case .failed(let error) = self { return String(describing: error) }
         return nil
-    }
-}
-
-extension Lifetime {
-    /// "singleton" — the only lifetime there is. Kept as a method rather
-    /// than folded into the caller because the dashboard column is a
-    /// component's lifetime, and that column outlives this enum having one
-    /// case.
-    public var actuatorLabel: String {
-        switch self {
-        case .singleton: return "singleton"
-        }
     }
 }
 

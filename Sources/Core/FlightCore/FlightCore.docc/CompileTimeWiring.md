@@ -43,8 +43,15 @@ final class UserService: Sendable {
 }
 ```
 
-Two conformers is genuine ambiguity, and the plugin declines to guess. Add a
-qualifier, or provide it yourself.
+Two conformers is genuine ambiguity, and the plugin declines to guess. Inject
+the concrete type, or provide the value yourself — the marker comment below
+says how.
+
+There is no qualifier to add. Both spellings of one were removed in 0.20.0:
+the type-level `@Component(qualifier:)`, which expanded to nothing, and the
+property-level `@Inject("name")`, which the wiring never read — two `@Inject`
+properties of one type silently received the same instance, and are now a
+build error instead.
 
 ## Dependencies the scan can't see
 

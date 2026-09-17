@@ -13,7 +13,9 @@ import SwiftSyntaxBuilder
 /// name the attribute the author actually wrote.
 public struct InjectedProperty {
     public enum Kind {
-        case inject(qualifier: String?)
+        /// Wired by type. It carried a `qualifier:` until 0.20.0, which the
+        /// wiring never read — see `@Inject`'s own documentation.
+        case inject
         /// `defaultValue` is the `default:` argument's source text,
         /// re-embedded verbatim in the expansion (nil = required key).
         case configValue(key: String, defaultValue: String?)

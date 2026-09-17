@@ -21,7 +21,6 @@ struct SnapshotTests {
         let service = try #require(snapshot.components.first {
             $0.typeName == "FlightActuatorTests.SampleService"
         })
-        #expect(service.scope == .singleton)
         #expect(service.stereotype == .service)
 
         let repository = try #require(snapshot.components.first {
@@ -40,12 +39,14 @@ struct SnapshotTests {
         })
         #expect(controller.stereotype == .controller)
 
-        // Qualified duplicate-type registrations stay distinguishable —
-        // the reason ComponentDescriptor carries the qualifier at all.
-        let qualified = snapshot.components.filter {
-            $0.typeName == "FlightActuatorTests.SampleQualified"
+        // Two registrations of one type stay two rows. They used to be told
+        // apart by their qualifiers; 0.20.0 removed that field, and what
+        // survives it is the part the dashboard actually needs — the snapshot
+        // reports what the build scanned, without deduplicating it.
+        let duplicated = snapshot.components.filter {
+            $0.typeName == "FlightActuatorTests.SampleDuplicated"
         }
-        #expect(qualified.map(\.qualifier) == ["primary", "secondary"])
+        #expect(duplicated.count == 2)
     }
 
     @Test("snapshot reflects a module whose service failed at run time")
@@ -111,8 +112,6 @@ struct ModuleHealthHelperTests {
         #expect(ModuleHealth.notStarted.actuatorLabel == "notStarted")
         #expect(ModuleHealth.running.actuatorLabel == "running")
         #expect(ModuleHealth.failed(SomeError()).actuatorLabel == "failed")
-
-        #expect(Lifetime.singleton.actuatorLabel == "singleton")
 
         #expect(Stereotype.component.actuatorLabel == "component")
         #expect(Stereotype.service.actuatorLabel == "service")

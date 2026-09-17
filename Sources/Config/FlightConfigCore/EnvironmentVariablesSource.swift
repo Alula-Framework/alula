@@ -31,22 +31,32 @@ import Foundation
 /// environment mid-flight.
 public struct EnvironmentVariablesSource: ConfigSource {
     private let environment: [String: String]
+    private let prefix: ConfigPrefix
 
-    /// - Parameter environment: The variables to read, defaulting to a
-    ///   snapshot of the current process environment. Tests pass a plain
-    ///   dictionary instead of mutating the real one.
-    public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    /// - Parameters:
+    ///   - environment: The variables to read, defaulting to a snapshot of the
+    ///     current process environment. Tests pass a plain dictionary instead
+    ///     of mutating the real one.
+    ///   - prefix: The name variables are prefixed with. Defaults to
+    ///     ``ConfigPrefix/default`` — `FLIGHT_`.
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        prefix: ConfigPrefix = .default
+    ) {
         self.environment = environment
+        self.prefix = prefix
     }
 
     public func rawValue(for key: String) -> String? {
-        environment[Self.variableName(for: key)]
+        environment[prefix.variableName(for: key)]
     }
 
-    /// The fixed key → variable-name transform: uppercase, `.` → `_`,
-    /// prefixed `FLIGHT_`. Public so error messages and docs can tell users
-    /// exactly which variable would satisfy a key.
+    /// The fixed key → variable-name transform at the default prefix:
+    /// uppercase, `.` → `_`, prefixed `FLIGHT_`. Public so error messages and
+    /// docs can tell users exactly which variable would satisfy a key.
+    ///
+    /// For a non-default prefix use ``ConfigPrefix/variableName(for:)``.
     public static func variableName(for key: String) -> String {
-        "FLIGHT_" + key.uppercased().replacingOccurrences(of: ".", with: "_")
+        ConfigPrefix.default.variableName(for: key)
     }
 }

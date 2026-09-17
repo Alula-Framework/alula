@@ -33,9 +33,17 @@ extension Configuration {
     /// Resolves the full layered configuration for the active environment.
     ///
     /// - Parameters:
-    ///   - directory: Where `flight.yaml` / `flight-{env}.yaml` live.
-    ///     Defaults to the process working directory — the deployment
-    ///     convention (config ships next to the binary's launch point).
+    ///   - directory: Where the base and overlay files live. Defaults to the
+    ///     process working directory — the deployment convention (config ships
+    ///     next to the binary's launch point). A process launched from
+    ///     somewhere other than the project directory — a container with a
+    ///     different `WORKDIR`, a service manager — passes the directory
+    ///     explicitly rather than relying on where it happened to start.
+    ///   - prefix: The word every spelling derives from: `<prefix>.yaml`,
+    ///     `<prefix>-{env}.yaml`, `<PREFIX>_ENV`, `<PREFIX>_SERVER_PORT`.
+    ///     Defaults to ``ConfigPrefix/default`` — `flight`. Changing it moves
+    ///     the base file out of reach of the build-time `@ConfigValue` key
+    ///     check, which then warns rather than verifying; see ``ConfigPrefix``.
     ///   - environment: Overrides environment resolution. Defaults to nil,
     ///     meaning `FLIGHT_ENV` is read from `processEnvironment` —
     ///     the one place in an app's lifetime that variable is consulted.
@@ -63,19 +71,21 @@ extension Configuration {
     ///   `Flight.bootstrap(configuration:modules:)`.
     public static func load(
         from directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        prefix: ConfigPrefix = .default,
         environment: FlightEnvironment? = nil,
         processEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         secrets: SecretsSpecifier<String, String> = .none,
         accessReporter: (any AccessReporter)? = nil,
         additionalProviders: [any ConfigProvider] = []
     ) throws -> Configuration {
-        // Step 1 — the single FLIGHT_ENV read.
-        let active = environment ?? FlightEnvironment.current(from: processEnvironment)
+        // Step 1 — the single <PREFIX>_ENV read.
+        let active = environment
+            ?? FlightEnvironment.current(from: processEnvironment, prefix: prefix)
         let substitution = EnvironmentSubstitutionPolicy.resolve(processEnvironment)
         let fileManager = FileManager.default
 
         // Step 2 — base layer, required.
-        let baseURL = directory.appendingPathComponent(baseFileName)
+        let baseURL = directory.appendingPathComponent(prefix.baseFileName)
         guard fileManager.fileExists(atPath: baseURL.path) else {
             throw ConfigLoadError.missingBaseFile(expectedPath: baseURL.path)
         }
@@ -83,19 +93,26 @@ extension Configuration {
 
         // Step 3 — environment layer, optional. A missing file is not an
         // error: an environment need not override anything.
-        let environmentURL = directory.appendingPathComponent(fileName(for: active))
+        let environmentURL = directory.appendingPathComponent(
+            prefix.environmentFileName(for: active))
         let environmentLayer: (any ConfigProvider)? = fileManager.fileExists(atPath: environmentURL.path)
             ? try yamlProvider(contentsOf: environmentURL, substitution: substitution)
             : nil
 
-        // Step 4 — env var layer. `prefixKeys(with: "flight")` reproduces the
-        // The documented transform exactly: the provider joins components with `_` and
-        // uppercases, so `datasource.pool_size` under a `flight` prefix
-        // encodes to FLIGHT_DATASOURCE_POOL_SIZE.
+        // Step 4 — env var layer. `prefixKeys(with:)` reproduces the
+        // documented transform exactly: the provider joins components with `_`
+        // and uppercases, so `datasource.pool_size` under a `flight` prefix
+        // encodes to FLIGHT_DATASOURCE_POOL_SIZE — and under `myapp`,
+        // MYAPP_DATASOURCE_POOL_SIZE.
+        //
+        // `ConfigKey([...])` — the components initializer — rather than the
+        // String one, which dot-decodes. A prefix cannot contain a dot today,
+        // but taking the components form means it is one component by
+        // construction rather than by the validation happening to forbid it.
         let variables = EnvironmentVariablesProvider(
             environmentVariables: processEnvironment,
             secretsSpecifier: secrets
-        ).prefixKeys(with: "flight")
+        ).prefixKeys(with: ConfigKey([prefix.rawValue]))
 
         // Step 5 — assemble, highest precedence first.
         var providers: [any ConfigProvider] = additionalProviders
@@ -105,7 +122,8 @@ extension Configuration {
         }
         providers.append(base)
         return Configuration(
-            providers: providers, environment: active, accessReporter: accessReporter
+            providers: providers, environment: active, prefix: prefix,
+            accessReporter: accessReporter
         )
     }
 

@@ -70,8 +70,8 @@ public struct FlightEnvironment: RawRepresentable, Sendable, Hashable, Codable {
     ///
     /// Defaults to ``dev`` when unset, since "no environment specified" is
     /// the normal local-development state.
-    public static func current() -> FlightEnvironment {
-        current(from: ProcessInfo.processInfo.environment)
+    public static func current(prefix: ConfigPrefix = .default) -> FlightEnvironment {
+        current(from: ProcessInfo.processInfo.environment, prefix: prefix)
     }
 
     /// Resolves `FLIGHT_ENV` from an explicit dictionary.
@@ -84,8 +84,11 @@ public struct FlightEnvironment: RawRepresentable, Sendable, Hashable, Codable {
     /// to itself — `FLIGHT_ENV=qa` gives you `qa`, and therefore
     /// `flight-qa.yaml`, rather than quietly loading development
     /// configuration under a production-shaped name.
-    public static func current(from environment: [String: String]) -> FlightEnvironment {
-        guard let raw = environment["FLIGHT_ENV"], !raw.isEmpty else {
+    public static func current(
+        from environment: [String: String],
+        prefix: ConfigPrefix = .default
+    ) -> FlightEnvironment {
+        guard let raw = environment[prefix.environmentVariable], !raw.isEmpty else {
             return .dev
         }
         return FlightEnvironment(raw)

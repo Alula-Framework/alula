@@ -49,7 +49,7 @@ struct ConfigurationTests {
         #expect {
             try config.get("datasource.url", as: String.self)
         } throws: { error in
-            guard case ConfigError.missingKey(let key, let environment) = error else { return false }
+            guard case ConfigError.missingKey(let key, let environment, _) = error else { return false }
             return key == "datasource.url" && environment == nil
         }
     }
@@ -60,7 +60,7 @@ struct ConfigurationTests {
         #expect {
             try config.get("datasource.url", as: String.self)
         } throws: { error in
-            guard case ConfigError.missingKey(_, let environment) = error else { return false }
+            guard case ConfigError.missingKey(_, let environment, _) = error else { return false }
             return environment == .prod
         }
     }

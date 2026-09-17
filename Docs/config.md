@@ -52,6 +52,18 @@ Three layers, highest precedence first:
 `flight.yaml` must exist. The overlay is optional — an environment that
 changes nothing simply has no file.
 
+Both are resolved **relative to the process working directory**. Running
+`swift run` from the project root — the development path, and what the
+tutorial and `flight new` produce — puts them exactly where they are looked
+for. A process that launches from somewhere else, such as a container with a
+different `WORKDIR` or a service manager, passes the directory instead of
+relying on where it started:
+
+```swift
+let configuration = try Configuration.load(
+    from: URL(fileURLWithPath: "/etc/myapp"))
+```
+
 ```yaml
 # flight.yaml
 server:
@@ -81,6 +93,38 @@ datasource.pool_size  →  FLIGHT_DATASOURCE_POOL_SIZE
 ```
 
 Setting one overrides both files, with no configuration change required.
+
+### Changing the prefix
+
+`flight` is one word, spelled four ways: `flight.yaml`, `flight-{env}.yaml`,
+`FLIGHT_ENV`, and the `FLIGHT_` on every variable. `ConfigPrefix` holds that
+word once and derives all four, so they cannot drift apart:
+
+```swift
+let configuration = try Configuration.load(prefix: "myapp")
+// reads myapp.yaml, myapp-prod.yaml, MYAPP_ENV, MYAPP_SERVER_PORT
+```
+
+Two reasons to want it. `FLIGHT_` is a short prefix to claim in a shared
+environment — two Flight services in one container, or a platform that already
+injects `FLIGHT_*`, need their own namespace. And a file named after the
+framework rather than the application reads oddly in someone else's
+repository.
+
+A prefix must be a lowercase word of ASCII letters, digits and underscores
+starting with a letter, because its uppercased form has to be a variable name
+a shell can actually set. Anything else traps at the call, rather than
+producing names nothing can override at deploy time.
+
+> **One thing a custom prefix costs.** `@ConfigValue` keys without a
+> `default:` are checked against the base file *at build time*, by a build
+> tool that finds that file by its default name. A build tool cannot see a
+> value passed to `Configuration.load` at runtime, and searching the package
+> for "some YAML file" would be discovery-by-presence — the pattern this
+> framework rejects everywhere else. So under a custom prefix the check does
+> not run; the build says so, naming the keys it could not verify, and those
+> keys fail at startup instead. The guarantee moves from compile time to boot
+> time rather than disappearing.
 
 ## Environments
 

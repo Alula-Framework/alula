@@ -16,7 +16,7 @@ public enum ConfigError: Error, CustomStringConvertible, Sendable, Equatable, Ha
     /// `Configuration.load` (nil for hand-assembled configurations, e.g. in
     /// tests) so the startup failure can identify both the key and the
     /// environment that was active when it could not be found.
-    case missingKey(key: String, environment: FlightEnvironment?)
+    case missingKey(key: String, environment: FlightEnvironment?, prefix: ConfigPrefix = .default)
 
     /// The key is present, but its raw string failed to decode as the
     /// requested type.
@@ -52,12 +52,14 @@ public enum ConfigError: Error, CustomStringConvertible, Sendable, Equatable, Ha
 
     public var description: String {
         switch self {
-        case .missingKey(let key, let environment):
+        case .missingKey(let key, let environment, let prefix):
             let envClause = environment.map { " (active environment: \($0.rawValue))" } ?? ""
+            let overlayClause = environment
+                .map { " or \(prefix.environmentFileName(for: $0))" } ?? ""
             return """
             Configuration key '\(key)' is not set in any source\(envClause). \
-            Add it to flight.yaml\(environment.map { " or flight-\($0.rawValue).yaml" } ?? ""), \
-            or set the \(EnvironmentVariablesSource.variableName(for: key)) environment variable.
+            Add it to \(prefix.baseFileName)\(overlayClause), \
+            or set the \(prefix.variableName(for: key)) environment variable.
             """
         case .decodingFailed(let key, let rawValue, let targetType):
             return """
@@ -109,10 +111,16 @@ public enum ConfigLoadError: Error, CustomStringConvertible, Sendable, Equatable
     public var description: String {
         switch self {
         case .missingBaseFile(let expectedPath):
+            let fileName = expectedPath.split(separator: "/").last.map(String.init) ?? expectedPath
+            let stem = fileName.hasSuffix(".yaml") ? String(fileName.dropLast(5)) : fileName
             return """
             Base configuration file not found at '\(expectedPath)'. \
-            flight.yaml is the base layer and must exist in every environment; \
-            only flight-{env}.yaml overrides are optional.
+            \(fileName) is the base layer and must exist in every environment; \
+            only \(stem)-{env}.yaml overrides are optional. \
+            The path is resolved relative to the process working directory — \
+            pass Configuration.load(from:) to read it from somewhere else, \
+            which is what a deployment that does not launch from the project \
+            directory needs.
             """
         case .unreadableFile(let path, let reason):
             return "Configuration file '\(path)' could not be read: \(reason)"

@@ -4,6 +4,43 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ConfigPrefix`, and `Configuration.load(prefix:)`.** `flight` was one word
+  spelled in four places — `flight.yaml`, `flight-{env}.yaml`, `FLIGHT_ENV`,
+  and the `FLIGHT_` on every variable — each hardcoded separately.
+  `ConfigPrefix` holds it once and derives all four, so an application that
+  needs another namespace (two Flight services in one container, a platform
+  that already injects `FLIGHT_*`) passes `prefix: "myapp"` and gets
+  `myapp.yaml`, `myapp-prod.yaml`, `MYAPP_ENV`, `MYAPP_SERVER_PORT` together
+  rather than one at a time. A prefix must uppercase to a variable name a
+  shell can set, which is checked at the call rather than discovered at
+  deploy time.
+
+  The build-time `@ConfigValue` key check is keyed to the default name: a
+  build tool cannot see a runtime argument, and globbing the package for
+  "some YAML file" would be discovery-by-presence. Under a custom prefix the
+  check therefore does not run — and now says so (below) instead of passing
+  silently.
+
+### Changed
+
+- **The `@ConfigValue` key check no longer skips silently.** When no
+  `flight.yaml` is found but the scan did turn up keys without defaults, the
+  generator emits a warning naming them instead of reporting success. A
+  library package with no config files and no such keys stays silent, as
+  before. A check that never ran and said nothing is worse than no check.
+
+- **Error messages derive their names instead of hardcoding them.**
+  `ConfigError.missingKey` named `flight.yaml` and `FLIGHT_…` regardless of
+  the prefix in use, which under a custom prefix told an operator to set a
+  variable that does nothing. `ConfigLoadError.missingBaseFile` now also
+  states that the path is resolved relative to the working directory and
+  points at `Configuration.load(from:)` — the escape hatch it previously
+  left undiscoverable.
+
 ## [0.18.0] - 2026-09-17
 
 Testing ergonomics. Both additions are purely additive — no generated

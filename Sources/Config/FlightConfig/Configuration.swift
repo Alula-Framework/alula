@@ -41,6 +41,14 @@ public struct Configuration: Sendable {
     /// `ConfigError.missingKey` name the active environment.
     public let environment: FlightEnvironment?
 
+    /// The prefix this configuration's file and variable names derive from.
+    /// Set by `Configuration.load`; ``ConfigPrefix/default`` for
+    /// hand-assembled stacks. Used to make `ConfigError.missingKey` name the
+    /// file and the environment variable an operator would actually reach for
+    /// — under a custom prefix, telling them to set `FLIGHT_SERVER_PORT` would
+    /// be wrong.
+    public let prefix: ConfigPrefix
+
     /// Assembles a configuration from an ordered provider stack.
     ///
     /// The extension point for providers this package does not ship:
@@ -64,10 +72,12 @@ public struct Configuration: Sendable {
     public init(
         providers: [any ConfigProvider],
         environment: FlightEnvironment? = nil,
+        prefix: ConfigPrefix = .default,
         accessReporter: (any AccessReporter)? = nil
     ) {
         self.providers = providers
         self.environment = environment
+        self.prefix = prefix
         self.accessReporter = accessReporter
     }
 
@@ -77,10 +87,15 @@ public struct Configuration: Sendable {
     /// swift-configuration; each source is bridged to a provider here. Prefer
     /// `init(providers:)` for new code — it reaches the whole provider
     /// ecosystem — but nothing about this spelling has changed or needs to.
-    public init(sources: [any ConfigSource], environment: FlightEnvironment? = nil) {
+    public init(
+        sources: [any ConfigSource],
+        environment: FlightEnvironment? = nil,
+        prefix: ConfigPrefix = .default
+    ) {
         self.init(
             providers: sources.map { ConfigSourceProvider(source: $0) },
-            environment: environment
+            environment: environment,
+            prefix: prefix
         )
     }
 
@@ -110,7 +125,7 @@ public struct Configuration: Sendable {
         fileID: String = #fileID, line: UInt = #line
     ) throws -> T {
         guard let raw = try resolveRawValue(for: key, fileID: fileID, line: line) else {
-            throw ConfigError.missingKey(key: key, environment: environment)
+            throw ConfigError.missingKey(key: key, environment: environment, prefix: prefix)
         }
         return try decode(raw, key: key, as: type)
     }

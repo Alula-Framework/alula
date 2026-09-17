@@ -51,6 +51,13 @@ actor JWKSCache {
     private var current: Snapshot?
     private var fetchedAt: Date?
     private var lastAttemptAt: Date?
+    /// When a refresh last *failed*, as distinct from when one was last
+    /// attempted. The stale bound is documented as "seconds a cached key set
+    /// may be served while the IdP is unreachable", so it must key on an
+    /// actual failure: keying it on cache age alone refused keys during the
+    /// ordinary window between the TTL elapsing and the next request, with the
+    /// identity provider healthy and answering.
+    private var lastFailureAt: Date?
     private var inflight: Task<Snapshot, any Error>?
 
     init(
@@ -111,7 +118,13 @@ actor JWKSCache {
                 // validating against keys that may have been revoked, for as
                 // long as the outage lasted. That inverts the guarantee the
                 // bound exists to give.
-                if let fetchedAt {
+                // Only while refreshes are actually failing. Reaching this
+                // path means no refresh was wanted — for `.ifStale`, that
+                // the TTL has not elapsed — so without the `lastFailureAt`
+                // check a `jwks_max_stale` lower than `jwks_cache_ttl`
+                // refused every request for the window between them, with
+                // the IdP healthy, reporting it as the IdP being down.
+                if let fetchedAt, lastFailureAt != nil {
                     let age = moment.timeIntervalSince(fetchedAt)
                     guard age < maxStaleAge else {
                         // Not logged: this runs per request, and the path
@@ -119,10 +132,7 @@ actor JWKSCache {
                         // logged the outage once per cooldown window.
                         throw staleLimitExceeded(
                             age: age,
-                            cause: """
-                                a refresh was attempted within the last \
-                                \(Int(refreshCooldown))s and failed
-                                """)
+                            cause: "the key source has been unreachable since the last successful fetch")
                     }
                 }
                 return current
@@ -197,9 +207,17 @@ actor JWKSCache {
         }
         inflight = task
         defer { inflight = nil }
-        let snapshot = try await task.value
+        let snapshot: Snapshot
+        do {
+            snapshot = try await task.value
+        } catch {
+            // A failing refresh is what arms the stale bound on the fast path.
+            lastFailureAt = now()
+            throw error
+        }
         current = snapshot
         fetchedAt = now()
+        lastFailureAt = nil
         logger.debug(
             "JWKS refreshed",
             metadata: ["keys": "\(snapshot.keyIDs.count)"]

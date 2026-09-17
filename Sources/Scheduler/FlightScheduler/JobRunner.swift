@@ -94,7 +94,14 @@ actor JobRunner {
 
     /// The scheduling loop. Returns when the task is cancelled.
     func run() async {
-        await withTaskGroup(of: Void.self) { group in
+        // Discarding, not a plain task group: a plain one retains every child
+        // until it is drained, and this loop only drained at shutdown — so a
+        // long-lived scheduler grew by one entry per cron firing forever
+        // (~2.4 kB each; measured at 951 MB over 400k firings against a 7 MB
+        // interval control). A discarding group reaps each child as it
+        // finishes, which is all this loop ever wanted: `.skip`/`.queue` state
+        // lives in the actor, not in the group's results.
+        await withDiscardingTaskGroup { group in
             while !Task.isCancelled {
                 guard let next = job.trigger.nextFireDate(
                     after: clock.now, lastCompletion: lastCompletion)
@@ -137,9 +144,10 @@ actor JobRunner {
                     group.addTask { await self.fire(scheduledFor: next) }
                 }
             }
-            // Cancellation reaches the children through the group; waiting
-            // keeps a run from being abandoned mid-flight on a clean stop.
-            await group.waitForAll()
+            // Cancellation reaches the children through the group, and a
+            // discarding group awaits its remaining children as the scope
+            // exits — so a run is still not abandoned mid-flight on a clean
+            // stop, without retaining every completed one to get there.
         }
     }
 

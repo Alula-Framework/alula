@@ -61,8 +61,15 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         if hasValidate { initLines.append("try validate()") }
         let initBody =
             initLines.isEmpty ? "" : "\n    " + initLines.joined(separator: "\n    ") + "\n"
+        // The access level the type declares, not a hardcoded `internal`:
+        // a `public` settings type in a library is a documented shape, and the
+        // generator hard-errors unless a cross-module scanned component is
+        // public — so withholding it here made that combination impossible to
+        // satisfy. `@Component` applies the same helper; this one computed it
+        // and dropped it on the floor, which is the `'access' was never used`
+        // warning every build of this package printed.
         let settingsInit: DeclSyntax = """
-            internal init(_flightConfiguration configuration: FlightCore.Configuration) throws {\(raw: initBody)}
+            \(raw: access)init(_flightConfiguration configuration: FlightCore.Configuration) throws {\(raw: initBody)}
             """
 
         var members = [settingsInit]

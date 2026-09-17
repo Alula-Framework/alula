@@ -282,6 +282,53 @@ struct GeneratorTests {
         #expect(result.diagnostics.contains("@ConfigValue"))
     }
 
+    @Test("a throwing node initializer is spelled so the emitted file compiles")
+    func throwingNodeInitializerIsMarkedCorrectly() throws {
+        // `??` passes its right side as an autoclosure, so a throw escapes
+        // through the operator: `x ?? (try C())` is rejected with "operator
+        // can throw but expression is not marked with 'try'". The generated
+        // file compiled in no test here — the harness asserts on text — so
+        // this shape shipped broken. Asserting on the spelling is the cheap
+        // half of that gap; it is what a real app's build would have caught.
+        let result = try generate(
+            [
+                "Settings.swift": """
+                import FlightCore
+                @Component struct Settings {
+                    @ConfigValue("app.name") var appName: String
+                }
+                """
+            ],
+            flightYAML: "app:\n  name: demo\n"
+        )
+        #expect(result.exitCode == 0)
+        #expect(result.generated.contains("try (settings ?? Settings("))
+        #expect(
+            !result.generated.contains("?? (try "),
+            "the try must cover the whole coalescing, not just the call")
+    }
+
+    @Test("no flight.yaml plus unchecked keys warns instead of skipping in silence")
+    func missingBaseFileWarnsAboutUncheckedKeys() throws {
+        // A custom ConfigPrefix moves the base file out of a build tool's
+        // reach, and so does simply forgetting the file. Either way the
+        // compile-time guarantee is not being provided, and reporting success
+        // is the one outcome that teaches people to trust a check that never
+        // ran. A warning, not an error: the keys still fail at startup.
+        let result = try generate([
+            "Settings.swift": """
+            import FlightCore
+            @Component struct Settings {
+                @ConfigValue("app.name") var appName: String
+            }
+            """
+        ])
+        #expect(result.exitCode == 0, "a missing base file is not a build failure")
+        #expect(result.diagnostics.contains("warning"))
+        #expect(result.diagnostics.contains("app.name"))
+        #expect(result.diagnostics.contains("did not run"))
+    }
+
     @Test("a required @ConfigValue key present in flight.yaml succeeds")
     func requiredConfigValueKeyPresentSucceeds() throws {
         let result = try generate(
@@ -575,7 +622,14 @@ struct GeneratorTests {
         ], flightYAML: "app:\n  page-size: 25\n")
         #expect(result.exitCode == 0)
         #expect(result.generated.contains("init(configuration: FlightCore.Configuration,"))
-        #expect(result.generated.contains("(try Pager(_flightConfiguration: configuration))"))
+        // `try (x ?? C())`, not `x ?? (try C())`. This assertion pinned the
+        // latter — which never compiled, because `??` takes its right side as
+        // an autoclosure and the throw escapes through the operator. It passed
+        // anyway: nothing here compiles what the generator emits, so the shape
+        // was wrong in every Flight app with a @ConfigValue component while
+        // this test stayed green. Don't "restore" the old spelling.
+        #expect(
+            result.generated.contains("try (pager ?? Pager(_flightConfiguration: configuration))"))
     }
 
     @Test("a module-registered component is left out of the graph")

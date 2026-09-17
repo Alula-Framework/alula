@@ -1323,15 +1323,46 @@ let includedModules = resolveIncludedModules()
 // runtime-only case (key present in base but a specific flight-{env}.yaml
 // failed to supply its real value) stays a thrown ConfigError at bootstrap.
 //
-// Policy when flight.yaml doesn't exist: skip. A pure-library package has no
-// config files — the check belongs to (and runs in) the app target whose
-// plugin invocation scans that library's sources alongside its flight.yaml.
+// Policy when flight.yaml doesn't exist: skip the check, but say so when there
+// was something to check. A pure-library package has no config files and no
+// keys to verify — that case stays silent, because the check belongs to the app
+// target whose plugin invocation scans the library's sources alongside its own
+// flight.yaml.
+//
+// The case worth a diagnostic is an app that *does* declare no-default keys and
+// has no base file at the default name — either it forgot the file, or it uses
+// a custom `ConfigPrefix`, which a build tool cannot see (searching for "some
+// YAML file" would be discovery-by-presence, which this framework rejects).
+// Either way the compile-time guarantee is not being provided, and silently
+// reporting success is the one outcome that teaches people to trust a check
+// that never ran. The keys still fail loudly at boot.
 @MainActor
 func checkConfigKeys() {
     guard let packageDirectory = manifest.packageDirectory else { return }
     let baseURL = URL(fileURLWithPath: packageDirectory)
         .appendingPathComponent(FlightConfigFiles.base)
-    guard FileManager.default.fileExists(atPath: baseURL.path) else { return }
+    guard FileManager.default.fileExists(atPath: baseURL.path) else {
+        let uncheckable = components.flatMap { component in
+            component.configValues
+                .filter { $0.key != nil && !$0.hasDefault }
+                .map { ($0, component.typeName) }
+        }
+        guard let (first, _) = uncheckable.first else { return }
+        let names = uncheckable.compactMap(\.0.key).sorted()
+        let shown = names.prefix(3).joined(separator: ", ")
+        let more = names.count > 3 ? " (+\(names.count - 3) more)" : ""
+        emit(
+            "warning",
+            """
+            \(FlightConfigFiles.base) was not found in \(packageDirectory), so the \
+            compile-time check of \(names.count) configuration key\(names.count == 1 ? "" : "s") \
+            without defaults did not run: \(shown)\(more). Add \(FlightConfigFiles.base), \
+            or — if this application passes a custom prefix to Configuration.load — expect \
+            these keys to be verified at startup instead of here.
+            """,
+            file: first.file, line: first.line)
+        return
+    }
 
     let baseKeys: Set<String>
     do {
@@ -1735,8 +1766,18 @@ func emitFlightGraph(into out: inout String) {
         let call = "\(qualified(node))(\(arguments.joined(separator: ", ")))"
         // Bound locally first: a later node's arguments must see the
         // *supplied* instance when a test passed one, not a second copy.
-        out +=
-            "        let \(binding(node)) = \(binding(node)) ?? \(node.configValues.isEmpty ? "" : "(try ")\(call)\(node.configValues.isEmpty ? "" : ")")\n"
+        //
+        // `try` goes in front of the whole coalescing, not around the call:
+        // `??` takes its right side as an autoclosure, so the throw escapes
+        // through the operator and `x ?? (try C())` does not compile
+        // ("operator can throw but expression is not marked with 'try'").
+        // Only a node with @ConfigValue has a throwing initializer, so only
+        // that case is marked.
+        let initializer =
+            node.configValues.isEmpty
+            ? "\(binding(node)) ?? \(call)"
+            : "try (\(binding(node)) ?? \(call))"
+        out += "        let \(binding(node)) = \(initializer)\n"
         out += "        self.\(binding(node)) = \(binding(node))\n"
     }
     out += "    }\n"

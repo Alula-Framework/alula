@@ -43,6 +43,13 @@ jobs:
       - name: Lean consumer resolves no gated dependency
         run: ./CI/check-lean-consumer.sh
 
+      # The generator tests assert on emitted text and exit codes, so a
+      # generated file can satisfy all of them and still not compile. This
+      # builds a consumer whose component reads configuration — the shape
+      # whose graph initializer throws, and the one that shipped broken.
+      - name: Generated file compiles
+        run: ./CI/check-generated-compiles.sh
+
   lint:
     # Advisory only. Seven of the eight merged packages predate the shared
     # .swift-format config, leaving ~1240 violations; the macro fixture

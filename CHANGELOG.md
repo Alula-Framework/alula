@@ -46,6 +46,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   points at `Configuration.load(from:)` — the escape hatch it previously
   left undiscoverable.
 
+### Fixed
+
+- **The generated graph initializer now compiles.** For any component with a
+  `@ConfigValue`, the generator emitted `x ?? (try C())`. Swift rejects that —
+  `??` takes its right side as an autoclosure, so the throw escapes through the
+  operator — which meant every application with a configuration-reading
+  component got a generated file that would not build. It now emits
+  `try (x ?? C())`.
+
+  **This changes emitted code.** A cached build reuses the old output, so
+  regenerate (a clean build of the target, or any edit that re-plans the codegen
+  command) rather than trusting an existing `.build`.
+
+  Two things let it ship, and both are closed. A test asserted the broken
+  spelling outright and passed, because `FlightRegistrationGenTests` drives the
+  real generator but only ever asserts on its text and exit codes — nothing
+  compiled what it emitted. `CI/check-generated-compiles.sh` now builds a real
+  consumer (`CI/generated-consumer`) whose component reads configuration, which
+  is the shape whose graph initializer throws; the script also fails if that
+  fixture ever stops covering the throwing path, so it cannot quietly decay into
+  a check of nothing.
+
 ## [0.18.0] - 2026-09-17
 
 Testing ergonomics. Both additions are purely additive — no generated

@@ -1,0 +1,5 @@
+# The base layer the build-time @ConfigValue check verifies against. Without
+# it the check would skip, and the fixture would stop covering the path it
+# exists for.
+app:
+  name: generated-consumer

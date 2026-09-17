@@ -10,7 +10,7 @@
 
     Consuming flight:
         .package(url: "https://github.com/Flight-Framework/flight.git", \
-                 from: "0.11.0", traits: ["Security"])
+                 from: "0.18.0", traits: ["Security"])
 
     Building flight itself:
         swift build --enable-all-traits

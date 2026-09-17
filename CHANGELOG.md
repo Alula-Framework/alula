@@ -7,9 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.19.0] - 2026-09-17
 
 Configuration naming, and a build-time check that now covers the file it is
-actually pointed at. The prefix is additive — every existing spelling keeps
-working — but the generator fix changes emitted code, so regenerate rather
-than reuse a cached build.
+actually pointed at.
+
+**Source-breaking, despite the defaulted argument.** `ConfigError.missingKey`
+gained a third associated value. A default argument does not apply to pattern
+matching, so `case .missingKey(let key, _)` no longer compiles and must become
+`case .missingKey(let key, _, _)`. This was originally released describing
+itself as additive; it is not. The generator fix also changes emitted code, so
+regenerate rather than reuse a cached build.
 
 ### Added
 

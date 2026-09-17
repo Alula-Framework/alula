@@ -64,7 +64,7 @@ Both are opt-in. Name what you want:
 .package(url: "https://github.com/Flight-Framework/flight.git",
          from: "0.18.0", traits: ["Security"])
 
-// Just composition and lifecycle — 8 resolved packages instead of 29.
+// Just composition and lifecycle — 7 resolved dependencies instead of 29.
 .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.18.0")
 ```
 

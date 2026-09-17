@@ -22,6 +22,16 @@ for pkg in "${forbidden[@]}"; do
     status=1
   fi
 done
-echo "lean consumer resolved $(grep -c '"identity"' Package.resolved) packages"
+# Assert the count, do not merely print it. The README quotes this number, and
+# a figure nothing checks is a figure that drifts: it read "8" against an
+# actual 7 until the 2026-09-17 audit caught it. Update both together.
+resolved=$(grep -c '"identity"' Package.resolved)
+expected=7
+echo "lean consumer resolved $resolved packages"
+if [ "$resolved" -ne "$expected" ]; then
+  echo "::error::lean consumer resolves $resolved packages, expected $expected."
+  echo "::error::If this is intended, update README.md's trait table and this script together."
+  status=1
+fi
 [ $status -eq 0 ] && echo "no gated dependency leaked"
 exit $status

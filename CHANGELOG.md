@@ -4,7 +4,12 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.19.0] - 2026-09-17
+
+Configuration naming, and a build-time check that now covers the file it is
+actually pointed at. The prefix is additive — every existing spelling keeps
+working — but the generator fix changes emitted code, so regenerate rather
+than reuse a cached build.
 
 ### Added
 

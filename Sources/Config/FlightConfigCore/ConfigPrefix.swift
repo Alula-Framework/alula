@@ -14,20 +14,25 @@
 /// - **Naming.** A file called `flight.yaml` in someone else's repository
 ///   names the framework rather than the application.
 ///
-/// ## The build-time check
+/// ## The build-time check still applies
 ///
 /// `@ConfigValue` keys without a `default:` are verified against the base file
-/// *at build time* by `flight-registration-gen`, which finds that file by its
-/// default name. A build tool cannot see a value passed to
-/// `Configuration.load` at runtime, and searching the package directory for
-/// "some YAML file" would be discovery-by-presence — the pattern this
-/// framework rejects everywhere else.
+/// *at build time*, and a custom prefix does not give that up. The prefix
+/// looks like a runtime value because `load` takes it at runtime, but an
+/// application writes it as a literal in its own source — and that source is
+/// already scanned. `flight-registration-gen` reads the `prefix:` argument and
+/// checks against `<prefix>.yaml`, exactly as it does for `flight.yaml`.
 ///
-/// So a non-default prefix moves the base file out of the checker's reach and
-/// the check is skipped. It is skipped *loudly*: the generator warns, naming
-/// the keys it could not verify, rather than silently reporting success. Those
-/// keys still fail at startup if they are genuinely missing — the guarantee
-/// moves from compile time to boot time, it does not disappear.
+/// Nothing is discovered from the filesystem. An unscanned prefix means the
+/// default name, never "whatever YAML is lying around" — file presence decides
+/// nothing here.
+///
+/// Two cases are not statically knowable, and both say so rather than passing
+/// quietly. An interpolated or computed prefix, and two literals that
+/// disagree, leave the base file unidentifiable: the build warns and those keys
+/// are verified at startup instead. A literal that is not a *legal* prefix is a
+/// build error — `Configuration.load` would trap on it at startup, and the name
+/// is knowable here.
 public struct ConfigPrefix: Sendable, Equatable, Hashable {
 
     /// The lowercase word the spellings derive from, e.g. `flight`.
@@ -63,6 +68,23 @@ public struct ConfigPrefix: Sendable, Equatable, Hashable {
             '\(rawValue.uppercased())_SERVER_PORT' with a character shells cannot set.
             """
         )
+        self.rawValue = rawValue
+    }
+
+    /// The same validation as ``init(_:)``, reporting failure instead of
+    /// trapping.
+    ///
+    /// For callers that did not write the string themselves. The build tool
+    /// reads the prefix out of an application's own source, where a bad value
+    /// is the author's typo rather than a programmer error in the caller —
+    /// trapping there would crash codegen instead of pointing at the line.
+    /// It turns an invalid prefix into a build error rather than a startup
+    /// trap, which is where the rest of `@ConfigValue` checking already lives.
+    public init?(validating rawValue: String) {
+        guard let first = rawValue.first,
+            first.isASCII, first.isLetter, first.isLowercase,
+            rawValue.allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "_") })
+        else { return nil }
         self.rawValue = rawValue
     }
 

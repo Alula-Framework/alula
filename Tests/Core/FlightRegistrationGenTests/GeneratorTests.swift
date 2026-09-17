@@ -69,11 +69,17 @@ struct GeneratorTests {
     /// is not Swift), and the workspace itself becomes `packageDirectory`
     /// unless the caller overrides it — the layout a real package actually
     /// has, source files and `flight.yaml` side by side.
+    /// - Parameter configFiles: Extra files written beside the sources, by
+    ///   name. `flightYAML:` covers the default `flight.yaml`; this is for an
+    ///   application that renamed its base layer with
+    ///   `Configuration.load(prefix:)`, whose file the generator finds by
+    ///   reading that argument out of the scanned source.
     func generate(
         _ sources: [String: String],
         targetModule: String = "AppModule",
         packageDirectory: String? = nil,
-        flightYAML: String? = nil
+        flightYAML: String? = nil,
+        configFiles: [String: String] = [:]
     ) throws -> Result {
         let workspace = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("flightgen-\(UUID().uuidString)")
@@ -90,6 +96,10 @@ struct GeneratorTests {
             try flightYAML.write(
                 to: workspace.appendingPathComponent("flight.yaml"), atomically: true,
                 encoding: .utf8)
+        }
+        for (name, contents) in configFiles {
+            try contents.write(
+                to: workspace.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
 
         let output = workspace.appendingPathComponent("FlightRegistrations.swift")
@@ -306,6 +316,107 @@ struct GeneratorTests {
         #expect(
             !result.generated.contains("?? (try "),
             "the try must cover the whole coalescing, not just the call")
+    }
+
+    @Test("a custom prefix keeps the key check at build time")
+    func customPrefixIsStillCheckedAtBuildTime() throws {
+        // The prefix looks like a runtime value, but it is a literal in the
+        // application's own source and that source is scanned — so renaming
+        // the base layer does not cost the compile-time guarantee.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import FlightCore
+                @Component struct Settings {
+                    @ConfigValue("app.name") var appName: String
+                }
+                @main struct Main {
+                    static func main() async {
+                        await Flight.run(
+                            configuration: try Configuration.load(prefix: "myapp"),
+                            modules: [AppModule.self],
+                            composedBy: flightComposeModules)
+                    }
+                }
+                """
+            ],
+            configFiles: ["myapp.yaml": "other:\n  key: value\n"]
+        )
+        #expect(result.exitCode != 0, "the missing key must fail the build")
+        #expect(result.diagnostics.contains("app.name"))
+        #expect(result.diagnostics.contains("myapp.yaml"))
+    }
+
+    @Test("a custom prefix whose key is present builds clean and silent")
+    func customPrefixSatisfiedIsSilent() throws {
+        let result = try generate(
+            [
+                "Main.swift": """
+                import FlightCore
+                @Component struct Settings {
+                    @ConfigValue("app.name") var appName: String
+                }
+                let configuration = try Configuration.load(prefix: "myapp")
+                """
+            ],
+            configFiles: ["myapp.yaml": "app:\n  name: demo\n"]
+        )
+        #expect(result.exitCode == 0)
+        #expect(result.diagnostics.isEmpty, "a satisfied check says nothing")
+    }
+
+    @Test("flight.yaml is not a fallback when a custom prefix is declared")
+    func customPrefixDoesNotFallBackToTheDefault() throws {
+        // Checking the wrong file would be worse than not checking: it would
+        // report success about a file the application never loads.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import FlightCore
+                @Component struct Settings {
+                    @ConfigValue("app.name") var appName: String
+                }
+                let configuration = try Configuration.load(prefix: "myapp")
+                """
+            ],
+            flightYAML: "app:\n  name: from-the-wrong-file\n"
+        )
+        #expect(result.exitCode == 0, "a missing base file is not a build failure")
+        #expect(result.diagnostics.contains("myapp.yaml"), "it must look for the declared file")
+        #expect(result.diagnostics.contains("did not run"))
+    }
+
+    @Test("a literal that is not a legal prefix is a build error, not a startup trap")
+    func illegalPrefixIsABuildError() throws {
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            @Component struct Settings {
+                @ConfigValue("app.name") var appName: String
+            }
+            let configuration = try Configuration.load(prefix: "my-app")
+            """
+        ])
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("my-app"))
+        #expect(result.diagnostics.contains("MY-APP_SERVER_PORT"))
+    }
+
+    @Test("a computed prefix is not statically knowable, and says so")
+    func computedPrefixWarns() throws {
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            @Component struct Settings {
+                @ConfigValue("app.name") var appName: String
+            }
+            let name = "myapp"
+            let configuration = try Configuration.load(prefix: ConfigPrefix(name))
+            """
+        ])
+        #expect(result.exitCode == 0, "unknowable is not a failure")
+        #expect(result.diagnostics.contains("not a plain string literal"))
+        #expect(result.diagnostics.contains("did not run"))
     }
 
     @Test("no flight.yaml plus unchecked keys warns instead of skipping in silence")

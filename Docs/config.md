@@ -116,15 +116,27 @@ starting with a letter, because its uppercased form has to be a variable name
 a shell can actually set. Anything else traps at the call, rather than
 producing names nothing can override at deploy time.
 
-> **One thing a custom prefix costs.** `@ConfigValue` keys without a
-> `default:` are checked against the base file *at build time*, by a build
-> tool that finds that file by its default name. A build tool cannot see a
-> value passed to `Configuration.load` at runtime, and searching the package
-> for "some YAML file" would be discovery-by-presence — the pattern this
-> framework rejects everywhere else. So under a custom prefix the check does
-> not run; the build says so, naming the keys it could not verify, and those
-> keys fail at startup instead. The guarantee moves from compile time to boot
-> time rather than disappearing.
+**The build-time key check still applies.** `@ConfigValue` keys without a
+`default:` are verified against the base file at build time, and renaming it
+does not give that up. The prefix looks like a runtime value, but you write it
+as a literal in your own source, and that source is already scanned — so the
+build checks your keys against `myapp.yaml` exactly as it would against
+`flight.yaml`. Nothing is discovered from the filesystem: an unscanned prefix
+means the default name, never "whatever YAML is lying around".
+
+Two shapes are not knowable at build time, and both say so rather than passing
+quietly:
+
+```swift
+try Configuration.load(prefix: ConfigPrefix(name))   // warns: keys checked at startup
+try Configuration.load(prefix: "my-app")             // build error: not a legal prefix
+```
+
+An interpolated or computed prefix — and two literals that disagree — leave the
+base file unidentifiable, so the build warns and those keys are verified at
+startup instead. A literal that is not a legal prefix is a build error:
+`Configuration.load` would trap on it at startup, and the name is knowable
+here.
 
 ## Environments
 

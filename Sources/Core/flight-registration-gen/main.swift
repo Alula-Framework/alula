@@ -263,6 +263,20 @@ final class ModuleVisitor: SyntaxVisitor {
     /// mechanism that knew it, but the list is a literal array in the
     /// application's own source, and that source is scanned.
     var bootstrapModules: [String] = []
+    /// The `prefix:` an application hands `Configuration.load`, read from its
+    /// own source.
+    ///
+    /// The same reasoning as `bootstrapModules` above: the prefix looked like
+    /// a runtime value because `load` takes it at runtime, but an application
+    /// writes it as a literal in source, and that source is scanned. Reading
+    /// it here keeps the `@ConfigValue` key check at compile time under a
+    /// custom prefix, instead of standing down the moment the base file is not
+    /// called flight.yaml.
+    ///
+    /// `text` is nil when the argument is not a plain string literal — an
+    /// interpolation or a computed value — which is not statically knowable,
+    /// exactly as `@ConfigValue`'s own key is nil in that case.
+    var configPrefix: (text: String?, file: String, line: Int)?
     private var typeStack: [String] = []
 
     init(module: String, file: String, tree: SourceFileSyntax) {
@@ -433,10 +447,40 @@ final class ModuleVisitor: SyntaxVisitor {
         }
     }
 
+    /// Records a `Configuration.load(prefix:)` argument.
+    ///
+    /// Matched on the callee's method name plus the label, like the framework
+    /// spellings above: the call is usually nested inside `Flight.run`'s
+    /// `configuration:` argument, so the enclosing call is not a reliable
+    /// anchor.
+    private func collectConfigPrefix(_ node: FunctionCallExprSyntax) {
+        guard let callee = node.calledExpression.as(MemberAccessExprSyntax.self),
+            callee.declName.baseName.text == "load",
+            let argument = node.arguments.first(where: { $0.label?.text == "prefix" })
+        else { return }
+
+        let line = converter.location(for: node.position).line
+        guard let literal = argument.expression.as(StringLiteralExprSyntax.self) else {
+            // A computed prefix: present, but not knowable here.
+            configPrefix = (text: nil, file: file, line: line)
+            return
+        }
+        let segments = literal.segments.compactMap { $0.as(StringSegmentSyntax.self) }
+        guard segments.count == literal.segments.count else {
+            // Interpolated — same as above.
+            configPrefix = (text: nil, file: file, line: line)
+            return
+        }
+        configPrefix = (
+            text: segments.map(\.content.text).joined(), file: file, line: line
+        )
+    }
+
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         // `modules:` can appear on `Flight.run`, `Flight.bootstrap` or
         // `Flight.assemble`; the label is what identifies it, not the callee.
         collectBootstrapModules(node)
+        collectConfigPrefix(node)
 
         guard let callee = node.calledExpression.as(MemberAccessExprSyntax.self) else {
             return .visitChildren
@@ -839,6 +883,7 @@ var routes: [ScannedControllerRoute] = []
 var lanes: [ScannedPipelineLane] = []
 var moduleGraph: [ScannedModule] = []
 var bootstrapModules: [String] = []
+var scannedConfigPrefixes: [(text: String?, file: String, line: Int)] = []
 var extensionConformances: [(typeName: String, protocols: [String])] = []
 for module in manifest.modules {
     for file in module.files {
@@ -864,6 +909,9 @@ for module in manifest.modules {
                 || source.contains(".lane")
                 || source.contains("FlightModule")
                 || source.contains("modules:")
+                // The application's `Configuration.load(prefix:)` — the base
+                // file name the @ConfigValue check verifies against.
+                || source.contains("Configuration.load")
         else { continue }
         if module.name == manifest.targetModuleName {
             for line in source.split(separator: "\n") {
@@ -883,13 +931,19 @@ for module in manifest.modules {
         routes.append(contentsOf: visitor.routes)
         extensionConformances.append(contentsOf: visitor.extensionConformances)
 
-        if source.contains(".lane") || source.contains("FlightModule") {
+        if source.contains(".lane") || source.contains("FlightModule")
+            || source.contains("Configuration.load")
+        {
             let moduleScan = ModuleVisitor(module: module.name, file: file, tree: tree)
             moduleScan.walk(tree)
             lanes.append(contentsOf: moduleScan.lanes)
             moduleGraph.append(contentsOf: moduleScan.modules)
             if module.name == manifest.targetModuleName {
                 bootstrapModules.append(contentsOf: moduleScan.bootstrapModules)
+                // Only the target's own source decides the application's
+                // prefix: a library calling `load` configures itself, not
+                // the app being built.
+                if let found = moduleScan.configPrefix { scannedConfigPrefixes.append(found) }
             }
         }
     }
@@ -1323,24 +1377,83 @@ let includedModules = resolveIncludedModules()
 // runtime-only case (key present in base but a specific flight-{env}.yaml
 // failed to supply its real value) stays a thrown ConfigError at bootstrap.
 //
-// Policy when flight.yaml doesn't exist: skip the check, but say so when there
-// was something to check. A pure-library package has no config files and no
-// keys to verify — that case stays silent, because the check belongs to the app
-// target whose plugin invocation scans the library's sources alongside its own
-// flight.yaml.
+// Which file is the base layer is a question the application answers in its
+// own source — `Configuration.load(prefix: "myapp")` — and that source is
+// scanned, so the check holds under a custom prefix rather than standing down
+// the moment the file is not called flight.yaml. Nothing is discovered from
+// the filesystem: an unscanned prefix means the default name, never "whatever
+// YAML is lying around".
 //
-// The case worth a diagnostic is an app that *does* declare no-default keys and
-// has no base file at the default name — either it forgot the file, or it uses
-// a custom `ConfigPrefix`, which a build tool cannot see (searching for "some
-// YAML file" would be discovery-by-presence, which this framework rejects).
-// Either way the compile-time guarantee is not being provided, and silently
-// reporting success is the one outcome that teaches people to trust a check
-// that never ran. The keys still fail loudly at boot.
+// Four outcomes, and only the last two give up anything:
+//
+//   * no `prefix:` written          -> flight.yaml, as always
+//   * one literal prefix            -> <prefix>.yaml, checked exactly the same
+//   * a literal that isn't a legal  -> build error. It would trap at startup
+//     prefix                           otherwise; a bad name is knowable here
+//   * interpolated, computed, or    -> warning: not statically knowable, so
+//     two literals that disagree       the keys are verified at boot instead
+//
+// And when the resolved base file simply isn't there: skip, but say so if
+// there was anything to check. A pure-library package has no config files and
+// no keys — that case stays silent. Silently reporting success is the one
+// outcome that teaches people to trust a check that never ran.
+@MainActor
+func resolvedConfigPrefix() -> ConfigPrefix? {
+    let literals = scannedConfigPrefixes.compactMap { entry in entry.text.map { (entry, $0) } }
+    let distinct = Set(literals.map(\.1))
+
+    if distinct.count > 1 {
+        let (entry, _) = literals[0]
+        emit(
+            "warning",
+            """
+            This target calls Configuration.load with \(distinct.count) different literal \
+            prefixes (\(distinct.sorted().joined(separator: ", "))), so the base configuration \
+            file cannot be identified and the @ConfigValue key check did not run. Those keys \
+            are verified at startup instead.
+            """,
+            file: entry.file, line: entry.line)
+        return nil
+    }
+
+    if let (entry, text) = literals.first {
+        guard let prefix = ConfigPrefix(validating: text) else {
+            emit(
+                "error",
+                """
+                '\(text)' is not a usable configuration prefix: it must be lowercase ASCII \
+                letters, digits and underscores, starting with a letter, because its uppercased \
+                form is an environment-variable prefix and \
+                '\(text.uppercased())_SERVER_PORT' is not a name most shells can set. \
+                Configuration.load would trap on this at startup.
+                """,
+                file: entry.file, line: entry.line)
+            return nil
+        }
+        return prefix
+    }
+
+    // A prefix was written but is not a literal: present, unknowable.
+    if let entry = scannedConfigPrefixes.first {
+        emit(
+            "warning",
+            """
+            The prefix passed to Configuration.load here is not a plain string literal, so the \
+            base configuration file cannot be identified and the @ConfigValue key check did not \
+            run. Those keys are verified at startup instead.
+            """,
+            file: entry.file, line: entry.line)
+        return nil
+    }
+    return ConfigPrefix.default
+}
+
 @MainActor
 func checkConfigKeys() {
     guard let packageDirectory = manifest.packageDirectory else { return }
+    guard let prefix = resolvedConfigPrefix() else { return }
     let baseURL = URL(fileURLWithPath: packageDirectory)
-        .appendingPathComponent(FlightConfigFiles.base)
+        .appendingPathComponent(prefix.baseFileName)
     guard FileManager.default.fileExists(atPath: baseURL.path) else {
         let uncheckable = components.flatMap { component in
             component.configValues
@@ -1354,11 +1467,11 @@ func checkConfigKeys() {
         emit(
             "warning",
             """
-            \(FlightConfigFiles.base) was not found in \(packageDirectory), so the \
+            \(prefix.baseFileName) was not found in \(packageDirectory), so the \
             compile-time check of \(names.count) configuration key\(names.count == 1 ? "" : "s") \
-            without defaults did not run: \(shown)\(more). Add \(FlightConfigFiles.base), \
-            or — if this application passes a custom prefix to Configuration.load — expect \
-            these keys to be verified at startup instead of here.
+            without defaults did not run: \(shown)\(more). Add \(prefix.baseFileName) \
+            — the base layer this application loads — and these keys are checked here \
+            instead of at startup.
             """,
             file: first.file, line: first.line)
         return
@@ -1378,13 +1491,13 @@ func checkConfigKeys() {
             errorCount += 1
         } else {
             emit(
-                "error", "flight.yaml could not be loaded for the @ConfigValue key check: \(error)",
+                "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
                 file: baseURL.path, line: 1)
         }
         return
     } catch {
         emit(
-            "error", "flight.yaml could not be loaded for the @ConfigValue key check: \(error)",
+            "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
             file: baseURL.path, line: 1)
         return
     }
@@ -1397,13 +1510,13 @@ func checkConfigKeys() {
             switch configValue.source {
             case .explicitConfigValue:
                 message =
-                    "@ConfigValue key '\(key)' in \(component.typeName) is missing from flight.yaml and has no default. Add the key to flight.yaml (the base layer — a ${VAR} placeholder is fine for env-supplied values), or provide default:."
+                    "@ConfigValue key '\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or provide default:."
             case .implicitSettingsField:
                 // No @ConfigValue was written here — @Settings derived this
                 // key from the property's own name — so the message must not
                 // claim an attribute that isn't there.
                 message =
-                    "'\(key)' in \(component.typeName) is missing from flight.yaml and the property has no default. Add the key to flight.yaml (the base layer — a ${VAR} placeholder is fine for env-supplied values), or give the property a default value."
+                    "'\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and the property has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or give the property a default value."
             }
             emit("error", message, file: configValue.file, line: configValue.line)
         }

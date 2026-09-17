@@ -35,6 +35,27 @@ struct ConfigPrefixTests {
                 == ConfigPrefix.default.environmentFileName(for: .test))
     }
 
+    @Test("validating: reports a bad prefix instead of trapping")
+    func validatingRejectsUnusableNames() {
+        // The build tool reads prefixes out of an application's source, where a
+        // bad value is the author's typo — trapping there would crash codegen
+        // rather than point at the line.
+        #expect(ConfigPrefix(validating: "myapp") != nil)
+        #expect(ConfigPrefix(validating: "svc_2") != nil)
+        #expect(ConfigPrefix(validating: "my-app") == nil, "a dash cannot be set in a shell")
+        #expect(ConfigPrefix(validating: "2fast") == nil, "a leading digit is not a variable name")
+        #expect(ConfigPrefix(validating: "MyApp") == nil, "uppercase would double-uppercase")
+        #expect(ConfigPrefix(validating: "") == nil)
+        #expect(ConfigPrefix(validating: "my.app") == nil)
+    }
+
+    @Test("a validated prefix derives the same names as the trapping initializer")
+    func validatingMatchesInit() {
+        let validated = try! #require(ConfigPrefix(validating: "myapp"))
+        #expect(validated == ConfigPrefix("myapp"))
+        #expect(validated.baseFileName == "myapp.yaml")
+    }
+
     @Test("a prefix is writable as a plain string literal")
     func stringLiteral() {
         let prefix: ConfigPrefix = "svc2"

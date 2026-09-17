@@ -19,11 +19,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shell can set, which is checked at the call rather than discovered at
   deploy time.
 
-  The build-time `@ConfigValue` key check is keyed to the default name: a
-  build tool cannot see a runtime argument, and globbing the package for
-  "some YAML file" would be discovery-by-presence. Under a custom prefix the
-  check therefore does not run — and now says so (below) instead of passing
-  silently.
+  **The build-time `@ConfigValue` key check survives the rename.** The prefix
+  looks like a runtime value because `load` takes it at runtime, but an
+  application writes it as a literal in its own source, and that source is
+  already scanned — so `flight-registration-gen` reads the `prefix:` argument
+  and checks against `<prefix>.yaml` exactly as it does for `flight.yaml`.
+  Nothing is discovered from the filesystem; an unscanned prefix means the
+  default name. An interpolated or computed prefix, or two literals that
+  disagree, leave the base file unidentifiable: the build warns and those keys
+  are verified at startup instead. A literal that is not a legal prefix is now
+  a build error rather than a `precondition` trap at startup.
 
 ### Changed
 

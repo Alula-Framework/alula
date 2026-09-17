@@ -69,13 +69,26 @@ struct FlightRegistrationPlugin: BuildToolPlugin {
         let outputURL = workDirectory.appendingPathComponent("FlightRegistration.generated.swift")
         let manifestURL = workDirectory.appendingPathComponent("flight-manifest.json")
 
-        // flight.yaml participates in the build when present: it is an input
-        // of the generator's @ConfigValue key check, so editing it must
-        // re-plan the codegen command.
+        // The base config file participates in the build: it is an input of
+        // the generator's @ConfigValue key check, so editing it must re-plan
+        // the codegen command.
+        //
+        // Every *.yaml at the package root is declared, not just flight.yaml,
+        // because an application may name its own (`Configuration.load(prefix:)`)
+        // and the generator reads that name out of the application's source —
+        // which this plugin does not parse. Declaring a superset of inputs is a
+        // build-graph over-approximation: it can only cause the command to
+        // re-run when it needn't have. That is categorically different from
+        // using a file's presence to decide *semantics*, which is the pattern
+        // this framework rejects — which file is authoritative is still
+        // decided by the scanned `prefix:`, never by what happens to be here.
         let packageDirectory = context.package.directoryURL
-        let baseConfigURL = packageDirectory.appendingPathComponent("flight.yaml")
-        if FileManager.default.fileExists(atPath: baseConfigURL.path) {
-            inputFiles.append(baseConfigURL)
+        if let entries = try? FileManager.default.contentsOfDirectory(
+            at: packageDirectory, includingPropertiesForKeys: nil)
+        {
+            for entry in entries where entry.pathExtension == "yaml" {
+                inputFiles.append(entry)
+            }
         }
 
         let manifest = Manifest(

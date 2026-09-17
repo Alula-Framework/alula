@@ -10,7 +10,7 @@ There are three sizes of test. Most suites want the middle one.
 | | What runs | Reach for it when |
 |---|---|---|
 | [Call the handler](#calling-a-handler-directly) | one method | the logic is the point and routing is not |
-| [`Components`](#components--the-usual-choice) | the real controller, routing, middleware, DI | most of the time |
+| [Routes under test](#routes-under-test--the-usual-choice) | the real controller, routing, middleware, DI | most of the time |
 | [`AppModule` + `override`](#the-whole-application) | every module the application boots | you are testing the wiring itself |
 
 ## Routes under test — the usual choice
@@ -22,11 +22,9 @@ request, so a fake is just a value passed in:
 
 ```swift
 let repo = InMemoryUsers(users: [ada])
-let client = try TestClient(routes: [
-    UserController._flightRoute_show_0 { _ in
-        UserController(users: UserService(repository: repo))
-    }
-])
+let client = try TestClient(routes: UserController.flightRoutes { _ in
+    UserController(users: UserService(repository: repo))
+})
 
 let response = await client.get("/users/\(ada.id)")
 #expect(response.status == .ok)

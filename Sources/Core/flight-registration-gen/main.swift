@@ -1830,7 +1830,24 @@ graphRegistrable.flatMap { $0.injectTypeNames + $0.acknowledgedTypeNames }.map(b
 //   registers its jobs, both inside their own initializer. Projecting those
 //   would drop the extra, so they keep being built through their own init and
 //   arrive here as root parameters if anything depends on them.
-let containerConstructed: Set<String> = ["settings", "scheduler"]
+// `@Scheduler` only. `@Settings` was here too, and that made every
+// application with one fail to compose: excluded from the graph, a settings
+// type arrived as a *root*, and roots are resolved from what modules provide —
+// no module provides a settings type, so the build said "no module in this
+// application provides CargoSettings" about a type it had scanned itself.
+//
+// The exclusion's reason does not apply to it. The worry was that *projecting*
+// a settings type onto a graph property would skip the `validate()` its
+// initializer runs — but the graph does not project, it constructs, and it
+// already passes `_flightConfiguration:` to any node with config values, which
+// a settings type's fields are. Built as a node it runs its own init, and
+// `validate()` with it.
+//
+// Nothing caught this because nothing composed one: no template declares
+// `@Settings`, GeneratorTests covers only its config-key check, and
+// SettingsIntegrationTests constructs it directly rather than through the
+// composer. The seam beside the seam, again.
+let containerConstructed: Set<String> = ["scheduler"]
 let graphNodes = graphRegistrable.filter { component in
     let kind = stereotype(forAttribute: component.attributeName)
     if containerConstructed.contains(kind) { return false }
@@ -2084,7 +2101,17 @@ func emitFlightGraph(into out: inout String) {
     }
     for node in ordered {
         var arguments: [String] = []
-        if !node.configValues.isEmpty { arguments.append("_flightConfiguration: configuration") }
+        // A settings type always takes it, whether or not any field was
+        // *recorded* as a config value: `@Settings` generates
+        // `init(_flightConfiguration:)` unconditionally, while the implicit
+        // field scan skips properties that have a default — so
+        // `struct CargoSettings { var pageSize: Int = 500 }` has no recorded
+        // config values and still has no other initializer.
+        if !node.configValues.isEmpty
+            || stereotype(forAttribute: node.attributeName) == "settings"
+        {
+            arguments.append("_flightConfiguration: configuration")
+        }
         // Labelled by property name, which is what the generated initializer
         // uses. Zipped rather than indexed: the two arrays are built together
         // and stay positional, and a mismatch would silently mislabel an
@@ -2108,10 +2135,16 @@ func emitFlightGraph(into out: inout String) {
         // ("operator can throw but expression is not marked with 'try'").
         // Only a node with @ConfigValue has a throwing initializer, so only
         // that case is marked.
+        // Same condition as the `_flightConfiguration:` argument above, and
+        // for the same reason: a settings type's generated initializer throws
+        // whether or not any field was recorded as a config value.
+        let throwsOnConstruction =
+            !node.configValues.isEmpty
+            || stereotype(forAttribute: node.attributeName) == "settings"
         let initializer =
-            node.configValues.isEmpty
-            ? "\(binding(node)) ?? \(call)"
-            : "try (\(binding(node)) ?? \(call))"
+            throwsOnConstruction
+            ? "try (\(binding(node)) ?? \(call))"
+            : "\(binding(node)) ?? \(call)"
         out += "        let \(binding(node)) = \(initializer)\n"
         out += "        self.\(binding(node)) = \(binding(node))\n"
     }
@@ -2629,7 +2662,15 @@ func emitComposer(into out: inout String) {
             let expression = "\(binding(name)).\(property.name)"
             guard !consumed.contains(where: { $0.contains(expression) }) else { continue }
             let aggregators = moduleGraph.filter { candidate in
-                !includedModules.contains { moduleIdentity($0) == moduleIdentity(candidate.typeName) }
+                // Declaration-to-declaration, so `moduleKey` rather than
+                // `moduleIdentity`: `includedModules` holds specializations
+                // (`FlightWebModule<FlightTransport>`) while `typeName` is the
+                // declaration (`FlightWebModule`), and the question here is
+                // "is any instantiation of this module present" — the answer
+                // the suggestion "add it to modules:" depends on. Comparing
+                // identities said no for every generic module in the list and
+                // told applications to add a module they already had.
+                !includedModules.contains { moduleKey($0) == moduleKey(candidate.typeName) }
                     && candidate.initializers.contains { initializer in
                         initializer.types.contains {
                             arrayElementType($0).map(providedTypeKey) == providedTypeKey(element)

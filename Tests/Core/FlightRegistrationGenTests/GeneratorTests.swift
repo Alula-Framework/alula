@@ -1384,6 +1384,51 @@ struct GeneratorTests {
                 "let flightWebModuleFlightTransport = FlightWebModule<FlightTransport>()"))
     }
 
+    @Test("a @Settings type a component injects is built by the graph")
+    func settingsComposeAsGraphNodes() throws {
+        // `@Settings` was excluded from the graph, so a settings type arrived
+        // as a *root* — and roots are resolved from what modules provide.
+        // Nothing provides a settings type, so every application with one
+        // failed with "no module in this application provides AppSettings"
+        // about a type the generator had scanned itself.
+        //
+        // Nothing caught it: no template declares `@Settings`, the tests above
+        // cover only its config-key check, and SettingsIntegrationTests builds
+        // one directly rather than through the composer. The seam beside the
+        // seam.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import FlightCore
+                @Settings("app")
+                struct AppSettings {
+                var pageSize: Int = 50
+                }
+                @Service struct Reporter: Sendable {
+                @Inject var settings: AppSettings
+                }
+                struct AppModule: FlightModule {
+                init() {}
+                }
+                @main struct Main {
+                static func main() async {
+                await Flight.run(
+                configuration: .load(), modules: [AppModule.self],
+                composedBy: flightComposeModules)
+                }
+                }
+                """
+            ])
+        #expect(result.exitCode == 0)
+        // Built by the graph, through its own initializer — which is what runs
+        // the `validate()` the exclusion was protecting.
+        #expect(result.generated.contains("AppSettings(_flightConfiguration: configuration)"))
+        // And with `try`: that initializer throws whether or not any field was
+        // recorded as a config value.
+        #expect(result.generated.contains("try (appSettings ?? AppSettings("))
+        #expect(!result.generated.contains("no module in this application provides"))
+    }
+
     @Test("defaultProviders answers the unqualified inject, from: answers the other")
     func defaultProviderAndNamedProvider() throws {
         let result = try generate([

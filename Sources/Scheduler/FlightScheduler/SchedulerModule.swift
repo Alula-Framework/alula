@@ -36,7 +36,12 @@ public struct FlightSchedulerModule: FlightModule {
     private let coordinator: (any JobCoordinator)?
 
     /// Reported by Actuator; owned here.
-    public let status = SchedulerStatus()
+    // The type is written out because the composer only sees stored
+    // properties with an explicit annotation. Inferred, this module provided
+    // `SchedulerStatus` in fact and not in the scanner's view, so
+    // `@Inject var scheduler: SchedulerStatus` — which Actuator's own docs
+    // show — could not be satisfied by any application.
+    public let status: SchedulerStatus = SchedulerStatus()
 
     /// A scheduler with no jobs is a legal application, so `init()` stays
     /// usable — it composes an empty scheduler.

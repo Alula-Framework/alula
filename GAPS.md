@@ -15,13 +15,21 @@ day it was started; its history moved with it. Entries closed overnight on
 first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
-**Still open, in rough priority order:** two providers of one type — flight-data
-documents composing `PostgresDataModule<PrimaryDataSource>` beside
-`<Analytics>` and it has never worked, because module identity discards generic
-arguments and the two collapse to one binding (**DECISIONS.md D27** has the
-plan, the rejected alternatives and the landing order); flight-web HTTP/2 (a
-design decision, not a task — see below); hangar composite-key associations;
-npm and Homebrew publishing; format debt.
+**Still open, in rough priority order:** flight-web HTTP/2 (a design decision,
+not a task — see below); hangar composite-key associations; npm and Homebrew
+publishing; format debt — `flight` **1,725** violations and `flight-data`
+**1,064**, measured 2026-09-18, deliberately deferred because a bulk reformat
+corrupts the macro fixtures' expected-expansion strings and should land as its
+own reviewed change.
+
+**Closed 2026-09-18:** two providers of one type, in flight **v0.21.0** —
+`@Inject(from:)` names a provider by module type and
+`FlightModule.defaultProviders` says which one an unqualified `@Inject` means.
+The root cause was a bug rather than a missing feature: module identity
+discarded generic arguments, so `PostgresDataModule<PrimaryDataSource>` and
+`<Analytics>` collapsed to one binding and flight-data's documented
+multi-datasource shape had never composed. DECISIONS.md D27 records the
+rejected alternatives.
 
 **Two entries left that list on 2026-09-18**, both checked against the code
 rather than assumed. The distributed PubSub adapter — nominated above as *the

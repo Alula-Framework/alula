@@ -70,10 +70,10 @@ For service code that should not take a principal parameter, bind the
 task-local around the call with `context.withPrincipal { ... }` and read
 ``Principal/current`` inside.
 
-The web layer stores this as a ``FlightWeb/RequestIdentity`` behind a
+The web layer stores this as a `RequestIdentity` (Flight Web) behind a
 two-member seam protocol, because `RequestContext` cannot name ``Principal``
 without a dependency cycle — the same shape `FlightChannels` uses for
-``ChannelPrincipal``.
+`ChannelPrincipal` (Flight Channels).
 
 ``AuthenticationState`` distinguishes *anonymous* from *authenticated*
 rather than collapsing both into a nil check, so a route that genuinely

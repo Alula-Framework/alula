@@ -2,7 +2,7 @@ import FlightWeb
 
 /// What authentication decided about a request.
 ///
-/// A view of Flight Web's ``RequestIdentity``, which is where the state
+/// A view of Flight Web's `RequestIdentity`, which is where the state
 /// actually lives: the identity rides `RequestContext` as a typed field,
 /// written by ``Authentication`` into the copy it passes downstream.
 ///

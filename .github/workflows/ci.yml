@@ -110,6 +110,7 @@ jobs:
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \
               generate-documentation --target "$target" \
+              --include-extended-types \
               --warnings-as-errors --output-path "./docs/$target"
             echo "::endgroup::"
           done

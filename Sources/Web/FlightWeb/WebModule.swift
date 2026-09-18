@@ -52,15 +52,25 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
     /// Built in `init`, read by `service`.
     private let dispatch: Dispatch
 
-    /// - Parameter coders: An application's own encoders/decoders, when it
-    ///   has them. Nil means "read `web.*`" — the ordinary case.
+    /// - Parameters:
+    ///   - configuration: The transport reads its own settings from here at
+    ///     start-up — `server.host`, `server.port`, the body and frame bounds.
+    ///   - routes: Every route the composition root gathered from the
+    ///     controllers each module contributed.
+    ///   - middleware: Lane registrations, in declaration order.
+    ///   - assetMounts: Static-asset mounts the application declared.
+    ///   - coders: An application's own encoders/decoders, when it
+    ///     has them. Nil means "read `web.*`" — the ordinary case.
     ///
-    ///   This used to be a scan: `configure` checked `allRegistrations()` for
-    ///   a `WebCoders` an earlier module had registered and stood down if it
-    ///   found one, which made the answer depend on module order and on a
-    ///   runtime lookup. Whether the application brought its own coders is a
-    ///   fact about how it was composed, so it is a parameter — and one the
-    ///   composer fills in by type when any module provides `WebCoders`.
+    ///     This used to be a scan: `configure` checked `allRegistrations()` for
+    ///     a `WebCoders` an earlier module had registered and stood down if it
+    ///     found one, which made the answer depend on module order and on a
+    ///     runtime lookup. Whether the application brought its own coders is a
+    ///     fact about how it was composed, so it is a parameter — and one the
+    ///     composer fills in by type when any module provides `WebCoders`.
+    ///   - errorMapper: The application's error mapper, when a module provided
+    ///     one — matched by type in composition. Nil becomes `.none`, which
+    ///     declines everything.
     public init(
         configuration: Configuration,
         routes: [RouteRegistration] = [],

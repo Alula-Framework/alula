@@ -46,9 +46,12 @@ public struct TestClient: Sendable {
 
     /// Wraps an existing dispatch closure (for transport-free harnesses).
     ///
-    /// - Parameter coders: The app's wire format, when the harness knows it.
-    ///   There is no container to read it from here, so it defaults to the
-    ///   package default.
+    /// - Parameters:
+    ///   - dispatch: The dispatch closure to drive — an existing one, for a
+    ///     harness that built its own rather than going through routes.
+    ///   - coders: The app's wire format, when the harness knows it.
+    ///     There is no container to read it from here, so it defaults to the
+    ///     package default.
     public init(dispatch: Dispatch, coders: WebCoders = .default) {
         self.dispatch = dispatch
         self.coders = coders

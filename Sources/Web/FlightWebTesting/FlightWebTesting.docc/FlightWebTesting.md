@@ -30,7 +30,7 @@ stop here:
 
 A handler returns its domain value — `show` returns an `Order`, not a
 `Response` — so the assertion is on the value, and a failure is a thrown
-`HTTPError` rather than a status code. ``RequestContext/mock(method:path:headers:body:pathParameters:)``
+`HTTPError` rather than a status code. `RequestContext.mock(method:path:headers:body:pathParameters:)`
 supplies the context: path parameters, headers and a body when a handler reads
 them, nothing when it doesn't.
 
@@ -85,7 +85,7 @@ let order = try response.decodeJSON(OrderPayload.self)
 #expect(order.total == 1250)
 ```
 
-``Response/header(_:)`` and ``Response/headerValues(_:)`` exist because
+`Response.header(_:)` and `Response.headerValues(_:)` exist because
 `HTTPFields` is keyed by `HTTPField.Name`: the well-known headers have statics
 (`headers[.contentType]`), but an application's own header needed
 `headers[HTTPField.Name("x-request-id")!]` — a force-unwrap inside an

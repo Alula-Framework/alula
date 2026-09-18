@@ -62,6 +62,11 @@ public struct Configuration: Sendable {
     ///     `[env vars, flight-{env}.yaml, flight.yaml]`.
     ///   - environment: The resolved `FlightEnvironment`, if this stack was
     ///     assembled for one. Purely diagnostic — it never affects lookups.
+    ///   - prefix: The one word every configuration spelling derives from —
+    ///     the base file name, the environment overlay, `<PREFIX>_ENV` and the
+    ///     environment-variable namespace. Defaults to `flight`. Carried on the
+    ///     stack so an error can name the variable that would actually satisfy
+    ///     a missing key.
     ///   - accessReporter: Receives an event per resolved key — from Flight's
     ///     own accessors as well as from ``reader``, naming the call site and
     ///     every layer consulted on the way. Wire in `AccessLogger` to log

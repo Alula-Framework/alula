@@ -1357,8 +1357,9 @@ struct GeneratorTests {
     @Test("a generic module keeps its type argument")
     func genericModuleKeepsItsArgument() throws {
         // `FlightWebModule<FlightTransport>` is one module named with the
-        // transport it was chosen with. Matching strips the argument;
-        // constructing cannot.
+        // transport it was chosen with. The argument is part of the module's
+        // identity — matching and the binding name both carry it, because two
+        // instantiations are two modules (D27).
         let result = try generate([
             "Main.swift": """
             import FlightWeb
@@ -1374,7 +1375,57 @@ struct GeneratorTests {
         ])
         #expect(result.exitCode == 0)
         #expect(
-            result.generated.contains("let flightWebModule = FlightWebModule<FlightTransport>()"))
+            result.generated.contains(
+                "let flightWebModuleFlightTransport = FlightWebModule<FlightTransport>()"))
+    }
+
+    @Test("two instantiations of one generic module get two bindings")
+    func twoInstantiationsGetTwoBindings() throws {
+        // The shape flight-data is built on — `PostgresDataModule<Name>` once
+        // per datasource — and documented from the start. It never worked:
+        // module identity discarded the generic argument, so both collapsed to
+        // one key, `resolveIncludedModules` visited only the first, and a
+        // module taking both received the same binding twice:
+        //
+        //     let poolModule = PoolModule<Primary>()
+        //     let appModule = AppModule(primary: poolModule, analytics: poolModule)
+        //
+        // which fails to compile with "cannot convert 'PoolModule<Primary>' to
+        // 'PoolModule<Analytics>'" — in generated code, naming neither the
+        // application's file nor its mistake. Nothing caught it because the
+        // test above covers one instantiation and nothing covered two.
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            enum Primary: Sendable {}
+            enum Analytics: Sendable {}
+            struct Pool: Sendable {}
+            struct PoolModule<Name: Sendable>: FlightModule {
+            let pool: Pool
+            init() { pool = Pool() }
+            }
+            struct AppModule: FlightModule {
+            static var dependencies: [any FlightModule.Type] {
+            [PoolModule<Primary>.self, PoolModule<Analytics>.self]
+            }
+            init(primary: PoolModule<Primary>, analytics: PoolModule<Analytics>) {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(result.generated.contains("let poolModulePrimary = PoolModule<Primary>()"))
+        #expect(result.generated.contains("let poolModuleAnalytics = PoolModule<Analytics>()"))
+        // The point: each parameter gets *its own* binding.
+        #expect(
+            result.generated.contains(
+                "AppModule(primary: poolModulePrimary, analytics: poolModuleAnalytics)"))
     }
 
     @Test("a module declaring init() is constructed that way, whatever else it offers")

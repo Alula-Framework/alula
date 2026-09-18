@@ -966,6 +966,82 @@ func moduleKey(_ text: String) -> String {
     return baseName(name)
 }
 
+/// Splits `A, B<C, D>, E` into three, not four — a comma inside a nested
+/// generic argument list is not a separator.
+func splitTopLevelArguments(_ text: String) -> [String] {
+    var parts: [String] = []
+    var depth = 0
+    var current = ""
+    for character in text {
+        switch character {
+        case "<":
+            depth += 1
+            current.append(character)
+        case ">":
+            depth -= 1
+            current.append(character)
+        case "," where depth == 0:
+            parts.append(current.trimmingCharacters(in: .whitespaces))
+            current = ""
+        default:
+            current.append(character)
+        }
+    }
+    let last = current.trimmingCharacters(in: .whitespaces)
+    if !last.isEmpty { parts.append(last) }
+    return parts
+}
+
+/// A module's identity, **generic arguments included**.
+///
+/// `moduleKey` discards them, which is right for a value type —
+/// `FlightDemo.UserRepositoryProtocol` and `UserRepositoryProtocol` name one
+/// seam — and wrong for a module. `PostgresDataModule<PrimaryDataSource>` and
+/// `PostgresDataModule<Analytics>` are two modules: two configurations, two
+/// pools, two lifetimes. Keyed by `moduleKey` they collapsed into one, so
+/// `resolveIncludedModules` visited only the first, the composer emitted a
+/// single binding, and a module taking both received the same one twice:
+///
+///     let poolModule = PoolModule<Primary>()
+///     let appModule = AppModule(primary: poolModule, analytics: poolModule)
+///     // error: cannot convert 'PoolModule<Primary>' to 'PoolModule<Analytics>'
+///
+/// flight-data is built on this shape — `PostgresDataModule<Name>`,
+/// `InMemoryDataModule<Name>`, `ValkeyDataModule<Name>` — and documented
+/// composing two from the start. See DECISIONS.md D27.
+///
+/// Generic arguments are reduced to base names too, and recursively, so
+/// `Cargo.PostgresDataModule<Cargo.Analytics>` and
+/// `PostgresDataModule<Analytics>` are the same module written two ways.
+func moduleIdentity(_ text: String) -> String {
+    let name = text.trimmingCharacters(in: .whitespaces)
+    guard let open = name.firstIndex(of: "<"), name.hasSuffix(">") else {
+        return baseName(name)
+    }
+    let outer = baseName(String(name[..<open]))
+    let inside = String(name[name.index(after: open)..<name.index(before: name.endIndex)])
+    let arguments = splitTopLevelArguments(inside).map(moduleIdentity)
+    return arguments.isEmpty ? outer : "\(outer)<\(arguments.joined(separator: ", "))>"
+}
+
+/// A Swift identifier for a module's binding in the composer:
+/// `PostgresDataModule<PrimaryDataSource>` becomes
+/// `postgresDataModulePrimaryDataSource`, so two instantiations get two
+/// bindings instead of one that silently serves both.
+func moduleBindingName(_ text: String) -> String {
+    var name = ""
+    var capitalizeNext = false
+    for character in moduleIdentity(text) {
+        if character.isLetter || character.isNumber {
+            name.append(capitalizeNext ? Character(character.uppercased()) : character)
+            capitalizeNext = false
+        } else {
+            capitalizeNext = !name.isEmpty
+        }
+    }
+    return name.prefix(1).lowercased() + name.dropFirst()
+}
+
 /// Name-level matching everywhere below compares base names — the last dotted
 /// component — so `FlightDemo.UserRepositoryProtocol` and
 /// `UserRepositoryProtocol` refer to the same seam.
@@ -1035,7 +1111,7 @@ func existentialProtocolName(_ typeText: String) -> String? {
 /// component. Composition asks a different question: `adapter: (any
 /// DistributedPubSubAdapter)?` and `let adapter: any DistributedPubSubAdapter`
 /// are the same seam, and the `?` only says the parameter may be omitted.
-func providedTypeKey(_ typeText: String) -> String {
+func normalizedTypeText(_ typeText: String) -> String {
     var text = typeText.trimmingCharacters(in: .whitespaces)
     while text.hasSuffix("?") || text.hasSuffix("!") {
         text = String(text.dropLast()).trimmingCharacters(in: .whitespaces)
@@ -1046,7 +1122,18 @@ func providedTypeKey(_ typeText: String) -> String {
     if text.hasPrefix("any ") {
         text = String(text.dropFirst("any ".count)).trimmingCharacters(in: .whitespaces)
     }
-    return moduleKey(text)
+    return text
+}
+
+func providedTypeKey(_ typeText: String) -> String {
+    moduleKey(normalizedTypeText(typeText))
+}
+
+/// The same normalization, keyed as a *module* rather than a value type — for
+/// the one question that asks whether a parameter names a module:
+/// `init(primary: PostgresDataModule<PrimaryDataSource>)`.
+func providedModuleIdentity(_ typeText: String) -> String {
+    moduleIdentity(normalizedTypeText(typeText))
 }
 
 /// `[T]` and `Array<T>` -> `T`; anything else -> nil.
@@ -1386,12 +1473,12 @@ diagnoseUndeclaredLanes()
 @MainActor
 func resolveIncludedModules() -> [String] {
     let byName = Dictionary(
-        moduleGraph.map { (moduleKey($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
     var ordered: [String] = []
     var seen: Set<String> = []
 
     func visit(_ text: String) {
-        let key = moduleKey(text)
+        let key = moduleIdentity(text)
         guard !seen.contains(key) else { return }
         seen.insert(key)
         // Dependencies first, the order `configure` runs in.
@@ -1579,7 +1666,7 @@ if errorCount > 0 { exit(1) }
 @MainActor
 func lanesInModuleOrder() -> [ScannedPipelineLane] {
     let byName = Dictionary(
-        moduleGraph.map { (moduleKey($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
     var position: [String: Int] = [:]
     var finished: Set<String> = []
     var inProgress: Set<String> = []
@@ -1591,7 +1678,7 @@ func lanesInModuleOrder() -> [ScannedPipelineLane] {
         guard !inProgress.contains(name) else { return }
         inProgress.insert(name)
         for dependency in module.dependencies {
-            visit(moduleKey(dependency))
+            visit(moduleIdentity(dependency))
         }
         inProgress.remove(name)
         finished.insert(name)
@@ -1599,7 +1686,7 @@ func lanesInModuleOrder() -> [ScannedPipelineLane] {
     }
 
     for module in moduleGraph {
-        visit(moduleKey(module.typeName))
+        visit(moduleIdentity(module.typeName))
     }
 
     // Stable: declarations from one module keep the order they were written
@@ -2034,12 +2121,9 @@ func emitFlightGraph(into out: inout String) {
 func emitComposer(into out: inout String) {
     guard !includedModules.isEmpty else { return }
     let byName = Dictionary(
-        moduleGraph.map { (moduleKey($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
 
-    func binding(_ text: String) -> String {
-        let name = moduleKey(text)
-        return name.prefix(1).lowercased() + name.dropFirst()
-    }
+    func binding(_ text: String) -> String { moduleBindingName(text) }
     // Carried into the generated file as `#error`, rather than to stderr.
     // A composition that cannot be wired should fail the consumer's build with
     // the reason attached, at a line their compiler points at — not as a
@@ -2077,8 +2161,8 @@ func emitComposer(into out: inout String) {
         guard let element = arrayElementType(type) else { return [] }
         let wanted = providedTypeKey(element)
         var found: [(expression: String, module: String)] = []
-        for name in includedModules where moduleKey(name) != moduleKey(consumer) {
-            guard let module = byName[moduleKey(name)] else { continue }
+        for name in includedModules where moduleIdentity(name) != moduleIdentity(consumer) {
+            guard let module = byName[moduleIdentity(name)] else { continue }
             for property in module.provides {
                 guard let provided = arrayElementType(property.type),
                       providedTypeKey(provided) == wanted
@@ -2091,13 +2175,18 @@ func emitComposer(into out: inout String) {
 
     func provider(of type: String, for consumer: String) -> (expression: String, module: String)? {
         let wanted = providedTypeKey(type)
-        let candidates = includedModules.filter { moduleKey($0) != moduleKey(consumer) }
-        if let module = candidates.first(where: { moduleKey($0) == wanted }) {
+        let candidates = includedModules.filter { moduleIdentity($0) != moduleIdentity(consumer) }
+        // "Is this parameter a module?" is a module question, so both sides are
+        // module identities — `providedTypeKey` discards generic arguments, and
+        // comparing against it would make `PostgresDataModule<Analytics>` match
+        // the binding for `<PrimaryDataSource>`.
+        let wantedModule = providedModuleIdentity(type)
+        if let module = candidates.first(where: { moduleIdentity($0) == wantedModule }) {
             return (binding(module), module)
         }
         var matches: [(expression: String, module: String)] = []
         for name in candidates {
-            guard let module = byName[moduleKey(name)] else { continue }
+            guard let module = byName[moduleIdentity(name)] else { continue }
             for property in module.provides where providedTypeKey(property.type) == wanted {
                 matches.append(("\(binding(name)).\(property.name)", name))
             }
@@ -2164,7 +2253,7 @@ func emitComposer(into out: inout String) {
                 var callArguments = ["flightGraph"]
                 for root in graphRoots.terminalSupplied {
                     if let source = provider(of: root.type, for: "flightRoutes") {
-                        needed.insert(moduleKey(source.module))
+                        needed.insert(moduleIdentity(source.module))
                         callArguments.append("\(root.label): \(source.expression)")
                     } else {
                         callArguments.append(
@@ -2185,13 +2274,13 @@ func emitComposer(into out: inout String) {
                 expressions.append("flightComponentDescriptors()")
             }
             let sources = contributors(to: type, for: consumer)
-            for source in sources { needed.insert(moduleKey(source.module)) }
+            for source in sources { needed.insert(moduleIdentity(source.module)) }
             expressions += sources.map(\.expression)
             guard !expressions.isEmpty else { return String?.none }  // nobody contributed
             return "\(label): \(expressions.joined(separator: " + "))"
         }
         if let source = provider(of: type, for: consumer) {
-            needed.insert(moduleKey(source.module))
+            needed.insert(moduleIdentity(source.module))
             return "\(label): \(source.expression)"
         }
         if type.hasSuffix("?") { return String?.none }  // omittable
@@ -2222,7 +2311,7 @@ func emitComposer(into out: inout String) {
         if graphRoots.needsConfiguration { arguments.append("configuration: configuration") }
         for root in graphRoots.supplied {
             if let source = provider(of: root.type, for: "FlightGraph") {
-                needs.insert(moduleKey(source.module))
+                needs.insert(moduleIdentity(source.module))
                 arguments.append("\(root.label): \(source.expression)")
             } else {
                 arguments.append("\(root.label): <#nothing provides \(root.type)#>")
@@ -2242,7 +2331,7 @@ func emitComposer(into out: inout String) {
     }
 
     for name in includedModules {
-        let module = byName[moduleKey(name)]
+        let module = byName[moduleIdentity(name)]
         // The initializer the composer can actually supply, preferring the
         // most specific. "First declared" picks a test seam; "prefer init()"
         // picks a tombstone on a module that cannot be built from its type.
@@ -2320,7 +2409,7 @@ func emitComposer(into out: inout String) {
             break
         }
         let next = remaining.remove(at: index)
-        placed.insert(moduleKey(next.name))
+        placed.insert(moduleIdentity(next.name))
         ordered.append(next)
     }
 
@@ -2332,13 +2421,13 @@ func emitComposer(into out: inout String) {
     // module to add rather than merely observing that a property went unused.
     let consumed = Set(constructions.flatMap(\.arguments))
     for name in includedModules {
-        guard let module = byName[moduleKey(name)] else { continue }
+        guard let module = byName[moduleIdentity(name)] else { continue }
         for property in module.provides {
             guard let element = arrayElementType(property.type) else { continue }
             let expression = "\(binding(name)).\(property.name)"
             guard !consumed.contains(where: { $0.contains(expression) }) else { continue }
             let aggregators = moduleGraph.filter { candidate in
-                !includedModules.contains { moduleKey($0) == moduleKey(candidate.typeName) }
+                !includedModules.contains { moduleIdentity($0) == moduleIdentity(candidate.typeName) }
                     && candidate.initializers.contains { initializer in
                         initializer.types.contains {
                             arrayElementType($0).map(providedTypeKey) == providedTypeKey(element)

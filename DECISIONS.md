@@ -7,6 +7,126 @@ wrong, say so and it changes.
 
 ---
 
+## D27 — Two providers of one type: a declared default, `@Inject(from:)` for the rest
+
+**Status: agreed, not yet implemented.** Written before the code so the
+rejected alternatives are on the record rather than reconstructed afterwards.
+
+**Chosen.** Three changes, and the first is not optional:
+
+1. **Module identity keeps its generic arguments.** `moduleKey`
+   (`flight-registration-gen/main.swift:963`) strips everything from `<`
+   onward, so `PostgresDataModule<PrimaryDataSource>` and
+   `PostgresDataModule<Analytics>` share one key, get **one** binding, and both
+   parameters receive it. Verified by probe — the composer emits
+   `let poolModule = PoolModule<Primary>()` followed by
+   `AppModule(primary: poolModule, analytics: poolModule)`, and the build fails
+   with `cannot convert value of type 'PoolModule<Primary>' to expected
+   argument type 'PoolModule<Analytics>'`.
+2. **`defaultProviders`, declared by the application's own module**, consulted
+   *only* when two or more modules provide the same type.
+3. **`@Inject(from: PostgresDataModule<Analytics>.self)`**, naming a provider
+   by module type, for the component that wants the non-default one.
+
+```swift
+struct AppModule: FlightModule {
+    static var dependencies: [any FlightModule.Type] {
+        [PostgresDataModule<PrimaryDataSource>.self, PostgresDataModule<Analytics>.self]
+    }
+
+    /// What an unqualified `@Inject var pool: PostgresDataSource` means.
+    static var defaultProviders: [any FlightModule.Type] {
+        [PostgresDataModule<PrimaryDataSource>.self]
+    }
+}
+```
+
+**Why the generic-argument fix comes first.** flight-data is built on
+`Module<Name>`-per-datasource — `PostgresDataModule`, `InMemoryDataModule`,
+`ValkeyDataModule` — and `Docs/data-core.md` documented composing two of them
+from the beginning. It has never worked. Nothing caught it because
+`GeneratorTests:1359` covers exactly one instantiation and asserts its binding;
+no test composes two. The same defect class as everything the 2026-09-17 audit
+found: the test exercises the code beside the seam.
+
+**Why a default at all, rather than requiring `from:` everywhere.** Without
+one, adding a second pool breaks every existing injection. Two providers make
+`@Inject var pool: PostgresDataSource` ambiguous, so every repository that
+wants *the* pool — all of them, none of which care about analytics — stops
+compiling. The tax has to fall on the application with the unusual shape, not
+on every consumer in it.
+
+**Why the default is declared in the application.** It cannot live in
+flight-data: `PostgresDataModule<Name>` is a single declaration and cannot mark
+one instantiation special. It cannot live on `PrimaryDataSource` either,
+because the build plugin scans only the application's own target and never sees
+flight-data's sources. Where the instantiations are named is the one place the
+generator can read it.
+
+**Why not "first in `modules:` wins".** That is F1 — service shutdown order came
+from however the application happened to list its modules, and the order every
+example showed was the wrong one. Ordering in that array is not a place to put
+meaning.
+
+**Rejected: a string qualifier.** `@Inject("analytics")` was removed in 0.20.0
+because it never reached the wiring — composition keys on type, so two
+same-typed properties silently received the same instance. Restoring it under a
+new name would restore the same lie.
+
+**Rejected: key paths — `@Inject(from: \.dataSource)`.** Rejected on review, and
+rightly: that spelling only reads sensibly if there is a registry to index into,
+so it would import the mental model 0.17.0 removed, and create a second
+namespace competing with the type-based one. Worse than the string qualifier,
+because it looks principled.
+
+**Rejected: phantom-typed values.** `PostgresDataModule<Name>` providing
+`PostgresDataSource<Name>` needs no default, no `from:`, and no new `@Inject`
+surface — there are simply never two providers of one type. It is the more
+principled DI and it was close. It loses on the tax: the parameter appears in
+every single-pool signature in the ecosystem, including `Repo`, `withRepo` and
+every repository, to serve a shape most applications do not have.
+
+**It costs nothing until it is needed.** One provider: no `defaultProviders`,
+no `from:`, code identical to today. The feature is invisible until the day a
+second `PostgresDataModule` is added.
+
+**The diagnostic is the feature, not decoration.** On that day the build must
+hand over the fix: name both providers and the type, list the consumers asking
+for it by type with their own file and line, and show the `defaultProviders`
+block and the `@Inject(from:)` line to paste. Three constraints on it:
+
+- **An error, not a warning.** A warning means composition picks one and
+  continues, which is the silent misbinding 0.20.0 deleted. There is no
+  defensible guess — the framework genuinely does not know.
+- **One per ambiguous type, not per consumer.** Twelve repositories injecting
+  the pool is one diagnostic listing twelve, not twelve diagnostics.
+- **Reported against the application's source.** Today `#error` surfaces at
+  `FlightRegistration.generated.swift`, which is nobody's code.
+
+This depends on a diagnostics fix landing first: a dependency the composer
+cannot resolve currently emits an editor placeholder into compiled output
+(`try FlightGraph(pool: <#nothing provides Pool#>)`, an
+`error: editor placeholder in source file`), *and* the correct ambiguity
+message, *and* a third error claiming nothing provides the type when two things
+do — because `provider(of:)` returns nil for both absence and ambiguity and the
+caller cannot tell them apart.
+
+**What reversing costs.** `defaultProviders` and `from:` are additive and can
+be deleted with their diagnostics; nothing else reads them. The module-identity
+change is not reversible in the same sense — it is a bug fix, and reverting it
+restores a composer that silently hands one instantiation where another was
+asked for.
+
+**Landing order.** Diagnostics first, alone, since it is a bug fix and makes
+the rest debuggable. Then module identity, which is independently valuable and
+makes flight-data's documented shape work with no new API — a release could
+stop there. Then `defaultProviders` and `from:` together, since neither is
+useful without the other. flight-data's docs and Adversary's withdrawn
+`analytics` probe are restored last, and the restored probe is the end-to-end
+test.
+
+---
+
 ## D21 — Scheduled jobs are values, and the coordinator is an argument
 
 **Chosen.** `@Scheduler` generates `_flightScheduledJobs(_ make:)` beside its

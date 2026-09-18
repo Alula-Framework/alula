@@ -4,6 +4,70 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-09-18
+
+Two modules can provide the same type, and both be reachable. Additive: an
+application with one provider per type is unchanged and writes none of this.
+
+### Fixed
+
+- **Two instantiations of a generic module collapsed into one.** Module
+  identity discarded generic arguments, so `PostgresDataModule<PrimaryDataSource>`
+  and `PostgresDataModule<Analytics>` shared a key. Only the first was
+  constructed, and a module taking both received it twice:
+
+      let poolModule = PoolModule<Primary>()
+      let appModule = AppModule(primary: poolModule, analytics: poolModule)
+      // error: cannot convert 'PoolModule<Primary>' to 'PoolModule<Analytics>'
+
+  in generated code, naming neither the application's file nor its mistake.
+  flight-data is built on this shape — `PostgresDataModule<Name>`,
+  `InMemoryDataModule<Name>`, `ValkeyDataModule<Name>` — and has documented
+  composing two since the beginning. It had never worked.
+
+  Binding names in the generated composer now carry the argument
+  (`postgresDataModulePrimaryDataSource`). That file is regenerated every
+  build; nothing an application writes changes.
+
+- **Composition errors no longer contradict each other or bury themselves.** An
+  unresolvable dependency emitted an editor placeholder into compiled output —
+  itself an `error: editor placeholder in source file` — above the real
+  message; and because resolution returns nothing for *ambiguity* as well as
+  *absence*, "no module provides it" was printed over the top of "two modules
+  provide it", sending people to add a module they already had. A multi-line
+  `#error` also closed its own string literal, so the generated file stopped
+  parsing and the compiler blamed something else entirely.
+
+### Added
+
+- **`@Inject(from:)`** names which module to take a value from:
+
+      @Inject var primary: PostgresDataSource
+      @Inject(from: PostgresDataModule<Analytics>.self) var analytics: PostgresDataSource
+
+  A module *type*, so it is checked: it must be in the application and must
+  provide that type, and each failure is its own build error naming it. It
+  resolves entirely at build time — the property is still a stored value read
+  directly, with no lookup. This is the replacement for `@Inject("name")`,
+  removed in 0.20.0 because a string had nothing to resolve against.
+
+- **`FlightModule.defaultProviders`** says which module answers an unqualified
+  `@Inject` when two provide the same type:
+
+      static var defaultProviders: [any FlightModule.Type] {
+          [PostgresDataModule<PrimaryDataSource>.self]
+      }
+
+  Defaults to empty and is consulted only on ambiguity, so adding a second pool
+  does not force every consumer that wants the first to say so. Declared by the
+  application's own module, because that is where the instantiations are named:
+  a generic module cannot mark one of its own specializations special, and the
+  build plugin only scans the application's target.
+
+  Two providers and no default is a build error that carries the fix — both
+  providers, the `defaultProviders` block to paste, and the `@Inject(from:)`
+  line. See DECISIONS.md D27 for the alternatives this was chosen over.
+
 ## [0.20.0] - 2026-09-17
 
 Three pieces of inert public API leave, plus a fourth that was worse than

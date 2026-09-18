@@ -11,7 +11,7 @@ import FlightConfig
 /// `qualifier:` to say — both were removed in 0.20.0, and a declaration still
 /// carrying one gets a build error naming the migration. The property-level
 /// `@Inject("name")` went in the same release, for its own reasons: see
-/// ``Inject()``.
+/// ``Inject(from:)``.
 ///
 /// The exact expansions are pinned by Tests/Core/FlightCoreMacroTests — those
 /// fixtures are the spec, more precise than this comment.

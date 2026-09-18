@@ -265,6 +265,9 @@ final class ModuleVisitor: SyntaxVisitor {
     let converter: SourceLocationConverter
     var lanes: [ScannedPipelineLane] = []
     var modules: [ScannedModule] = []
+    /// Non-private stored properties with no written type. Collected rather
+    /// than emitted here: this is a `SyntaxVisitor`, and `emit` is MainActor.
+    var untypedProvides: [(file: String, line: Int, message: String)] = []
     /// Module types named in a `modules:` argument — the bootstrap list.
     ///
     /// This is the fact that makes conditional inclusion static. It was
@@ -410,10 +413,34 @@ final class ModuleVisitor: SyntaxVisitor {
             else { continue }
             for binding in variable.bindings {
                 guard binding.accessorBlock == nil,
-                      let type = binding.typeAnnotation?.type.trimmedDescription,
                       let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?
                           .identifier.text
                 else { continue }
+                guard let type = binding.typeAnnotation?.type.trimmedDescription else {
+                    // A non-private stored property with an inferred type is
+                    // almost certainly meant to be provided, and silently is
+                    // not: matching needs the type as written, so the module
+                    // provides it in fact and not in the composer's view.
+                    //
+                    // `FlightSchedulerModule` shipped that way —
+                    // `public let status = SchedulerStatus()` — so
+                    // `@Inject var scheduler: SchedulerStatus`, which
+                    // Actuator's own documentation shows, could not be
+                    // satisfied by any application. Nothing said anything.
+                    if binding.initializer != nil {
+                        let location = converter.location(for: variable.position)
+                        untypedProvides.append(
+                            (
+                                file: file, line: location.line,
+                                message:
+                                    "\(name).\(identifier) has no written type, so composition "
+                                    + "cannot provide it — matching needs the type as written. "
+                                    + "Annotate it (`let \(identifier): SomeType = …`), or mark "
+                                    + "it private if it is not meant to be provided."
+                            ))
+                    }
+                    continue
+                }
                 provides.append((name: identifier, type: type))
             }
         }
@@ -973,6 +1000,9 @@ for module in manifest.modules {
             moduleScan.walk(tree)
             lanes.append(contentsOf: moduleScan.lanes)
             moduleGraph.append(contentsOf: moduleScan.modules)
+            for warning in moduleScan.untypedProvides {
+                emit("warning", warning.message, file: warning.file, line: warning.line)
+            }
             if module.name == manifest.targetModuleName {
                 bootstrapModules.append(contentsOf: moduleScan.bootstrapModules)
                 // Only the target's own source decides the application's
@@ -2044,7 +2074,15 @@ func emitFlightGraph(into out: inout String) {
         return base + suffix.prefix(1).uppercased() + suffix.dropFirst()
     }
 
-    let needsConfiguration = constructed.contains { !$0.configValues.isEmpty }
+    // A settings node always needs it, whether or not any field was recorded
+    // as a config value — the same asymmetry as the construction site below.
+    // Computed from `configValues` alone, a settings type whose fields all
+    // have defaults (which records none) made the graph pass `configuration`
+    // to an initializer that did not take it: "cannot find 'configuration' in
+    // scope", in generated code.
+    let needsConfiguration = constructed.contains {
+        !$0.configValues.isEmpty || stereotype(forAttribute: $0.attributeName) == "settings"
+    }
 
     // Published for `emitComposer`, which builds the graph from module
     // properties rather than leaving it to a factory to build lazily.

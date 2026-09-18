@@ -1384,6 +1384,41 @@ struct GeneratorTests {
                 "let flightWebModuleFlightTransport = FlightWebModule<FlightTransport>()"))
     }
 
+    @Test("a module property with no written type is warned about, not silently dropped")
+    func untypedModulePropertyIsWarned() throws {
+        // `FlightSchedulerModule` shipped as `public let status = SchedulerStatus()`.
+        // Matching needs the type as written, so the module provided
+        // `SchedulerStatus` in fact and not in the composer's view, and
+        // `@Inject var scheduler: SchedulerStatus` — which Actuator's own
+        // documentation shows — could not be satisfied by any application.
+        // Nothing said anything, which is the part worth fixing.
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            struct Helper: Sendable {}
+            struct AppModule: FlightModule {
+            let helper = Helper()
+            private let hidden = Helper()
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        // A warning, not an error: the module may genuinely not mean to
+        // provide it, and a build that refused would be worse than one that
+        // says so.
+        #expect(result.exitCode == 0)
+        #expect(result.diagnostics.contains("helper has no written type"))
+        // `private` is how you say "not provided", so it must stay quiet.
+        #expect(!result.diagnostics.contains("hidden"))
+    }
+
     @Test("a @Settings type a component injects is built by the graph")
     func settingsComposeAsGraphNodes() throws {
         // `@Settings` was excluded from the graph, so a settings type arrived

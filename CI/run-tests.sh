@@ -21,8 +21,21 @@ status=${PIPESTATUS[0]}
 
 echo ""
 echo "── summary"
-grep -E "Test run with [0-9]+ tests" "$log" | tail -1 | sed 's/^/  swift-testing: /' || true
-xctest=$(grep -oE "Executed [0-9]+ tests, with [0-9]+ failures" "$log" | tail -1)
+# Sum every bundle. `swift test` prints one "Test run with N tests" per test
+# bundle, so `tail -1` reports whichever bundle happened to finish last: it
+# printed 0 for hangar's 324-test run and 14 for a flight-data run of 434.
+# This script exists so a number here cannot lie, and that number was lying.
+swifttesting=$(grep -oE "Test run with [0-9]+ tests" "$log" \
+  | grep -oE "[0-9]+" \
+  | awk '{ total += $1; bundles++ } END { if (bundles) printf "%d tests across %d bundle(s)", total, bundles }')
+if [ -n "$swifttesting" ]; then
+  echo "  swift-testing: $swifttesting"
+else
+  echo "  swift-testing: no bundle reported a total"
+fi
+
+xctest=$(grep -oE "Executed [0-9]+ tests, with [0-9]+ failures" "$log" \
+  | awk '{ t += $2; f += $5 } END { if (NR) printf "%d tests, %d failures across %d bundle(s)", t, f, NR }')
 [ -n "$xctest" ] && echo "  XCTest:        $xctest"
 
 if grep -qE "Executed [0-9]+ tests, with [1-9][0-9]* failures" "$log"; then

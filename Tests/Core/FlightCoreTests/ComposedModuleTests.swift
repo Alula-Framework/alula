@@ -5,10 +5,11 @@ import Testing
 /// The shape D11 moves modules to: a module takes what it needs as
 /// initializer parameters and holds what it provides as stored properties.
 ///
-/// `Flight.assemble(configuration:modules:)`'s type-based overload cannot
-/// express that — it instantiates modules itself, so every module has to be
-/// constructible with no arguments, which is why one reads configuration
-/// through the container instead of taking it. The instance overload takes
+/// The container-era `assemble` overload that took module *types* could not
+/// express that — it instantiated modules itself, so every module had to be
+/// constructible with no arguments, which is why one read configuration
+/// through the container rather than taking it. That overload went with the
+/// container in 0.17.0, and `assemble` now has exactly one form: it takes
 /// what a caller already built.
 @Suite("A module that owns what it provides")
 struct ComposedModuleTests {

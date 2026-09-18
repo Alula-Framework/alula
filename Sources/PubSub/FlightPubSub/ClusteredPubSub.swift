@@ -56,10 +56,11 @@ public final class ClusteredPubSub: PubSub, Sendable {
     ///   - local: In-process delivery. Every publish reaches these
     ///     subscribers first and synchronously, whatever the adapter does.
     ///   - adapter: The cluster hop — what carries a publish to the other
-    ///     nodes and delivers theirs back. No adapter ships yet; the
-    ///     protocol is two methods, narrow enough to write against Valkey,
-    ///     NATS or Redis, and `FlightPubSubTesting`'s `InMemoryCluster` is
-    ///     the only conforming implementation today.
+    ///     nodes and delivers theirs back. flight-data ships one,
+    ///     `FlightPubSubValkey`'s `ValkeyPubSubAdapter`; the protocol is two
+    ///     methods, narrow enough to write against NATS or Redis too, and
+    ///     `FlightPubSubTesting`'s `InMemoryCluster` is a second conforming
+    ///     implementation used to test the clustered paths.
     ///   - nodeID: A human-meaningful name for this node. Need not be
     ///     unique; correctness does not depend on it.
     ///   - broadcastTimeout: How long `publish` will wait on the adapter

@@ -22,13 +22,14 @@ import FlightCore
 import FlightSecurityCore
 import FlightWeb
 
-try await Flight.bootstrap(
-    configuration: .load(),
+await Flight.run(
+    configuration: try Configuration.load(),
     modules: [
         FlightWebModule<FlightTransport>.self,
         FlightOIDCModule.self,
         AppModule.self,
-    ]
+    ],
+    composedBy: flightComposeModules
 )
 ```
 
@@ -322,7 +323,8 @@ its own, and its dependencies are gated behind the `Security` trait:
 
 ```sh
 swift build --enable-all-traits
-swift test  --enable-all-traits   # 110 tests, hermetic (in-memory JWKS/HTTP fakes, injected clocks)
+swift test  --enable-all-traits --filter FlightSecurityCoreTests
+# hermetic: in-memory JWKS/HTTP fakes, injected clocks — no network, no clock skew
 ```
 
 Depends on `FlightCore` and `FlightWeb`, plus JWTKit and AsyncHTTPClient

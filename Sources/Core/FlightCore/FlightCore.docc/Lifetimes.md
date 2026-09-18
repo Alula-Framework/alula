@@ -38,7 +38,7 @@ anyway, rather than the first request unlucky enough to touch it.
 
 ## Where the other lifetimes went
 
-**Per-request state** rides ``RequestContext`` as a typed value. The
+**Per-request state** rides `RequestContext` as a typed value. The
 authenticated principal is the worked example: the authentication middleware
 writes it into the copy it passes downstream — no registration, no scope. A
 per-request object your own code needs is built by the controller, which a

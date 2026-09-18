@@ -2021,11 +2021,12 @@ func emitFlightGraph(into out: inout String) {
 //
 // `modules:` stays the declaration — the list of subsystems, written by the
 // author and read by this generator — and this is what that list *means*
-// once a module can take what it needs. Without a composer, Flight
-// instantiates each module from its type, so a module must be constructible
-// with no arguments; with one, a module declares its inputs and holds what it
-// provides
-// (COMPOSITION-MIGRATION.md D11).
+// once a module can take what it needs: a module declares its inputs and
+// holds what it provides (COMPOSITION-MIGRATION.md D11).
+//
+// There is no composer-less path to fall back to. `composedBy` has no default
+// and every entry point takes built instances; the type-based one went with
+// the container in 0.17.0.
 //
 // A module that still declares `init()` is called that way, so this works
 // before any module moves and each conversion is one local change.

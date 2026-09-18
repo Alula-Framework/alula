@@ -14,9 +14,10 @@ rather than a rewrite.
 ``FlightTransport`` is the production answer to that seam:
 
 ```swift
-try await Flight.bootstrap(
+await Flight.run(
     configuration: try Configuration.load(),
-    modules: [FlightWebModule<FlightTransport>.self, AppModule.self]
+    modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
+    composedBy: flightComposeModules
 )
 ```
 

@@ -93,8 +93,15 @@ public struct ChannelBroadcaster: Sendable {
     /// code stamping a reserved key, and every broadcaster in this process is
     /// equally the framework. A per-instance token would additionally have to
     /// be threaded down to every `SocketSession`, for no threat it stops.
-    /// Never serialized to another node — a clustered frame arrives without
-    /// it and takes the validating decode path, which is correct.
+    /// It cannot be *used* on another node: a per-process UUID never matches
+    /// there, so a clustered frame takes the validating decode path, which is
+    /// correct.
+    ///
+    /// It does still cross the wire, inside the precomputed frame a clustered
+    /// publish carries — measured at 687 bytes against the 241 the payload
+    /// needs, 2.85×. This comment used to claim it was never serialized at
+    /// all. Not sending the precomputed frame cross-node is the fix; that is a
+    /// wire-format change and has not been made.
     internal static let frameToken = UUID().uuidString
 
     private let pubsub: any PubSub

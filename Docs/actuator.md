@@ -13,13 +13,14 @@ with no special access to Core or Web:
 ```swift
 import FlightActuator
 
-try await Flight.bootstrap(
+await Flight.run(
     configuration: try Configuration.load(),
     modules: [
         FlightWebModule<FlightTransport>.self,
         ActuatorModule.self,
         AppModule.self,
-    ]
+    ],
+    composedBy: flightComposeModules
 )
 ```
 

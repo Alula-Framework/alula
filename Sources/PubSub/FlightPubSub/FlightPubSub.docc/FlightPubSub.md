@@ -26,13 +26,17 @@ publish that races it.
 ``ClusteredPubSub`` wraps it with a ``DistributedPubSubAdapter`` so a publish
 on one node reaches subscribers on every node.
 
-**No adapter ships yet.** ``DistributedPubSubAdapter`` is a seam, not a
-feature with an implementation behind it: two methods — broadcast one
-message, receive a stream of others' — narrow enough to write against Valkey,
-NATS or Redis in an afternoon, but until you do, every deployment is
-effectively single-node. `FlightPubSubTesting`'s `InMemoryCluster` is the
-only conforming implementation today, and it exists to test the clustered
-paths rather than to run them.
+**An adapter ships in flight-data.** `FlightPubSubValkey`'s
+`ValkeyPubSubAdapter` implements ``DistributedPubSubAdapter`` over Valkey, and
+`FlightPubSubValkeyModule` wires it, so a clustered deployment is configuration
+rather than an afternoon's work. This page said "no adapter ships yet" for
+several releases after that stopped being true.
+
+The seam is still deliberately narrow — two methods, broadcast one message and
+receive a stream of others' — so writing one against NATS or Redis remains
+small. `FlightPubSubTesting`'s `InMemoryCluster` is a second conforming
+implementation, and it exists to test the clustered paths rather than to run
+them.
 
 ## Local first, clustered by configuration
 
@@ -60,4 +64,3 @@ indifferent to deployment shape.
 
 - ``FlightPubSubModule``
 - ``PubSubRelayService``
-- ``PubSubWiringError``

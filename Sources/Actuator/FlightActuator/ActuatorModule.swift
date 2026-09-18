@@ -6,9 +6,10 @@ import class Foundation.ProcessInfo
 /// Flight Actuator's one entry point — a `FlightModule`, nothing more.
 /// Registered like everything else:
 ///
-///     try await Flight.bootstrap(
-///         configuration: .load(),
-///         modules: [FlightWebModule<FlightTransport>.self, ActuatorModule.self]
+///     await Flight.run(
+///         configuration: try Configuration.load(),
+///         modules: [FlightWebModule<FlightTransport>.self, ActuatorModule.self],
+///         composedBy: flightComposeModules
 ///     )
 ///
 /// ## Access gating

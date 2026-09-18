@@ -9,8 +9,9 @@ import Synchronization
 /// ServiceGroup — is exercised for real. Its `run()` parks until graceful
 /// shutdown or cancellation, like any suspending `Service` (§5.3).
 ///
-///     try await Flight.bootstrap(configuration: config,
-///                         modules: [FlightWebModule<InMemoryTransport>.self, AppModule.self])
+///     try await Flight.bootstrap(
+///         configuration: config,
+///         modules: try flightComposeModules(config, ModuleHealthRegistry()))
 ///     // from another task:
 ///     let response = try await InMemoryTransportHub.execute(Request(path: "/users/1"))
 public struct InMemoryTransport: ServerTransport {

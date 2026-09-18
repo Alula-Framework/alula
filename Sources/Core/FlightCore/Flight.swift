@@ -15,9 +15,10 @@ import ServiceLifecycle
 /// with its own `bootstrap()` would collide with one it never asked for.
 ///
 /// ```swift
-/// try await Flight.bootstrap(
+/// await Flight.run(
 ///     configuration: try Configuration.load(),
-///     modules: [WebModule.self, DataModule.self]
+///     modules: [WebModule.self, DataModule.self],
+///     composedBy: flightComposeModules
 /// )
 /// ```
 public enum Flight {
@@ -55,9 +56,10 @@ public enum Flight {
     /// @main
     /// struct App {
     ///     static func main() async throws {
+    ///         let configuration = try Configuration.load()
     ///         try await Flight.bootstrap(
-    ///             configuration: try Configuration.load(),
-    ///             modules: [WebModule.self, DataModule.self]
+    ///             configuration: configuration,
+    ///             modules: try flightComposeModules(configuration, ModuleHealthRegistry())
     ///         )
     ///     }
     /// }
@@ -82,7 +84,8 @@ public enum Flight {
     ///     static func main() async {
     ///         await Flight.run(
     ///             configuration: try Configuration.load(),
-    ///             modules: [FlightWebModule<FlightTransport>.self, AppModule.self]
+    ///             modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
+    ///             composedBy: flightComposeModules
     ///         )
     ///     }
     /// }
@@ -114,16 +117,17 @@ public enum Flight {
     /// embedder that wants the error rather than the exit uses `bootstrap`.
     /// `composedBy` is how a module gets to take what it needs.
     ///
-    /// Without it, this instantiates every module from its type, so a module
-    /// must be constructible with no arguments — which is why one reads
-    /// configuration directly rather than declaring it as a
-    /// parameter. The build plugin generates a composer that constructs them
-    /// in dependency order instead, and `flight new` writes the argument;
+    /// `composedBy` is **required**, and there is no path without it. Every
+    /// entry point here — `run`, `bootstrap`, `assemble` — takes modules the
+    /// composition root already built, because a module that declares its
+    /// inputs as initializer parameters cannot be constructed from its type
+    /// alone. The type-based path left with the container in 0.17.0.
+    ///
+    /// The build plugin generates that composer, constructing modules in
+    /// dependency order, and `flight new` writes the argument; a module that
+    /// still declares `init()` is constructed that way by the composer itself.
     /// `modules:` stays the declaration of which subsystems this application
     /// includes, and is what the plugin reads to know.
-    ///
-    /// Omit it and nothing changes: the type-based path is unchanged and
-    /// remains supported.
     public static func run(
         configuration: @autoclosure @Sendable () throws -> Configuration,
         modules: [any FlightModule.Type],

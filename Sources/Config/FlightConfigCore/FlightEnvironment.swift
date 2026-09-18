@@ -25,7 +25,7 @@ import Foundation
 /// ```
 ///
 /// A value that is not one of the built-ins is still a perfectly good
-/// environment — ``current()`` returns it as itself rather than silently
+/// environment — ``current(prefix:)`` returns it as itself rather than silently
 /// collapsing it to ``dev``.
 public struct FlightEnvironment: RawRepresentable, Sendable, Hashable, Codable {
 

@@ -19,7 +19,8 @@ struct App {
     static func main() async {
         await Flight.run(
             configuration: try Configuration.load(),
-            modules: [WebModule.self, DataModule.self]
+            modules: [WebModule.self, DataModule.self],
+            composedBy: flightComposeModules
         )
     }
 }
@@ -68,18 +69,26 @@ Building the whole graph once, up front, is what lets a request reach its
 dependencies with no lookup at all, and it is why the graph is fixed after
 composition rather than something a running application adds to.
 
-## Components are `Sendable`
+## Components should be `Sendable`
 
 A singleton is built once and shared for the whole application, reachable from
 every thread that serves a request. A mutable, non-`Sendable` component shared
-between two actors would be a data race with no diagnostic — composition is
-exactly the place where shared state gets shared, so the requirement belongs
-here.
+between two actors is a data race with no diagnostic — composition is exactly
+the place where shared state gets shared, so the requirement belongs here.
 
 ```swift
 @Service final class UserService: Sendable { }        // ✅
-final class Counter { var count = 0 }                 // ❌ won't compile
+@Service final class Counter { var count = 0 }        // ⚠️ compiles, and races
 ```
+
+**This is a convention, not something the compiler checks for you.** That
+enforcement left with the container in 0.17.0. `@Service` adds an initializer
+and nothing else — no conformance, no constraint — so a component is only
+forced to be `Sendable` when something that is itself `Sendable` stores it.
+The second line above was compiled to check this claim, and it builds cleanly.
+
+Declare `Sendable` and the compiler will check the inside of the type for you.
+Omit it and nothing will remind you.
 
 For per-request mutable state, carry it on `RequestContext` — it rides the
 request as a typed value, not a shared component.

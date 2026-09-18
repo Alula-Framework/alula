@@ -258,7 +258,7 @@ builds with the repository:
 
 ```
 swift build --enable-all-traits
-swift test  --enable-all-traits    # 70 PubSub tests across 11 suites
+swift test  --enable-all-traits --filter FlightPubSubTests
 ```
 
 A plain `swift build` at the root fails by design — the trait-gated targets

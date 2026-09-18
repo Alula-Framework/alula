@@ -5,9 +5,10 @@ import ServiceLifecycle
 /// The composition-root module (§5.3, §8): choosing a transport is choosing
 /// which of these to include —
 ///
-///     try await Flight.bootstrap(
-///         configuration: .load(),
-///         modules: [FlightWebModule<FlightTransport>.self, AppModule.self]
+///     await Flight.run(
+///         configuration: try Configuration.load(),
+///         modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
+///         composedBy: flightComposeModules
 ///     )
 ///
 /// It provides no routes of its own; controllers contribute their routes as

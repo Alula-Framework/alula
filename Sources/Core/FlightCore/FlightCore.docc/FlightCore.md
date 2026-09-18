@@ -22,9 +22,10 @@ final class UserService: Sendable {
 ```
 
 ```swift
-try await Flight.bootstrap(
+await Flight.run(
     configuration: try Configuration.load(),
-    modules: [WebModule.self, DataModule.self]
+    modules: [WebModule.self, DataModule.self],
+    composedBy: flightComposeModules
 )
 ```
 
@@ -41,11 +42,16 @@ rather than the first request unlucky enough to touch it. Afterwards every
 component is a shared singleton, reached directly, so there is nothing to
 resolve per request.
 
-## Components are Sendable
+## Components should be Sendable
 
-A singleton is shared across every task in the process, so it must be
-`Sendable`, and the compiler enforces it: a shared, mutable, non-`Sendable`
-singleton handed to two tasks is a data race with no diagnostic at all.
+A singleton is shared across every task in the process, so in practice it must
+be `Sendable`: a shared, mutable, non-`Sendable` singleton handed to two tasks
+is a data race with no diagnostic at all.
+
+Nothing checks this for you. `@Service` adds an initializer; it adds no
+conformance and no constraint, and a mutable `final class` component compiles
+cleanly — the constraint left with the container in 0.17.0. Declaring
+`Sendable` is what turns the requirement into something the compiler can see.
 
 Per-request mutable state does not belong on a singleton. It rides the request
 context as a typed value — one copy per request, never shared between them.

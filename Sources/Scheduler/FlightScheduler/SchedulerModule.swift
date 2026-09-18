@@ -5,9 +5,10 @@ import ServiceLifecycle
 /// Provides the scheduler.
 ///
 /// ```swift
-/// try await Flight.bootstrap(
+/// await Flight.run(
 ///     configuration: try Configuration.load(),
-///     modules: [FlightSchedulerModule.self, AppModule.self]
+///     modules: [FlightSchedulerModule.self, AppModule.self],
+///     composedBy: flightComposeModules
 /// )
 /// ```
 ///

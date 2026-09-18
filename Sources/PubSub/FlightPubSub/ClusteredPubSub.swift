@@ -21,6 +21,23 @@ import Logging
 /// metadata whether a message travelled zero hops or one.
 public final class ClusteredPubSub: PubSub, Sendable {
 
+    /// Metadata keys under this prefix (`flight.local.`) are delivered to
+    /// subscribers on this node and **never broadcast to other nodes**.
+    ///
+    /// For per-process values that cost bandwidth and buy nothing remotely.
+    /// Channels precomputes the exact wire frame every local subscriber will
+    /// send and passes it under this prefix: one encode here replaces N
+    /// decodes and N re-encodes at delivery, which is a large win locally and
+    /// meaningless on another node, where the frame is keyed to a process
+    /// token that can never match and the receiver decodes anyway.
+    ///
+    /// It used to cross the wire regardless — a clustered broadcast carried
+    /// the payload twice, measured at 687 bytes against the 241 it needed.
+    /// A module wanting a local-only optimisation names its key under this
+    /// prefix and gets that for free, without this type knowing what the
+    /// value means.
+    public static let localOnlyMetadataPrefix = "flight.local."
+
     /// Reserved metadata key (`flight.pubsub.origin`) carrying the
     /// originating node's ID across the wire. Caller-supplied values under
     /// this key are overwritten on broadcast and stripped on delivery —
@@ -101,7 +118,12 @@ public final class ClusteredPubSub: PubSub, Sendable {
         // not hold, and the place where a forged value would be believed.
         await local.publish(stripping(message))
 
-        var metadata = message.metadata
+        // Local-only keys are dropped before the hop, not after: they are
+        // useless on the far side and paid for on every byte of every
+        // broadcast. Local delivery above still has them.
+        var metadata = message.metadata.filter {
+            !$0.key.hasPrefix(Self.localOnlyMetadataPrefix)
+        }
         metadata[Self.originMetadataKey] = nodeID
         metadata[Self.instanceMetadataKey] = instanceToken
         let stamped = Message(topic: message.topic, payload: message.payload, metadata: metadata)

@@ -69,12 +69,16 @@ public struct ChannelBroadcaster: Sendable {
     /// (Presence hand-builds one directly) produces a `Message` with no such
     /// key, and `pump` falls back to decoding it exactly as before. Nothing
     /// depends on this key being present.
-    internal static let precomputedFrameMetadataKey = "flight.channels.frame"
+    /// Named under ``ClusteredPubSub/localOnlyMetadataPrefix`` so the cluster
+    /// hop drops it: the frame is keyed to a process token no other node can
+    /// match, so sending it meant paying for the payload twice on every
+    /// clustered broadcast.
+    internal static let precomputedFrameMetadataKey = "flight.local.channels.frame"
 
     /// Names the broadcaster instance that stamped a precomputed frame.
     ///
     /// Without it the key above is an unvalidated injection seam: any
-    /// in-process publisher that stamped `flight.channels.frame` on a
+    /// in-process publisher that stamped `flight.local.channels.frame` on a
     /// `Message` got that string forwarded verbatim to every joined socket,
     /// *bypassing the reserved-event guard and valid-envelope framing* — so
     /// app code that misused a reserved key could push a `flight:join` to
@@ -85,7 +89,7 @@ public struct ChannelBroadcaster: Sendable {
     /// The same shape `ClusteredPubSub` uses for echo suppression, and for
     /// the same reason: an operator-supplied or guessable name is not a
     /// capability.
-    internal static let frameTokenMetadataKey = "flight.channels.frame-token"
+    internal static let frameTokenMetadataKey = "flight.local.channels.frame-token"
 
     /// The value under ``frameTokenMetadataKey``.
     ///
@@ -97,11 +101,13 @@ public struct ChannelBroadcaster: Sendable {
     /// there, so a clustered frame takes the validating decode path, which is
     /// correct.
     ///
-    /// It does still cross the wire, inside the precomputed frame a clustered
-    /// publish carries — measured at 687 bytes against the 241 the payload
-    /// needs, 2.85×. This comment used to claim it was never serialized at
-    /// all. Not sending the precomputed frame cross-node is the fix; that is a
-    /// wire-format change and has not been made.
+    /// It no longer crosses the wire. Both this key and the frame it
+    /// validates live under ``ClusteredPubSub/localOnlyMetadataPrefix``, which
+    /// `ClusteredPubSub` strips before broadcasting, so a clustered publish
+    /// carries the payload once instead of twice — it was measured at 687
+    /// bytes against the 241 it needed, 2.85×. An earlier version of this
+    /// comment claimed it was never serialized; it was, for as long as the
+    /// keys sat outside that prefix.
     internal static let frameToken = UUID().uuidString
 
     private let pubsub: any PubSub

@@ -1,4 +1,4 @@
-import FlightChannels
+@testable import FlightChannels
 import FlightChannelsTesting
 import FlightPubSub
 import FlightWeb
@@ -262,9 +262,14 @@ struct SocketHandlerBroadcastTests {
                 topic: "room:42",
                 payload: Data(),
                 metadata: [
-                    "flight.channels.frame":
+                    // The constants, not their spellings. Written out, a
+                    // rename moves the key the broadcaster reads while this
+                    // test keeps stamping the old one — and then it passes
+                    // because nothing recognises the key, not because the
+                    // forged token was refused.
+                    ChannelBroadcaster.precomputedFrameMetadataKey:
                         #"{"event":"flight:join","payload":{"forged":true},"topic":"room:42"}"#,
-                    "flight.channels.frame-token": "guessed",
+                    ChannelBroadcaster.frameTokenMetadataKey: "guessed",
                 ]))
 
         // Nothing forged arrives. Prove it with a marker that must come after.

@@ -36,6 +36,30 @@ struct ClusteredPubSubTests {
         #expect(broadcast.metadata["user"] == "abc")
     }
 
+    @Test("local-only metadata is delivered here and never broadcast")
+    func localOnlyMetadataStaysLocal() async {
+        let (clustered, adapter) = makeNode()
+        var iterator = clustered.subscribe("room:1").makeAsyncIterator()
+        let localKey = ClusteredPubSub.localOnlyMetadataPrefix + "channels.frame"
+
+        await clustered.publish(
+            msg("room:1", "hello", metadata: [localKey: "precomputed", "user": "abc"]))
+
+        // Local delivery keeps it — that is the entire point of precomputing.
+        let received = await iterator.next()
+        #expect(received?.metadata[localKey] == "precomputed")
+
+        // The hop does not. Channels puts the exact wire frame under this
+        // prefix, which is a large win locally and dead weight remotely: it is
+        // keyed to a process token no other node can match, so the receiver
+        // decodes anyway. Sending it meant the payload crossed twice.
+        let broadcast = adapter.broadcasts[0]
+        #expect(broadcast.metadata[localKey] == nil)
+        // Everything else still travels, so this is a filter and not a purge.
+        #expect(broadcast.metadata["user"] == "abc")
+        #expect(broadcast.metadata[ClusteredPubSub.originMetadataKey] == "node-under-test")
+    }
+
     @Test("a caller-supplied value under the reserved origin key is overwritten")
     func reservedKeyOverwritten() async {
         let (clustered, adapter) = makeNode()

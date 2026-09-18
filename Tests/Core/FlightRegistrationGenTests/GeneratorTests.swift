@@ -1324,8 +1324,13 @@ struct GeneratorTests {
         // wrong transport.
         #expect(result.generated.contains("#error("))
         #expect(result.generated.contains("Composition is ambiguous"))
-        #expect(result.generated.contains("natsModule.adapter"))
-        #expect(result.generated.contains("valkeyModule.adapter"))
+        // Named as `Module.property`, not by the binding this generator
+        // invented — `natsModule.adapter` is an identifier the reader has
+        // never seen and cannot search for.
+        #expect(result.generated.contains("NatsModule.adapter"))
+        #expect(result.generated.contains("ValkeyModule.adapter"))
+        // And it carries the remedy, which is the point of the message.
+        #expect(result.generated.contains("defaultProviders"))
     }
 
     @Test("a module's computed service is not something another module can take")
@@ -1377,6 +1382,133 @@ struct GeneratorTests {
         #expect(
             result.generated.contains(
                 "let flightWebModuleFlightTransport = FlightWebModule<FlightTransport>()"))
+    }
+
+    @Test("defaultProviders answers the unqualified inject, from: answers the other")
+    func defaultProviderAndNamedProvider() throws {
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            enum Primary: Sendable {}
+            enum Analytics: Sendable {}
+            struct Pool: Sendable {}
+            struct PoolModule<Name: Sendable>: FlightModule {
+            let pool: Pool
+            init() { pool = Pool() }
+            }
+            @Service struct Reporter: Sendable {
+            // flight:hand-registered — PoolModule provides it.
+            @Inject var primary: Pool
+            // flight:hand-registered — PoolModule<Analytics> provides it.
+            @Inject(from: PoolModule<Analytics>.self) var analytics: Pool
+            }
+            struct AppModule: FlightModule {
+            static var dependencies: [any FlightModule.Type] {
+            [PoolModule<Primary>.self, PoolModule<Analytics>.self]
+            }
+            static var defaultProviders: [any FlightModule.Type] { [PoolModule<Primary>.self] }
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        // Two roots, not one shared: the second is keyed by the provider it
+        // named, or both properties would read the same pool.
+        #expect(result.generated.contains("let pool: Pool"))
+        #expect(result.generated.contains("let poolAnalytics: Pool"))
+        #expect(
+            result.generated.contains(
+                "FlightGraph(pool: poolModulePrimary.pool, poolAnalytics: poolModuleAnalytics.pool)"
+            ))
+        #expect(result.generated.contains("Reporter(primary: pool, analytics: poolAnalytics)"))
+    }
+
+    @Test("two providers and no default is an error that shows how to fix it")
+    func ambiguityCarriesItsRemedy() throws {
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            enum Primary: Sendable {}
+            enum Analytics: Sendable {}
+            struct Pool: Sendable {}
+            struct PoolModule<Name: Sendable>: FlightModule {
+            let pool: Pool
+            init() { pool = Pool() }
+            }
+            @Service struct Reporter: Sendable {
+            // flight:hand-registered — PoolModule provides it.
+            @Inject var primary: Pool
+            }
+            struct AppModule: FlightModule {
+            static var dependencies: [any FlightModule.Type] {
+            [PoolModule<Primary>.self, PoolModule<Analytics>.self]
+            }
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        // Carried into the generated file as `#error`, not to stderr: the
+        // consumer's compiler is what must refuse, at a line it points at.
+        #expect(result.generated.contains("Composition is ambiguous"))
+        // The remedy, not just the complaint — this is the moment an
+        // application acquires a second provider and the build is the only
+        // thing that knows.
+        #expect(result.generated.contains("defaultProviders"))
+        #expect(result.generated.contains("@Inject(from:"))
+        // And not the contradiction it used to print alongside: `provider`
+        // returns nil for ambiguity as well as absence, and claiming nothing
+        // provides Pool while two modules do sent people hunting for a module
+        // to add.
+        #expect(!result.generated.contains("no module in this application provides it"))
+        // No editor placeholder either: `<#…#>` is itself a compile error, so
+        // it buried the message above under "editor placeholder in source file".
+        #expect(!result.generated.contains("<#"))
+    }
+
+    @Test("from: naming a module the application does not include is an error")
+    func namedProviderMustBeInTheApplication() throws {
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            enum Primary: Sendable {}
+            enum Analytics: Sendable {}
+            struct Pool: Sendable {}
+            struct PoolModule<Name: Sendable>: FlightModule {
+            let pool: Pool
+            init() { pool = Pool() }
+            }
+            @Service struct Reporter: Sendable {
+            // flight:hand-registered — PoolModule provides it.
+            @Inject(from: PoolModule<Analytics>.self) var analytics: Pool
+            }
+            struct AppModule: FlightModule {
+            static var dependencies: [any FlightModule.Type] { [PoolModule<Primary>.self] }
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.generated.contains("does not include"))
     }
 
     @Test("two instantiations of one generic module get two bindings")

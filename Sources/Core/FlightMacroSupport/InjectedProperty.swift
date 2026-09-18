@@ -34,6 +34,25 @@ public struct InjectedProperty {
         self.node = node
     }
 
+    /// The `from:` argument's source text, when the property named a provider.
+    ///
+    /// Read back off the declaration rather than carried in `Kind`, because
+    /// nothing in the *expansion* depends on it: the generated initializer
+    /// takes the value by type either way. Only two things care — the
+    /// same-type check below, and the build plugin, which does its own scan.
+    public var providerText: String? {
+        for attribute in node.attributes {
+            guard case .attribute(let syntax) = attribute,
+                syntax.attributeName.trimmedDescription == "Inject",
+                case .argumentList(let arguments)? = syntax.arguments
+            else { continue }
+            for argument in arguments where argument.label?.text == "from" {
+                return argument.expression.trimmedDescription
+            }
+        }
+        return nil
+    }
+
     /// The type as written, parenthesized where `.self` would otherwise bind
     /// to the wrong thing.
     ///

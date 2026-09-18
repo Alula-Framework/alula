@@ -94,7 +94,7 @@ struct ScannedComponent {
     /// `flight:hand-registered` property is declared before an injected one —
     /// `UserController(sockets:validator:)` against an
     /// `init(validator:sockets:)`. Caught by the demo's `SocketController`.
-    let dependencyOrder: [(type: String, label: String)]
+    let dependencyOrder: [(type: String, label: String, from: String?)]
 
     /// As `injectPropertyNames`, for the acknowledged edges.
     let acknowledgedPropertyNames: [String]
@@ -226,10 +226,16 @@ struct ScannedModule {
     /// `init()`" picks correctly in both cases. The composer chooses the one
     /// it can actually supply.
     let initializers: [(labels: [String], types: [String], throws: Bool)]
-    /// Dependency type names as written, `.self` and any generic argument
-    /// stripped: `PostgresDataModule<PrimaryDataSource>.self` is
-    /// `PostgresDataModule`.
+    /// Dependency type names as written with `.self` dropped — the generic
+    /// argument is **kept**, because `PostgresDataModule<PrimaryDataSource>`
+    /// and `<Analytics>` are two modules (D27). This comment used to say the
+    /// argument was stripped; the code never did.
     let dependencies: [String]
+    /// The modules this one nominates to answer unqualified `@Inject` when
+    /// two provide the same type, from `static var defaultProviders`. Empty
+    /// for the overwhelming majority: it is only consulted on ambiguity, so an
+    /// application with one provider per type never writes it.
+    let defaultProviders: [String]
     /// The module's public stored properties — what it *provides*.
     ///
     /// D11 says a module is a value that holds what it provides, which makes
@@ -344,14 +350,30 @@ final class ModuleVisitor: SyntaxVisitor {
                       .identifier.text == "dependencies"
             else { continue }
             for element in arrayElements(of: variable) {
-                // `Foo<Bar>.self` -> `Foo`. The runtime treats each
-                // specialization as its own type; for ordering, the edge is
-                // what matters and the base name carries it.
+                // `Foo<Bar>.self` -> `Foo<Bar>`. Each specialization is its own
+                // module, so the argument travels with the edge.
                 guard let member = element.as(MemberAccessExprSyntax.self),
                       member.declName.baseName.tokenKind == .keyword(.self),
                       let base = member.base
                 else { continue }
                 dependencies.append(base.trimmedDescription)
+            }
+        }
+        // `static var defaultProviders` — scanned the same way, and only read
+        // when a type turns out to have two providers.
+        var defaultProviders: [String] = []
+        for member in members.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                  variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) }),
+                  variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?
+                      .identifier.text == "defaultProviders"
+            else { continue }
+            for element in arrayElements(of: variable) {
+                guard let member = element.as(MemberAccessExprSyntax.self),
+                      member.declName.baseName.tokenKind == .keyword(.self),
+                      let base = member.base
+                else { continue }
+                defaultProviders.append(base.trimmedDescription)
             }
         }
         // The initializer a composer would call. `init()` conformances are
@@ -398,7 +420,8 @@ final class ModuleVisitor: SyntaxVisitor {
         modules.append(
             ScannedModule(
                 typeName: name, initializers: initializers,
-                dependencies: dependencies, provides: provides, module: module))
+                dependencies: dependencies, defaultProviders: defaultProviders,
+                provides: provides, module: module))
     }
 
     /// The elements of the array literal a `dependencies` property returns,
@@ -695,7 +718,7 @@ final class ComponentVisitor: SyntaxVisitor {
         var injectNames: [String] = []
         var acknowledged: [String] = []
         var acknowledgedNames: [String] = []
-        var dependencyOrder: [(type: String, label: String)] = []
+        var dependencyOrder: [(type: String, label: String, from: String?)] = []
         var configValues: [ScannedConfigValue] = []
         for member in members.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
@@ -703,13 +726,20 @@ final class ComponentVisitor: SyntaxVisitor {
                 let binding = variable.bindings.first,
                 let type = binding.typeAnnotation?.type.trimmedDescription
             {
+                // `@Inject(from: SomeModule.self)` names which provider to take
+                // this from, for the case where two modules provide the type.
+                // Carried as source text; the composer matches it by module
+                // identity (D27).
+                let namedProvider = attribute(of: variable.attributes, named: "Inject")
+                    .flatMap { labeledArgumentSource(of: $0, label: "from") }
+                    .map(moduleTypeText(ofMetatype:))
                 let propertyName =
                     binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text ?? ""
                 // `member.description` spans the member's leading trivia
                 // through its last token's trailing trivia, so the marker is
                 // found whether it sits on the line above the property or as
                 // a same-line trailing comment.
-                dependencyOrder.append((type: type, label: propertyName))
+                dependencyOrder.append((type: type, label: propertyName, from: namedProvider))
                 if member.description.contains("flight:hand-registered") {
                     acknowledged.append(type)
                     acknowledgedNames.append(propertyName)
@@ -1028,6 +1058,39 @@ func moduleIdentity(_ text: String) -> String {
 /// `PostgresDataModule<PrimaryDataSource>` becomes
 /// `postgresDataModulePrimaryDataSource`, so two instantiations get two
 /// bindings instead of one that silently serves both.
+/// What to call a root that named its provider: `PostgresDataModule<Analytics>`
+/// becomes `Analytics`, because the generic argument is what tells two
+/// instantiations apart and is what an author would call the thing. A
+/// non-generic module keeps its own name.
+func providerSuffix(_ moduleText: String) -> String {
+    let identity = moduleIdentity(moduleText)
+    guard let open = identity.firstIndex(of: "<"), identity.hasSuffix(">") else { return identity }
+    let inside = String(identity[identity.index(after: open)..<identity.index(before: identity.endIndex)])
+    let arguments = splitTopLevelArguments(inside)
+    return arguments.isEmpty ? identity : arguments.joined()
+}
+
+/// The scanned *declaration* behind a module reference.
+///
+/// `includedModules` holds specializations — `PostgresDataModule<Analytics>` —
+/// while the scan saw one declaration, `PostgresDataModule`. Identity tells the
+/// instantiations apart, which is the point; `provides` and the initializers
+/// live on the declaration they share, so a lookup has to fall back to it.
+///
+/// Before module identity carried generic arguments this worked by accident:
+/// every key was generic-stripped, so specialization and declaration were the
+/// same string.
+func scannedModule(_ text: String, in byName: [String: ScannedModule]) -> ScannedModule? {
+    byName[moduleIdentity(text)] ?? byName[moduleKey(text)]
+}
+
+/// `PostgresDataModule<Analytics>.self` -> `PostgresDataModule<Analytics>`.
+func moduleTypeText(ofMetatype text: String) -> String {
+    var name = text.trimmingCharacters(in: .whitespaces)
+    if name.hasSuffix(".self") { name = String(name.dropLast(".self".count)) }
+    return name.trimmingCharacters(in: .whitespaces)
+}
+
 func moduleBindingName(_ text: String) -> String {
     var name = ""
     var capitalizeNext = false
@@ -1482,7 +1545,7 @@ func resolveIncludedModules() -> [String] {
         guard !seen.contains(key) else { return }
         seen.insert(key)
         // Dependencies first, the order `configure` runs in.
-        for dependency in byName[key]?.dependencies ?? [] {
+        for dependency in scannedModule(text, in: byName)?.dependencies ?? [] {
             visit(dependency)
         }
         // As written, generic argument and all: this is what constructs it.
@@ -1492,6 +1555,14 @@ func resolveIncludedModules() -> [String] {
     return ordered
 }
 let includedModules = resolveIncludedModules()
+
+/// Every module nominated by some `defaultProviders` in this application.
+///
+/// Flat, not per-type: a nomination says "prefer this module", and the type it
+/// settles is whichever ambiguous one it provides. Two modules nominated for
+/// the same type is not resolved here — `defaultProviderChoice` requires
+/// exactly one match and otherwise lets the ambiguity diagnostic fire.
+let defaultProviderModules: [String] = moduleGraph.flatMap(\.defaultProviders)
 
 // MARK: - @ConfigValue key check (compile-time case)
 //
@@ -1672,7 +1743,8 @@ func lanesInModuleOrder() -> [ScannedPipelineLane] {
     var inProgress: Set<String> = []
 
     func visit(_ name: String) {
-        guard let module = byName[name], !finished.contains(name) else { return }
+        guard let module = scannedModule(name, in: byName), !finished.contains(name)
+        else { return }
         // A cycle is caught by the build-time cycle check; nothing to add here
         // beyond not looping.
         guard !inProgress.contains(name) else { return }
@@ -1804,11 +1876,13 @@ where module != "FlightCore" && !dependencyModules.contains(module) {
 struct GraphRoots {
     var emitted = false
     var needsConfiguration = false
-    /// (label, type as written), in initializer order.
-    var supplied: [(label: String, type: String)] = []
+    /// (label, type as written, the module `@Inject(from:)` named), in
+    /// initializer order. `from` is nil for the ordinary case, and carried so
+    /// the composer can resolve two roots of one type to two providers.
+    var supplied: [(label: String, type: String, from: String?)] = []
     /// Extra parameters of `flightRoutes(_:…)` — values only a controller
     /// needs, deliberately kept out of the graph.
-    var terminalSupplied: [(label: String, type: String)] = []
+    var terminalSupplied: [(label: String, type: String, from: String?)] = []
 }
 var graphRoots = GraphRoots()
 
@@ -1905,12 +1979,20 @@ func emitFlightGraph(into out: inout String) {
 
     /// Roots the **graph itself** needs — a dependency of a stored component
     /// that the graph cannot build.
-    var supplied: [String] = []
+    // Keyed by type *and* named provider: `@Inject var primary: DataSource`
+    // beside `@Inject(from: X.self) var analytics: DataSource` is two roots,
+    // not one shared by both (D27). Without the provider in the key they
+    // collapse onto a single graph property and one pool serves both.
+    var supplied: [(type: String, from: String?)] = []
     var seenSupplied: Set<String> = []
+    func rootKey(_ type: String, _ from: String?) -> String {
+        "\(type)|\(from.map(moduleIdentity) ?? "")"
+    }
     for node in ordered {
-        for dependency in node.dependencyOrder.map(\.type)
-        where provider(of: dependency) == nil {
-            if seenSupplied.insert(dependency).inserted { supplied.append(dependency) }
+        for edge in node.dependencyOrder where provider(of: edge.type) == nil {
+            if seenSupplied.insert(rootKey(edge.type, edge.from)).inserted {
+                supplied.append((type: edge.type, from: edge.from))
+            }
         }
     }
 
@@ -1924,16 +2006,25 @@ func emitFlightGraph(into out: inout String) {
     /// the channel list, so nothing that builds channels from the graph could
     /// ever compose. A controller is not a component: it is constructed by its
     /// terminal, so what only it needs belongs to the terminal.
-    var terminalSupplied: [String] = []
+    var terminalSupplied: [(type: String, from: String?)] = []
     for node in terminalOnly {
-        for dependency in node.dependencyOrder.map(\.type)
-        where provider(of: dependency) == nil && !seenSupplied.contains(dependency) {
-            if !terminalSupplied.contains(dependency) { terminalSupplied.append(dependency) }
+        for edge in node.dependencyOrder
+        where provider(of: edge.type) == nil
+            && !seenSupplied.contains(rootKey(edge.type, edge.from))
+        {
+            if !terminalSupplied.contains(where: {
+                rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
+            }) {
+                terminalSupplied.append((type: edge.type, from: edge.from))
+            }
         }
     }
-    func suppliedBinding(_ typeText: String) -> String {
+    func suppliedBinding(_ typeText: String, from namedProvider: String? = nil) -> String {
         let name = baseName(existentialProtocolName(typeText) ?? typeText)
-        return name.prefix(1).lowercased() + name.dropFirst()
+        let base = name.prefix(1).lowercased() + name.dropFirst()
+        guard let namedProvider else { return base }
+        let suffix = providerSuffix(namedProvider)
+        return base + suffix.prefix(1).uppercased() + suffix.dropFirst()
     }
 
     let needsConfiguration = constructed.contains { !$0.configValues.isEmpty }
@@ -1943,8 +2034,12 @@ func emitFlightGraph(into out: inout String) {
     graphRoots = GraphRoots(
         emitted: true,
         needsConfiguration: needsConfiguration,
-        supplied: supplied.map { (label: suppliedBinding($0), type: $0) },
-        terminalSupplied: terminalSupplied.map { (label: suppliedBinding($0), type: $0) })
+        supplied: supplied.map {
+            (label: suppliedBinding($0.type, from: $0.from), type: $0.type, from: $0.from)
+        },
+        terminalSupplied: terminalSupplied.map {
+            (label: suppliedBinding($0.type, from: $0.from), type: $0.type, from: $0.from)
+        })
 
     out += "\n"
     out += "/// Every component this module declares, constructed once, in\n"
@@ -1965,8 +2060,8 @@ func emitFlightGraph(into out: inout String) {
     if needsConfiguration {
         out += "    let configuration: FlightCore.Configuration\n"
     }
-    for dependency in supplied {
-        out += "    let \(suppliedBinding(dependency)): \(dependency)\n"
+    for root in supplied {
+        out += "    let \(suppliedBinding(root.type, from: root.from)): \(root.type)\n"
     }
     if (needsConfiguration || !supplied.isEmpty) && !ordered.isEmpty { out += "\n" }
     for node in ordered {
@@ -1975,7 +2070,7 @@ func emitFlightGraph(into out: inout String) {
     out += "\n"
     var parameters: [String] = []
     if needsConfiguration { parameters.append("configuration: FlightCore.Configuration") }
-    parameters += supplied.map { "\(suppliedBinding($0)): \($0)" }
+    parameters += supplied.map { "\(suppliedBinding($0.type, from: $0.from)): \($0.type)" }
     // Every node is also a parameter, defaulting to nil, so a test can
     // replace one and get the rest of the graph real (§2.10). `nil` rather
     // than the composed value because a Swift default cannot reference
@@ -1983,8 +2078,9 @@ func emitFlightGraph(into out: inout String) {
     parameters += ordered.map { "\(binding($0)): \(qualified($0))? = nil" }
     out += "    init(\(parameters.joined(separator: ", "))) throws {\n"
     if needsConfiguration { out += "        self.configuration = configuration\n" }
-    for dependency in supplied {
-        out += "        self.\(suppliedBinding(dependency)) = \(suppliedBinding(dependency))\n"
+    for root in supplied {
+        let name = suppliedBinding(root.type, from: root.from)
+        out += "        self.\(name) = \(name)\n"
     }
     for node in ordered {
         var arguments: [String] = []
@@ -1994,11 +2090,12 @@ func emitFlightGraph(into out: inout String) {
         // and stay positional, and a mismatch would silently mislabel an
         // argument rather than fail.
         let edges = node.dependencyOrder
-        for (dependency, label) in edges {
-            if let source = provider(of: dependency) {
-                arguments.append("\(label): \(binding(source))")
+        for edge in edges {
+            if let source = provider(of: edge.type) {
+                arguments.append("\(edge.label): \(binding(source))")
             } else {
-                arguments.append("\(label): \(suppliedBinding(dependency))")
+                arguments.append(
+                    "\(edge.label): \(suppliedBinding(edge.type, from: edge.from))")
             }
         }
         let call = "\(qualified(node))(\(arguments.joined(separator: ", ")))"
@@ -2051,7 +2148,9 @@ func emitFlightGraph(into out: inout String) {
         out += "/// one *and* be built from the graph.\n"
     }
     let terminalParameters =
-        terminalSupplied.map { ", \(suppliedBinding($0)): \($0)" }.joined()
+        terminalSupplied.map {
+            ", \(suppliedBinding($0.type, from: $0.from)): \($0.type)"
+        }.joined()
     out += "func flightRoutes(_ graph: FlightGraph\(terminalParameters))\n"
     out += "    -> [FlightWeb.RouteRegistration]\n"
     out += "{\n"
@@ -2064,13 +2163,16 @@ func emitFlightGraph(into out: inout String) {
             arguments.append("_flightConfiguration: graph.configuration")
         }
         let edges = controller.dependencyOrder
-        for (dependency, label) in edges {
-            if let source = provider(of: dependency) {
-                arguments.append("\(label): graph.\(binding(source))")
-            } else if terminalSupplied.contains(dependency) {
-                arguments.append("\(label): \(suppliedBinding(dependency))")
+        for edge in edges {
+            let rootName = suppliedBinding(edge.type, from: edge.from)
+            if let source = provider(of: edge.type) {
+                arguments.append("\(edge.label): graph.\(binding(source))")
+            } else if terminalSupplied.contains(where: {
+                rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
+            }) {
+                arguments.append("\(edge.label): \(rootName)")
             } else {
-                arguments.append("\(label): graph.\(suppliedBinding(dependency))")
+                arguments.append("\(edge.label): graph.\(rootName)")
             }
         }
         let construction =
@@ -2162,7 +2264,7 @@ func emitComposer(into out: inout String) {
         let wanted = providedTypeKey(element)
         var found: [(expression: String, module: String)] = []
         for name in includedModules where moduleIdentity(name) != moduleIdentity(consumer) {
-            guard let module = byName[moduleIdentity(name)] else { continue }
+            guard let module = scannedModule(name, in: byName) else { continue }
             for property in module.provides {
                 guard let provided = arrayElementType(property.type),
                       providedTypeKey(provided) == wanted
@@ -2173,7 +2275,12 @@ func emitComposer(into out: inout String) {
         return found
     }
 
-    func provider(of type: String, for consumer: String) -> (expression: String, module: String)? {
+    /// - Parameter namedProvider: the module `@Inject(from:)` named, if any.
+    ///   Checked rather than trusted: it has to be in this application and it
+    ///   has to provide the type, and both failures name the module.
+    func provider(
+        of type: String, preferring namedProvider: String? = nil, for consumer: String
+    ) -> (expression: String, module: String)? {
         let wanted = providedTypeKey(type)
         let candidates = includedModules.filter { moduleIdentity($0) != moduleIdentity(consumer) }
         // "Is this parameter a module?" is a module question, so both sides are
@@ -2186,10 +2293,33 @@ func emitComposer(into out: inout String) {
         }
         var matches: [(expression: String, module: String)] = []
         for name in candidates {
-            guard let module = byName[moduleIdentity(name)] else { continue }
+            guard let module = scannedModule(name, in: byName) else { continue }
             for property in module.provides where providedTypeKey(property.type) == wanted {
                 matches.append(("\(binding(name)).\(property.name)", name))
             }
+        }
+        if let namedProvider {
+            let wantedIdentity = moduleIdentity(namedProvider)
+            let named = matches.filter { moduleIdentity($0.module) == wantedIdentity }
+            if named.count == 1 { return named[0] }
+            if named.isEmpty {
+                let inApplication = includedModules.contains {
+                    moduleIdentity($0) == wantedIdentity
+                }
+                compositionDiagnostics.append(
+                    inApplication
+                        ? "@Inject(from: \(namedProvider).self) names a module that does not "
+                            + "provide \(wanted). A module provides a value by holding it as a "
+                            + "stored property."
+                        : "@Inject(from: \(namedProvider).self) names a module this application "
+                            + "does not include. Add it to `modules:`, or to the `dependencies` "
+                            + "of a module that is already there.")
+            } else {
+                compositionDiagnostics.append(
+                    "@Inject(from: \(namedProvider).self) is ambiguous: that module provides "
+                        + "\(wanted) more than once (\(named.map(\.expression).sorted().joined(separator: ", "))).")
+            }
+            return nil
         }
         switch matches.count {
         case 0: return nil
@@ -2198,13 +2328,64 @@ func emitComposer(into out: inout String) {
             // Ambiguity is a composition error, not something to guess at: two
             // modules offering the same type means the application has to say
             // which. Reported, and left to fail the build at the call site.
-            compositionDiagnostics.append(
-                "Composition is ambiguous: "
-                    + matches.map(\.expression).sorted().joined(separator: " and ")
-                    + " both provide \(wanted). Remove one, or give the consuming module an "
-                    + "initializer that names which it wants.")
+            //
+            // `defaultProviders` answers it for the unqualified case, and
+            // `@Inject(from:)` for the property that wants the other one —
+            // which is why the message shows both rather than only naming the
+            // problem (D27).
+            if let chosen = defaultProviderChoice(for: wanted, among: matches) { return chosen }
+            compositionDiagnostics.append(ambiguityDiagnostic(wanted: wanted, matches: matches))
             return nil
         }
+    }
+
+    /// Whether an ambiguity was already reported for this type.
+    ///
+    /// `provider` returns nil for "nobody provides it" and for "several do",
+    /// and the caller cannot tell them apart. Saying both is worse than saying
+    /// neither: the second message contradicts the first and sends the reader
+    /// looking for a module to add.
+    func reportedAmbiguity(for type: String) -> Bool {
+        let wanted = providedTypeKey(type)
+        return compositionDiagnostics.contains {
+            $0.hasPrefix("Composition is ambiguous") && $0.contains(wanted)
+        }
+    }
+
+    /// The provider a module's `defaultProviders` nominated for this type.
+    func defaultProviderChoice(
+        for wanted: String, among matches: [(expression: String, module: String)]
+    ) -> (expression: String, module: String)? {
+        let nominated = matches.filter { match in
+            defaultProviderModules.contains { moduleIdentity($0) == moduleIdentity(match.module) }
+        }
+        guard nominated.count == 1 else { return nil }
+        return nominated[0]
+    }
+
+    /// Names both providers, every consumer asking by type, and the two lines
+    /// that fix it. The diagnostic is the feature here: this is the moment an
+    /// application acquires a second provider, and the build is the only place
+    /// that knows.
+    func ambiguityDiagnostic(
+        wanted: String, matches: [(expression: String, module: String)]
+    ) -> String {
+        // `Module.property`, not the generated binding name: the binding is an
+        // identifier this file invented, and the reader has never seen it.
+        let described = matches.map { match -> String in
+            let property = match.expression.split(separator: ".").last.map(String.init) ?? ""
+            return "\(match.module).\(property)"
+        }.sorted()
+        let modules = matches.map(\.module).sorted()
+        let suggestion = modules.first ?? "SomeModule"
+        let other = modules.count > 1 ? modules[1] : "OtherModule"
+        return "Composition is ambiguous: "
+            + described.joined(separator: " and ")
+            + " both provide \(wanted), and it is asked for by type.\n"
+            + "Say which one an unqualified @Inject means, in the module that lists them:\n"
+            + "    static var defaultProviders: [any FlightModule.Type] { [\(suggestion).self] }\n"
+            + "Then name the other one only where you want it:\n"
+            + "    @Inject(from: \(other).self) var name: \(wanted)"
     }
 
     out += "\n"
@@ -2252,12 +2433,14 @@ func emitComposer(into out: inout String) {
                 // be built from the graph.
                 var callArguments = ["flightGraph"]
                 for root in graphRoots.terminalSupplied {
-                    if let source = provider(of: root.type, for: "flightRoutes") {
+                    if let source = provider(
+                        of: root.type, preferring: root.from, for: "flightRoutes")
+                    {
                         needed.insert(moduleIdentity(source.module))
                         callArguments.append("\(root.label): \(source.expression)")
                     } else {
                         callArguments.append(
-                            "\(root.label): <#nothing provides \(root.type)#>")
+                            "\(root.label): fatalError(\"unresolved: see the #error below\")")
                         compositionDiagnostics.append(
                             "A route terminal needs \(root.type), and no module in this "
                                 + "application provides it. A module that owns it should expose "
@@ -2310,15 +2493,28 @@ func emitComposer(into out: inout String) {
         var needs: Set<String> = []
         if graphRoots.needsConfiguration { arguments.append("configuration: configuration") }
         for root in graphRoots.supplied {
-            if let source = provider(of: root.type, for: "FlightGraph") {
+            if let source = provider(
+                of: root.type, preferring: root.from, for: "FlightGraph")
+            {
                 needs.insert(moduleIdentity(source.module))
                 arguments.append("\(root.label): \(source.expression)")
             } else {
-                arguments.append("\(root.label): <#nothing provides \(root.type)#>")
-                compositionDiagnostics.append(
-                    "The component graph needs \(root.type), and no module in this application "
-                        + "provides it. A module that owns it should expose it as a stored "
-                        + "property, which is how the composition root finds it.")
+                // No editor placeholder: `<#…#>` is itself a compile error
+                // ("editor placeholder in source file"), so it added a third
+                // error above the explanatory one and pointed at generated
+                // code. The `#error` below already fails the build, with the
+                // reason attached.
+                arguments.append(
+                    "\(root.label): fatalError(\"unresolved: see the #error below\")")
+                // Only when nothing provides it. `provider` returns nil for
+                // ambiguity too, and claiming "no module provides it" while
+                // two do sent people looking for a missing module.
+                if !reportedAmbiguity(for: root.type) {
+                    compositionDiagnostics.append(
+                        "The component graph needs \(root.type), and no module in this application "
+                            + "provides it. A module that owns it should expose it as a stored "
+                            + "property, which is how the composition root finds it.")
+                }
             }
         }
         constructions.append(
@@ -2331,7 +2527,7 @@ func emitComposer(into out: inout String) {
     }
 
     for name in includedModules {
-        let module = byName[moduleIdentity(name)]
+        let module = scannedModule(name, in: byName)
         // The initializer the composer can actually supply, preferring the
         // most specific. "First declared" picks a test seam; "prefer init()"
         // picks a tombstone on a module that cannot be built from its type.
@@ -2362,9 +2558,15 @@ func emitComposer(into out: inout String) {
             }
         }
         if !satisfiable {
-            // Emitting the call anyway makes it a compile error naming the
-            // module, which beats silently omitting it from the application.
-            arguments = ["<#no initializer this composer can supply#>"]
+            // This used to rely on an editor placeholder being the compile
+            // error. The placeholder is gone, and `fatalError` type-checks, so
+            // without this the module would compose silently and trap at
+            // start-up — a loud failure turned into a quiet one.
+            arguments = ["fatalError(\"unresolved: see the #error below\")"]
+            compositionDiagnostics.append(
+                "\(name) has no initializer this composer can supply. Its parameters have to be "
+                    + "values some module in this application provides, `Configuration`, or the "
+                    + "component graph — or it needs an `init()`.")
         }
         // `try` only where the initializer throws: an unnecessary one is a
         // warning in every consumer's build.
@@ -2421,7 +2623,7 @@ func emitComposer(into out: inout String) {
     // module to add rather than merely observing that a property went unused.
     let consumed = Set(constructions.flatMap(\.arguments))
     for name in includedModules {
-        guard let module = byName[moduleIdentity(name)] else { continue }
+        guard let module = scannedModule(name, in: byName) else { continue }
         for property in module.provides {
             guard let element = arrayElementType(property.type) else { continue }
             let expression = "\(binding(name)).\(property.name)"
@@ -2453,7 +2655,15 @@ func emitComposer(into out: inout String) {
     out += "    ]\n"
     out += "}\n"
     for diagnostic in compositionDiagnostics {
-        out += "#error(\"\(diagnostic.replacingOccurrences(of: "\"", with: "'"))\")\n"
+        // Newlines have to be escaped, not emitted: a real one inside
+        // `#error("…")` ends the string literal, and the generated file then
+        // fails to parse — which buries the message this exists to deliver
+        // under whatever the parser says next.
+        let text =
+            diagnostic
+            .replacingOccurrences(of: "\"", with: "'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        out += "#error(\"\(text)\")\n"
     }
 }
 

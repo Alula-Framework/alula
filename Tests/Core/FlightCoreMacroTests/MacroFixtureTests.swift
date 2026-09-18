@@ -235,7 +235,7 @@ struct MacroFixtureTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
+                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     line: 4,
                     column: 5
                 )
@@ -285,7 +285,7 @@ struct MacroFixtureTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
+                        "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     line: 4,
                     column: 5
                 )

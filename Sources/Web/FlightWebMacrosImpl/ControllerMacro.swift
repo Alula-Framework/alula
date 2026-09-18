@@ -378,14 +378,21 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         _ properties: [InjectedProperty],
         in context: some MacroExpansionContext
     ) -> Bool {
-        var seenTypes: Set<String> = []
+        // Keyed by type *and* named provider. `@Inject(from:)` is what makes
+        // two properties of one type distinguishable, so two naming different
+        // modules are fine; two naming the same one, or neither, are not.
+        var seen: Set<String> = []
         var valid = true
         for property in properties {
             guard case .inject = property.kind else { continue }
-            if !seenTypes.insert(property.typeText).inserted {
+            let key = "\(property.typeText)|\(property.providerText ?? "")"
+            if !seen.insert(key).inserted {
+                let sameProvider = property.providerText != nil
                 context.diagnoseError(
                     "inject.ambiguous",
-                    "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Give them distinct types, or have a module provide them as values.",
+                    sameProvider
+                        ? "Two @Inject properties of type '\(property.typeText)' naming the same provider. Composition wires by type, so nothing distinguishes them."
+                        : "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     at: property.node
                 )
                 valid = false

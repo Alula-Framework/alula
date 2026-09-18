@@ -46,19 +46,31 @@ public macro Repository() =
 /// `@Component`'s initializer; this macro's own expansion is empty and exists
 /// to validate the attachment site.
 ///
-/// It takes no arguments, and two `@Inject` properties of the same type are a
-/// build error: composition wires by type, so nothing in the program could
-/// tell them apart. Give them distinct types — a wrapper per role is usually
-/// the more honest modelling — or have a module hold them as values and
-/// provide them.
+/// Usually bare. Composition resolves the property by type, and in an
+/// application where one module provides that type there is nothing to say.
 ///
-/// The name-qualified form, `@Inject("primary")`, was removed in 0.20.0. It
-/// never reached the wiring: two same-type properties received the *same*
-/// instance, so the distinction it appeared to draw was not drawn, silently.
-/// Naming on the providing side is a later change; until it lands, "two
-/// different providers of one type" has no spelling.
+/// `from:` names the module to take it from, for the case where two do:
+///
+/// ```swift
+/// @Inject var primary: PostgresDataSource
+/// @Inject(from: PostgresDataModule<Analytics>.self) var analytics: PostgresDataSource
+/// ```
+///
+/// A module *type*, not a name — so it is checked: the module has to be in the
+/// application's graph and has to provide that type, and both failures are
+/// build errors naming the module. It resolves entirely at build time, so the
+/// property is still a stored value read directly, with no lookup.
+///
+/// Two `@Inject` properties of the same type are a build error *unless* they
+/// name different providers, because otherwise nothing in the program could
+/// tell them apart.
+///
+/// The name-qualified form, `@Inject("primary")`, was removed in 0.20.0 and is
+/// not what this is. It never reached the wiring — two same-type properties
+/// received the *same* instance, silently — because a string had nothing to
+/// resolve against. A module type does.
 @attached(peer)
-public macro Inject() =
+public macro Inject(from provider: (any FlightModule.Type)? = nil) =
     #externalMacro(module: "FlightCoreMacrosImpl", type: "InjectMacro")
 
 /// Marks a property as config-read instead. Same macro family; the value is

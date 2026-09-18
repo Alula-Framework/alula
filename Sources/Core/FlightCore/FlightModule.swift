@@ -12,6 +12,29 @@ public protocol FlightModule {
     /// generator resolves at build time.
     static var dependencies: [any FlightModule.Type] { get }
 
+    /// Which module answers an unqualified `@Inject` when two provide the same
+    /// type.
+    ///
+    /// Only consulted on ambiguity, so the overwhelming majority of
+    /// applications never write it: with one provider per type there is
+    /// nothing to choose. It exists for the application that adds a second —
+    /// a reporting pool beside the primary — where otherwise every consumer
+    /// asking for the type by name would have to say which, including the many
+    /// that do not care.
+    ///
+    /// ```swift
+    /// static var defaultProviders: [any FlightModule.Type] {
+    ///     [PostgresDataModule<PrimaryDataSource>.self]
+    /// }
+    /// ```
+    ///
+    /// Declared here, in the application's own module, because that is where
+    /// the instantiations are named — a generic module cannot mark one of its
+    /// own specializations special, and the build plugin only scans this
+    /// target. The property that wants the *other* provider names it with
+    /// ``Inject(from:)``. See DECISIONS.md D27.
+    static var defaultProviders: [any FlightModule.Type] { get }
+
     /// Present only if this module owns a long-running component. Handed to
     /// the app-wide ServiceLifecycle `ServiceGroup` at bootstrap.
     var service: (any Service)? { get }
@@ -80,6 +103,9 @@ public enum ServiceCompletionPolicy: Sendable, Equatable {
 }
 
 extension FlightModule {
+    /// Nothing nominated: the ordinary case, where each type has one provider.
+    public static var defaultProviders: [any FlightModule.Type] { [] }
+
     public static var dependencies: [any FlightModule.Type] { [] }
     public var service: (any Service)? { nil }
     public var serviceCompletion: ServiceCompletionPolicy { .failsApp }

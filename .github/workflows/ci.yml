@@ -65,10 +65,16 @@ jobs:
 
   lint:
     # Advisory only. Seven of the eight merged packages predate the shared
-    # .swift-format config, leaving ~1240 violations; the macro fixture
-    # suites in particular hold expected-expansion string literals that a
-    # bulk reformat would corrupt. This job reports drift without blocking
-    # merges until that reformat lands as its own reviewed change.
+    # .swift-format config, leaving 1,725 violations as measured on
+    # 2026-09-18; the macro fixture suites in particular hold
+    # expected-expansion string literals that a bulk reformat would corrupt.
+    # This job reports drift without blocking merges until that reformat
+    # lands as its own reviewed change.
+    #
+    # The number is here to be useful, so it has to be real: this comment
+    # said ~1240 and GAPS.md said 1,309, neither matching the tool or each
+    # other. Re-measure when you touch it — `swift format lint --recursive
+    # --strict Sources Tests` — rather than carrying the figure forward.
     name: Format (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true

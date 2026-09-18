@@ -1,7 +1,8 @@
 # What is missing
 
 An audit of every library in the ecosystem, written 2026-08-24 against the
-v0.1.2 tags. Each entry says what is absent, why it matters, and how much work
+v0.1.2 tags, and **last reconciled with the code on 2026-09-18 at flight
+v0.20.0, flight-data v0.6.0, hangar v0.6.0, swift-changeset v0.2.1.** Each entry says what is absent, why it matters, and how much work
 it looks like — so the list can be argued with rather than just worked
 through.
 
@@ -14,13 +15,18 @@ day it was started; its history moved with it. Entries closed overnight on
 first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
-**Still open, in rough priority order:** a distributed PubSub adapter — the
-single highest-value gap, because `DistributedPubSubAdapter` has no
-implementation and three documented features rest on it (Channels broadcast
-across nodes, Presence's membership mode, `ClusteredPubSub` itself); the
-three-way duplication of macro injection scanning; flight-web HTTP/2 (a design
-decision, not a task — see below); hangar composite-key associations; npm and
-Homebrew publishing; format debt.
+**Still open, in rough priority order:** flight-web HTTP/2 (a design decision,
+not a task — see below); hangar composite-key associations; npm and Homebrew
+publishing; format debt.
+
+**Two entries left that list on 2026-09-18**, both checked against the code
+rather than assumed. The distributed PubSub adapter — nominated above as *the
+single highest-value gap* — ships as `ValkeyPubSubAdapter` in flight-data's
+`FlightPubSubValkey`, with `FlightPubSubValkeyModule` wiring it, so Channels
+across nodes, Presence membership and `ClusteredPubSub` all have something real
+behind them. The three-way duplication of macro injection scanning is gone into
+`FlightMacroSupport`. Neither closure was recorded here, which is the thing this
+file exists to do.
 
 **Closed since this was written:** the scheduler (flight 0.2.0/0.2.1, with the
 Postgres coordinator in flight-data 0.2.0 and a tutorial stage), the target
@@ -39,6 +45,23 @@ refresh path but not the cached-return path; response backpressure in the
 request direction but not the response direction). That asymmetry is now a
 thing to look for: **when a defect class is closed on one side of a symmetry,
 ask what its mirror image is.**
+
+**The Container→composition rewrite (0.15.0–0.17.0) is the largest change since
+this file was written**, and it appears above only in passing. The runtime DI
+container is gone: modules are values that hold what they provide and take what
+they need, a build plugin generates the composition root, and wiring is a
+compile error rather than a resolution failure on the first request. It closed
+whole classes of gap listed below — anything phrased as "registered", "resolved"
+or "scoped" is describing a mechanism that no longer exists — and opened the
+one the 2026-09-17 audit named: **a feature ships inert and every check passes**,
+because a test can exercise the code around a seam the production path uses.
+
+**A second full source audit ran on 2026-09-17** against v0.19.0 — eight
+reviewers, same method. Its fix-first list is closed. Worth carrying forward
+from it: the worst finding was that a regression guard for this project's own
+named defect class had been *deleted* and nothing noticed, and the second worst
+was that the docs CI job had been red on main since 2026-09-09 and nothing
+noticed either. A check nobody reads is indistinguishable from no check.
 
 **DocC is done** where it makes sense: 17 of flight's 20 targets, 8 of
 flight-data's, hangar and swift-changeset. The three flight targets without
@@ -384,7 +407,7 @@ left has no consumer-facing API to document.
 
 ## 4. Product gaps — things that would decide adoption
 
-### ◐ A Vapor shim for hangar *(written 2026-08-25, not published)*
+### ✅ A Vapor shim for hangar *(published; closed 2026-09-18)*
 `hangar-vapor` exists at `Hangar/hangar-vapor`, committed locally: three
 pieces and nothing else — `app.hangar.use(config)` owns the pool's lifetime,
 `req.hangar` is a `Repo` carrying the request's logger, and
@@ -398,8 +421,9 @@ shows.
 lifetime — a handler awaiting an HTTP call between two queries should not be
 holding one.
 
-**Blocked on two decisions of yours:** a hangar v0.2.0 tag, and creating the
-public repository.
+~~**Blocked on two decisions of yours:** a hangar v0.2.0 tag, and creating the
+public repository.~~ Both done: hangar is tagged through v0.6.0 and
+`hangar-vapor` is published at `Flight-Framework/hangar-vapor`.
 
 ### ✅ A contributor test script *(done 2026-08-24/25)*
 `./scripts/test.sh` in hangar, flight-data and hangar-vapor: starts throwaway
@@ -417,9 +441,11 @@ intermittently red for reasons nobody can reproduce. It waits for both now.
 
 Recorded so they are not rediscovered as bugs:
 
-- **Format debt**: `flight` ~1,309 and `flight-data` ~1,094 violations against
-  the shared `.swift-format`. Both lint jobs are advisory. `flight-cli` is
-  clean and blocking. A bulk reformat must avoid the macro fixture files,
+- **Format debt**, measured 2026-09-18: `flight` **1,725** and `flight-data`
+  **1,064** violations against the shared `.swift-format`; `flight-cli` is
+  **0** and blocking. Both of the others' lint jobs are advisory, and flight's
+  has grown — this entry said 1,309 and `ci.yml` said ~1,240, two stale numbers
+  that disagreed with each other and with the tool. A bulk reformat must avoid the macro fixture files,
   whose expected-expansion strings a careless regex corrupts.
 - **The tutorial checkpoint runner had been red since it landed** — 6 of 9,
   and it took two fixes. All three failures were `curl: command not found`;
@@ -475,9 +501,12 @@ port 8080 already bound. Neither is a crash; both were reported as one. All
 three templates now catch, print one line, and exit 1 — verified on real
 generated projects for both cases.
 
-**Still open:** the same fix belongs in `FlightCore` as a `Flight.main`
-helper, so hand-written applications get it too rather than only generated
-ones. Blocked on a flight release, since templates pin 0.1.2.
+~~**Still open:** the same fix belongs in `FlightCore` as a `Flight.main`
+helper.~~ **Closed** — `Flight.run(configuration:modules:composedBy:)` is that
+helper: it prints why and exits 1 rather than trapping out of a throwing
+`main`, and hand-written applications get it on the same terms as generated
+ones. The "blocked on a flight release, templates pin 0.1.2" note is eighteen
+releases stale; templates pin 0.20.0.
 - **One unexplained test failure**, flight-data, 2026-08-25: a single issue
   in a 375-test run that did not reproduce in ten subsequent runs, cold
   containers included. The Valkey readiness gap was fixed because it was
@@ -513,8 +542,10 @@ ones. Blocked on a flight release, since templates pin 0.1.2.
   neither an upgrade nor a handler that never queries can hold a connection
   open. See `COMPOSITION-MIGRATION.md` §2.3 (untracked, local to this
   working copy).
-- ✅ **Flight Web has no static-file handling.** *Closed.* `container.assets(at:root:)`
-  ships exactly what this entry asked for and more: containment by resolving
+- ✅ **Flight Web has no static-file handling.** *Closed.* Static assets ship
+  with exactly what this entry asked for and more (the closure text named
+  `container.assets(at:root:)`, which went with the container in 0.17.0; assets
+  are declared as module values now): containment by resolving
   the path and comparing against the root rather than pattern-matching for
   `..`, directories refused, an extension→content-type table, per-pattern
   cache rules, an SPA fallback gated on `Accept`, content hashing, and

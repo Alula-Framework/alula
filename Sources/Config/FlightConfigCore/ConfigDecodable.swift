@@ -125,7 +125,11 @@ extension Duration: ConfigDecodable {
         // slice here is a `Substring`, so it needs converting first.
         let unit = String(trimmed[numberEnd...]).configTrimmed.lowercased()
         switch unit {
-        case "ns": self = .nanoseconds(magnitude)
+        // `.nanoseconds` takes a Double only on macOS 26; its integer overload
+        // goes back to macOS 13, and truncates a fractional nanosecond. Dividing
+        // into the Double `.microseconds` overload keeps both the precision and
+        // the platform floor — and is exact, attosecond for attosecond.
+        case "ns": self = .microseconds(magnitude / 1_000)
         case "us": self = .microseconds(magnitude)
         case "ms": self = .milliseconds(magnitude)
         case "s": self = .seconds(magnitude)

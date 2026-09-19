@@ -4,6 +4,63 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.1] - 2026-09-19
+
+`@Settings` composes. It never had: 0.21.0 and everything before it failed to
+build any application declaring one.
+
+### Fixed
+
+- **`@Settings` had never composed.** Settings types were excluded from the
+  graph so that *projecting* one onto a graph property could not skip the
+  `validate()` its initializer runs. Excluding it made it arrive as a graph
+  *root* instead, and roots are resolved from what modules provide — no module
+  provides a settings type, so any application with one failed with "no module
+  in this application provides AppSettings", naming a type the generator had
+  scanned itself. The graph constructs rather than projects, so building it as
+  a node runs its own init, and `validate()` with it.
+
+  A settings node now always receives `_flightConfiguration:` and always
+  constructs with `try`: `@Settings` generates a throwing
+  `init(_flightConfiguration:)` whether or not any field was *recorded* as a
+  config value, and the implicit-field scan skips properties that have a
+  default — `var pageSize: Int = 500` records none.
+
+  Nothing caught it because nothing composed one. No template declares
+  `@Settings`, the generator tests covered only its config-key check, and the
+  integration tests construct one directly: the seam beside the seam.
+
+- **`FlightSchedulerModule` provided `SchedulerStatus` in fact but not in
+  view.** `public let status = SchedulerStatus()` carries no written type, and
+  only stored properties with an explicit type are matched — so `@Inject var
+  scheduler: SchedulerStatus`, which Actuator's own documentation shows, could
+  not be satisfied by any application.
+
+- **Generic modules were reported missing from applications that had them.** A
+  regression from 0.21.0's identity change: the aggregate-collector check
+  compared specializations against a scanned declaration, so
+  `FlightWebModule<FlightTransport>` never matched `FlightWebModule`.
+
+### Added
+
+- **A non-private stored property with no written type is now a warning**,
+  naming the property and the fix. That shape is invisible to matching, so a
+  module provides the value in fact and not in the composer's view — the
+  `SchedulerStatus` defect above, which nothing said a word about. A warning
+  rather than an error, because a module may genuinely not mean to provide it;
+  `private` remains how to say so.
+
+### Documentation
+
+- Corrected a false claim about composition keying on type identity: it keys
+  on base name, like the checker, so two modules providing one type is a
+  correctness matter and not only a diagnostic one.
+- `@Inject(from:)` and `defaultProviders` are documented in the guides and the
+  DocC catalogue, not only in flight-data and source comments.
+- `@Settings` and `@Secret` are documented at all, for the first time.
+- Fixed the cross-module symbol links that left the docs job red through
+  v0.21.0 — the fifth consecutive release to ship with that gate failing.
+
 ## [0.21.0] - 2026-09-18
 
 Two modules can provide the same type, and both be reachable. Additive: an

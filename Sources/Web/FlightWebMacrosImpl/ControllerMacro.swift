@@ -60,6 +60,12 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         // controller, one authenticated route" and "authenticated
         // controller, one public route". Saying nothing inherits.
         let controllerPipelines = RouteScanning.pipelines(of: node)
+        // Roles *add* rather than replace: a controller's apply to every
+        // route below it, and a route's narrow further. The opposite rule
+        // would let a route widen access by naming a role its controller does
+        // not require, which is the one direction a route should not move on
+        // its own.
+        let controllerRoles = RouteScanning.roles(of: node)
         // The per-route factories are the whole of what a controller emits for
         // wiring now: each builds the controller and runs one method. The
         // composition root's `flightRoutes(graph)` calls them. The container
@@ -72,6 +78,22 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 diagnoseSecurityNarrowing(
                     controller: controllerPipelines, route: routePipelines,
                     at: route.attribute, method: route.methodName, in: context)
+            }
+            // A role check on a lane that establishes no identity can only
+            // ever reject, so it is a mistake rather than a policy.
+            let isPublic = (pipelines ?? "").contains(".public")
+            let declaredRoles = [controllerRoles, route.rolesText].compactMap { $0 }
+            var route = route
+            route.roleChecks = isPublic ? [] : declaredRoles
+            if isPublic, !declaredRoles.isEmpty {
+                context.diagnoseError(
+                    "route.roles.public",
+                    """
+                    '\(route.methodName)' requires roles but runs on '.public', which \
+                    establishes no principal — every request would be rejected. Give it a \
+                    lane that authenticates, or drop the roles.
+                    """,
+                    at: route.attribute)
             }
             factories.append(
                 DeclSyntax(
@@ -162,7 +184,14 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         if route.isAsync { call = "await \(call)" }
         if route.isThrows { call = "try \(call)" }
 
-        var handlerLines: [String] = ["let controller = try make(context)"]
+        var handlerLines: [String] = []
+        // Authorisation before construction: an unauthorised request should
+        // not reach application code, and a controller's initializer is
+        // application code.
+        for roles in route.roleChecks {
+            handlerLines.append("try FlightWeb.requireRoles(\(roles), in: context)")
+        }
+        handlerLines.append("let controller = try make(context)")
         if let bodyType = route.bodyTypeText {
             handlerLines.append(
                 "let body = try FlightWeb.decodeRequestBody(\(bodyType).self, from: context)")

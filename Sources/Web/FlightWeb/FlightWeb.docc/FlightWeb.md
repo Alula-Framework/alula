@@ -102,7 +102,7 @@ rather than a result enum.
 
 ## WebSockets and streaming
 
-``WebSocketRoute(_:pipelines:)`` upgrades a route; the handler receives a
+``WebSocketRoute(_:pipelines:roles:)`` upgrades a route; the handler receives a
 ``WebSocketConnection`` and owns it for the connection's lifetime.
 ``ServerSentEvent`` and ``ServerSentEventWriter`` cover the one-directional
 case, which is usually what a dashboard actually needs.
@@ -122,13 +122,15 @@ whole application without binding a port.
 
 ### Controllers and routes
 
-- ``Controller(_:pipelines:)``
-- ``GetRoute(_:maxBodyBytes:pipelines:)``
-- ``PostRoute(_:maxBodyBytes:pipelines:)``
-- ``PutRoute(_:maxBodyBytes:pipelines:)``
-- ``PatchRoute(_:maxBodyBytes:pipelines:)``
-- ``DeleteRoute(_:maxBodyBytes:pipelines:)``
-- ``WebSocketRoute(_:pipelines:)``
+- ``Controller(_:pipelines:roles:)``
+- ``GetRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``PostRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``PutRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``PatchRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``DeleteRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``WebSocketRoute(_:pipelines:roles:)``
+- ``RouteRole``
+- ``PathParameterConvertible``
 
 ### Requests and responses
 

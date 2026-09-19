@@ -57,6 +57,13 @@ public struct ScannedRoute {
     /// said nothing and inherits the controller's lanes; non-nil *replaces*
     /// them.
     public let pipelinesText: String?
+    /// The route's own `roles:` argument, verbatim. Added to the
+    /// controller's rather than replacing them.
+    public let rolesText: String?
+    /// Every role declaration that applies, controller's first. Each is an
+    /// any-of check, and they compose as "and" by being separate checks —
+    /// which is why this is a list rather than one merged array.
+    public var roleChecks: [String] = []
     /// Where to point a diagnostic about this route's lanes.
     public let attribute: AttributeSyntax
     /// A `body: RequestBodyStream` parameter — the route is
@@ -81,9 +88,9 @@ public enum RouteScanning {
         diagnostics: some RouteDiagnostics
     ) -> [(
         kind: RouteKind, path: String, maxBodyBytes: String?, pipelines: String?,
-        attribute: AttributeSyntax
+        roles: String?, attribute: AttributeSyntax
     )] {
-        var found: [(RouteKind, String, String?, String?, AttributeSyntax)] = []
+        var found: [(RouteKind, String, String?, String?, String?, AttributeSyntax)] = []
         for element in function.attributes {
             guard let attribute = element.as(AttributeSyntax.self),
                 let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text,
@@ -102,6 +109,7 @@ public enum RouteScanning {
                     kind, path,
                     labeledArgumentText(of: attribute, named: "maxBodyBytes"),
                     labeledArgumentText(of: attribute, named: "pipelines"),
+                    labeledArgumentText(of: attribute, named: "roles"),
                     attribute
                 ))
         }
@@ -317,7 +325,7 @@ public enum RouteScanning {
             }
         }
 
-        return mappings.map { kind, path, maxBodyBytes, pipelines, attribute in
+        return mappings.map { kind, path, maxBodyBytes, pipelines, roles, attribute in
             ScannedRoute(
                 kind: kind,
                 path: path,
@@ -327,6 +335,7 @@ public enum RouteScanning {
                 pathParameters: pathParameters,
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,
+                rolesText: roles,
                 attribute: attribute,
                 isAsync: effects?.asyncSpecifier != nil,
                 isThrows: effects?.throwsClause != nil,
@@ -405,6 +414,22 @@ public enum RouteScanning {
     /// expansion never used, and nothing would catch it.
     public static func resolvedPipelines(route: String?, controller: String?) -> String? {
         route ?? controller
+    }
+
+    /// The `roles:` argument's source text, verbatim.
+    ///
+    /// Unlike ``pipelines(of:)``, a route's roles *add* to its controller's
+    /// rather than replacing them. Replacement is right for lanes because a
+    /// route must be able to say "this one is public"; it is wrong for roles,
+    /// where the same rule would let a route quietly widen access by naming a
+    /// role its controller does not require. Narrowing is the only direction
+    /// a route should be able to move on its own.
+    public static func roles(of node: AttributeSyntax) -> String? {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else { return nil }
+        for argument in arguments where argument.label?.text == "roles" {
+            return argument.expression.trimmedDescription
+        }
+        return nil
     }
 
     /// The `pipelines:` argument's source text, verbatim. A route's own

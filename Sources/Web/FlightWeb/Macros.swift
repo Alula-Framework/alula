@@ -46,7 +46,8 @@ import FlightCore
 @attached(member, names: named(init), arbitrary)
 public macro Controller(
     _ path: String? = nil,
-    pipelines: [PipelineLane] = [.default]
+    pipelines: [PipelineLane] = [.default],
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "ControllerMacro")
 
@@ -124,31 +125,36 @@ public macro Middleware() =
 
 @attached(peer)
 public macro GetRoute(
-    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil
+    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PostRoute(
-    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil
+    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PutRoute(
-    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil
+    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PatchRoute(
-    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil
+    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro DeleteRoute(
-    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil
+    _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
+    roles: [any RouteRole] = []
 ) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")
 
@@ -159,5 +165,7 @@ public macro DeleteRoute(
 /// `Response.upgrade`; the active transport performs the HTTP 101 handshake
 /// and hands the frame stream to the handler.
 @attached(peer)
-public macro WebSocketRoute(_ path: String, pipelines: [PipelineLane]? = nil) =
+public macro WebSocketRoute(
+    _ path: String, pipelines: [PipelineLane]? = nil, roles: [any RouteRole] = []
+) =
     #externalMacro(module: "FlightWebMacrosImpl", type: "RouteMacro")

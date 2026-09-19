@@ -160,6 +160,55 @@ Transport settings come from the same `flight.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,
 `server.max-request-body-bytes`, `server.max-websocket-frame-bytes`.
 
+### Roles protect routes
+
+A controller's roles apply to every route below it; a route's roles narrow
+further:
+
+```swift
+enum AppRole: String, RouteRole { case admin, billing, support }
+
+@Controller("/admin", roles: [AppRole.admin])
+struct AdminController {
+    @GetRoute("/")                                    // admin
+    func index(_ context: RequestContext) -> Response { … }
+
+    @GetRoute("/invoices", roles: [AppRole.billing])  // admin AND billing
+    func invoices(_ context: RequestContext) -> Response { … }
+
+    @GetRoute("/tickets", roles: [AppRole.billing, AppRole.support])
+    func tickets(_ context: RequestContext) -> Response { … }  // admin AND (billing OR support)
+}
+```
+
+**Within one declaration the roles are any-of; separate declarations compose
+as and.** Roles *add* rather than replace, unlike `pipelines:`. Replacement is
+right for lanes, because a route must be able to say "this one is public"; it
+is wrong for roles, where the same rule would let a route widen access by
+naming a role its controller does not require. Narrowing is the only direction
+a route moves on its own.
+
+Your own type rather than strings, so a misspelled role is a compile error
+rather than a 403 nobody reports. `RouteRole` needs nothing beyond the
+conformance for a `String`-backed enum; the raw value is the name the
+principal is asked about, so it has to match what your identity provider
+issues — the type buys spelling, not agreement with the IdP.
+
+The check runs before the controller is constructed, so an unauthorised
+request never reaches application code, and it answers from the request's
+identity state: no credential and a rejected credential are both 401 and
+remain distinguishable, a missing role is 403 naming what would have been
+enough. Roles on a `.public` route are a build error, because a lane that
+establishes no principal can only ever reject:
+
+```
+error: 'ping' requires roles but runs on '.public', which establishes no
+principal — every request would be rejected.
+```
+
+`context.requireRole("admin")` is still there for a check a signature cannot
+express — ownership of the specific record being edited, say.
+
 ### Middleware lanes
 
 A *lane* is the whole stack for the routes that name it. A module declares the

@@ -86,6 +86,18 @@ public struct Request: Sendable {
         return nil
     }
 
+    /// The query string as sent, without the leading `?` and without any
+    /// fragment — the form-encoded text `decodeQuery` reads.
+    ///
+    /// Empty when the URI carries no query, which decodes to a type whose
+    /// properties are all optional and fails for one that requires a key.
+    public var rawQuery: String {
+        guard let start = uri.firstIndex(of: "?") else { return "" }
+        var query = uri[uri.index(after: start)...]
+        if let fragment = query.firstIndex(of: "#") { query = query[..<fragment] }
+        return String(query)
+    }
+
     /// The undecoded `name=value` runs of a URI's query, in order.
     private static func queryPairs(of target: String) -> [Substring] {
         guard let queryStart = target.firstIndex(of: "?") else { return [] }

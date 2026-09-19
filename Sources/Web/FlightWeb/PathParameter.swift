@@ -111,3 +111,63 @@ public func decodePathParameter<Value: PathParameterConvertible>(
     }
     return value
 }
+
+// MARK: - Query parameters as a struct
+
+/// Not user API — what a generated route handler calls for a `query:`
+/// parameter.
+///
+/// The query string is `application/x-www-form-urlencoded`, which is the wire
+/// format ``FormDecoder`` already reads, so this is that decoder pointed at a
+/// different part of the request rather than a second implementation of the
+/// same rules. Repeated keys behave as they do in a form body: an array target
+/// collects them, a scalar target takes the last.
+///
+/// **A missing key is an error for a non-optional property, and that is the
+/// intended reading.** Swift's synthesized `Decodable` does not use a
+/// property's default value when a key is absent — it throws — so
+/// `var page: Int` means the request must carry `page`, and `var page: Int?`
+/// means it may. Since absence is ordinary in a query string, most fields
+/// want to be optional.
+public func decodeQuery<Value: Decodable>(
+    _ type: Value.Type, from context: RequestContext
+) throws -> Value {
+    let query = context.request.rawQuery
+    do {
+        return try FormDecoder().decode(type, from: Data(query.utf8))
+    } catch let error as DecodingError {
+        throw HTTPError(.badRequest, queryErrorMessage(error, type: type))
+    }
+}
+
+/// A decoding failure, said in terms of the query string rather than of
+/// `Decodable` — a caller who sent `?page=abc` should be told about `page`.
+private func queryErrorMessage<Value>(_ error: DecodingError, type: Value.Type) -> String {
+    switch error {
+    case .keyNotFound(let key, _):
+        return "missing query parameter '\(key.stringValue)'"
+    case .typeMismatch(let mismatched, let context), .valueNotFound(let mismatched, let context):
+        let name = context.codingPath.last?.stringValue
+        return name.map { "query parameter '\($0)' is not a valid \(mismatched)" }
+            ?? "invalid query for \(type)"
+    case .dataCorrupted(let context):
+        let name = context.codingPath.last?.stringValue
+        return name.map { "query parameter '\($0)' is malformed" } ?? "malformed query string"
+    @unknown default:
+        return "invalid query for \(type)"
+    }
+}
+
+extension RequestContext {
+    /// The query string decoded into a type of your own.
+    ///
+    /// ```swift
+    /// let filters = try context.query(ListFilters.self)
+    /// ```
+    ///
+    /// The same decoding a `query:` handler parameter receives, for middleware
+    /// and for handlers that take the context alone.
+    public func query<Value: Decodable>(_ type: Value.Type) throws -> Value {
+        try decodeQuery(type, from: self)
+    }
+}

@@ -154,6 +154,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         var call = "controller.\(route.methodName)(context"
         if route.bodyTypeText != nil { call += ", body: body" }
+        if route.queryTypeText != nil { call += ", query: query" }
         for parameter in route.pathParameters {
             call += ", \(parameter.name): \(parameter.name)"
         }
@@ -165,6 +166,10 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         if let bodyType = route.bodyTypeText {
             handlerLines.append(
                 "let body = try FlightWeb.decodeRequestBody(\(bodyType).self, from: context)")
+        }
+        if let queryType = route.queryTypeText {
+            handlerLines.append(
+                "let query = try FlightWeb.decodeQuery(\(queryType).self, from: context)")
         }
         // Parsed before the controller is called, so a handler never receives
         // a segment it would have to check. A segment that will not parse is a

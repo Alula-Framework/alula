@@ -73,6 +73,39 @@ struct Slug: PathParameterConvertible {
 `context.pathParam("id", as: UUID.self)` parses one where a handler signature
 cannot reach — inside middleware, say.
 
+### Query parameters decode into a type
+
+A `query:` parameter is decoded from the query string the way `body:` is
+decoded from the body:
+
+```swift
+struct ListFilters: Decodable {
+    var search: String?
+    var page: Int?
+    var tags: [String]?
+    var tenant: String        // required
+}
+
+@GetRoute("/posts")
+func list(_ context: RequestContext, query: ListFilters) async throws -> [Post]
+```
+
+`?tenant=acme&page=3&tags=a&tags=b` arrives parsed: `page` is an `Int`, and a
+repeated key collects into an array — the same rules as a form body, because
+a query string is the same wire format.
+
+**Optional means optional, and non-optional means required.** Swift's
+synthesized `Decodable` does not fall back to a property's default value when
+a key is absent; it throws. So `var page: Int?` is the right spelling for
+"may be absent" — `page ?? 1` at the point of use — and `var tenant: String`
+says the request must carry it, which is a 400 naming the parameter rather
+than a silent default. A missing key, a value of the wrong type and a
+malformed query each produce a 400 that names the parameter at fault.
+
+`context.query(ListFilters.self)` does the same decoding where a handler
+signature cannot reach, and `request.queryParam("page")` still returns the raw
+`String?`.
+
     @PostRoute("/users")
     func createUser(_ context: RequestContext, body: CreateUserRequest) async throws -> UserResponse {
         try await userService.create(body)

@@ -45,6 +45,8 @@ public struct ScannedRoute {
     public let methodName: String
     /// Has a second, `body:`-labeled parameter of this type.
     public let bodyTypeText: String?
+    /// The `query:` parameter's type, decoded from the query string.
+    public let queryTypeText: String?
     /// Handler parameters bound to `:name` segments, in signature order.
     /// Empty for a handler that reads them from the context itself.
     public let pathParameters: [PathParameterBinding]
@@ -213,6 +215,7 @@ public enum RouteScanning {
         // against the `:name` segments the route declares, which is what makes
         // a typo in either one a build error rather than a nil at runtime.
         var bodyTypeText: String? = nil
+        var queryTypeText: String? = nil
         var pathParameters: [PathParameterBinding] = []
         let declaredSegments = mappings.reduce(into: Set<String>()) { names, mapping in
             names.formUnion(pathSegmentNames(in: mapping.1))
@@ -228,6 +231,17 @@ public enum RouteScanning {
                     return []
                 }
                 bodyTypeText = parameter.type.trimmedDescription
+                continue
+            }
+            if label == "query" {
+                guard queryTypeText == nil else {
+                    diagnostics.error(
+                        "route.signature",
+                        "Route handler '\(name)' declares 'query:' more than once.",
+                        at: function)
+                    return []
+                }
+                queryTypeText = parameter.type.trimmedDescription
                 continue
             }
             guard parameter.firstName.tokenKind != .wildcard else {
@@ -309,6 +323,7 @@ public enum RouteScanning {
                 path: path,
                 methodName: name,
                 bodyTypeText: bodyTypeText,
+                queryTypeText: queryTypeText,
                 pathParameters: pathParameters,
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,

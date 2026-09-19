@@ -124,3 +124,91 @@ struct TypedPathParameterTests {
         #expect(Bool(true))
     }
 }
+
+// MARK: - Query parameters as a struct
+
+/// Absence is ordinary in a query string, so most fields are optional. A
+/// non-optional one means the request must carry it — Swift's synthesized
+/// `Decodable` throws on a missing key rather than using a property default,
+/// and that reads correctly here: required means required.
+struct ListFilters: Decodable, Equatable {
+    var search: String?
+    var page: Int?
+    var tags: [String]?
+    /// Required: a list endpoint that cannot say which tenant it is for has
+    /// no sensible answer.
+    var tenant: String
+}
+
+@Controller("/q")
+struct QueryController {
+
+    @GetRoute("/posts")
+    func list(_ context: RequestContext, query: ListFilters) async throws -> String {
+        let tags = query.tags?.joined(separator: "+") ?? "-"
+        return "\(query.tenant)|\(query.search ?? "-")|\(query.page ?? 1)|\(tags)"
+    }
+
+    // Path, query and body in one signature.
+    @PostRoute("/tenants/:tenantID/posts")
+    func create(
+        _ context: RequestContext, body: NoteBody, query: ListFilters, tenantID: Int
+    ) async throws -> String {
+        "\(tenantID):\(query.tenant):\(body.text)"
+    }
+}
+
+@Suite("Query parameters as a struct")
+struct QueryStructTests {
+
+    private func client() throws -> TestClient {
+        try TestClient(routes: QueryController.flightRoutes { _ in QueryController() })
+    }
+
+    @Test("optional fields are absent rather than an error")
+    func optionalsAreOptional() async throws {
+        let response = try await client().get("/q/posts?tenant=acme")
+        #expect(response.status == .ok)
+        #expect(response.bodyText == "acme|-|1|-")
+    }
+
+    @Test("values arrive parsed, not as strings")
+    func parsed() async throws {
+        let response = try await client().get("/q/posts?tenant=acme&page=3&search=swift")
+        #expect(response.bodyText == "acme|swift|3|-")
+    }
+
+    @Test("a repeated key collects into an array")
+    func repeatedKeys() async throws {
+        let response = try await client().get("/q/posts?tenant=acme&tags=a&tags=b")
+        #expect(response.bodyText == "acme|-|1|a+b")
+    }
+
+    @Test("a missing required field is a 400 naming it")
+    func missingRequired() async throws {
+        let response = try await client().get("/q/posts?page=2")
+        #expect(response.status == .badRequest)
+        #expect(response.bodyText.contains("tenant"))
+    }
+
+    @Test("a value of the wrong type is a 400 naming the parameter")
+    func wrongType() async throws {
+        let response = try await client().get("/q/posts?tenant=acme&page=soon")
+        #expect(response.status == .badRequest)
+        #expect(response.bodyText.contains("page"))
+    }
+
+    @Test("percent-encoding is decoded")
+    func percentEncoding() async throws {
+        let response = try await client().get("/q/posts?tenant=acme&search=hello%20world")
+        #expect(response.bodyText == "acme|hello world|1|-")
+    }
+
+    @Test("path, query and body coexist in one handler")
+    func allThree() async throws {
+        let response = try await client().post(
+            "/q/tenants/7/posts?tenant=acme", json: NoteBody(text: "hi"))
+        #expect(response.status == .ok)
+        #expect(response.bodyText == "7:acme:hi")
+    }
+}

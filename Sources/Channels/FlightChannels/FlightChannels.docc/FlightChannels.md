@@ -101,6 +101,7 @@ build rather than a production socket.
 - ``FlightChannelsModule``
 - ``ChannelsConfiguration``
 - ``EnvelopeDispatch``
+- ``OutboundOverflow``
 - ``ChannelRegistration``
 - ``ChannelRouter``
 - ``ChannelSocketHandler``

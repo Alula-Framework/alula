@@ -107,4 +107,19 @@ public enum ChannelCloseCode {
     /// which a client cannot tell from a clean server shutdown, so a
     /// reconnect loop treated "you are not reading" as "come back".
     public static let writeTimeout: UInt16 = 4408
+
+    /// The socket's outbound queue overflowed: this client fell far enough
+    /// behind that messages would have to be discarded to keep going.
+    ///
+    /// Closing rather than discarding is the point. Dropped frames are
+    /// invisible to a client — the envelope carries no sequence number, so a
+    /// gap is indistinguishable from quiet — and a client that cannot know
+    /// it missed a message goes on rendering a view it has no reason to
+    /// doubt. A close it can see, and the reconnect that follows re-joins
+    /// every topic and takes fresh `initialState` from each.
+    ///
+    /// Distinct from ``writeTimeout`` because the two describe different
+    /// clients: one has stopped accepting a frame at all, the other is
+    /// accepting them too slowly for the rate being published.
+    public static let outboundOverflow: UInt16 = 4410
 }

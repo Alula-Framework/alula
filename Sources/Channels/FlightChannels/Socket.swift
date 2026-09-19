@@ -28,6 +28,15 @@ public final class Socket: Sendable, Identifiable {
 
     private let outbound: AsyncStream<String>.Continuation
     private let droppedEnvelopes = Atomic<Int64>(0)
+    /// What to do when the outbound queue is full.
+    private let overflow: OutboundOverflow
+    /// Asks the connection to close with a code and reason. Held as a
+    /// closure so `Socket` can reach the handler's close coordination
+    /// without knowing anything about it — the same posture the topic
+    /// observers take.
+    private let requestClose: @Sendable (UInt16, String) -> Void
+    /// Guards the overflow close so a socket dropping steadily asks once.
+    private let hasRequestedOverflowClose = Atomic<Bool>(false)
 
     /// Topic-membership observation state (the framework seam below). All
     /// mutation happens under the mutex; observer callbacks always fire
@@ -44,12 +53,16 @@ public final class Socket: Sendable, Identifiable {
     internal init(
         principal: (any ChannelPrincipal)?,
         logger: Logger,
-        outbound: AsyncStream<String>.Continuation
+        outbound: AsyncStream<String>.Continuation,
+        overflow: OutboundOverflow = .closeSocket,
+        requestClose: @escaping @Sendable (UInt16, String) -> Void = { _, _ in }
     ) {
         self.id = UUID().uuidString
         self.principal = principal
         self.logger = logger
         self.outbound = outbound
+        self.overflow = overflow
+        self.requestClose = requestClose
     }
 
     /// Pushes a server-initiated message to *this* socket only (`ref: null`,
@@ -188,6 +201,24 @@ public final class Socket: Sendable, Identifiable {
             break
         case .dropped:
             let total = droppedEnvelopes.wrappingAdd(1, ordering: .relaxed).oldValue + 1
+            guard overflow == .dropOldest else {
+                // Ask once. The queue keeps dropping until the writer drains
+                // and the close frame goes out, and a close request per
+                // dropped message would be both noise and a race.
+                if !hasRequestedOverflowClose.exchange(true, ordering: .relaxed) {
+                    logger.warning(
+                        "outbound queue overflowed; closing so the client resynchronises",
+                        metadata: [
+                            "topic": "\(topic)",
+                            "event": "\(event)",
+                        ]
+                    )
+                    requestClose(
+                        ChannelCloseCode.outboundOverflow,
+                        "outbound queue overflowed; reconnect to resynchronise")
+                }
+                return
+            }
             // Logged at intervals: a client stuck behind will drop steadily,
             // and a line per message would bury everything else.
             if total == 1 || total % 100 == 0 {

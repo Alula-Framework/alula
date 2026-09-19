@@ -73,10 +73,30 @@ connection, a phone in a tunnel — accumulated every message published to its
 topics with no ceiling, so one stalled subscriber could exhaust the server's
 memory while the watchdog waited out a 60-second heartbeat timeout.
 
-Full means the **oldest** messages go, not the newest: a client behind on a
-realtime feed wants current state, not a backlog it can never catch up on.
-Drops are counted per socket (`Socket.droppedEnvelopeCount`) and logged, so a
-subscriber falling behind is visible rather than silent.
+**Full closes the socket** (`4410`), rather than discarding frames. Discarding
+was the original answer and it has a real argument behind it — a client behind
+on a realtime feed wants current state, not a backlog it can never catch up on
+— but it is undetectable from the other end. `Envelope` carries no sequence
+number, so a dropped broadcast leaves no trace a client could notice: its view
+goes silently wrong and it has no reason to suspect it. The server knew all
+along (`Socket.droppedEnvelopeCount`, and a rate-limited warning); the client
+never did.
+
+A close it can see. The reference client's reconnect re-joins every topic and
+delivers each channel's fresh `initialState`, which is exactly the
+resynchronisation that dropping quietly denies it — and it needed no client
+change, because a transport-level close already drives reconnect-and-rejoin.
+
+`flight.channels.outbound-overflow: drop-oldest` restores the old behaviour,
+and is right for a feed where only the latest value means anything — a cursor
+position, a metrics tick, a progress bar. It is wrong wherever a message is an
+*event* rather than a sample, because there the gap is the bug. An
+unrecognised value for this key keeps the safe default rather than guessing;
+a typo should not silently select lossy delivery.
+
+Either way the close is ordered behind the queue: teardown finishes the
+outbound stream and the writer drains what was already accepted before the
+close frame goes out.
 
 Nothing in the request path calls `precondition` any more. A reserved event
 name reaching `push`, `pushReserved`, or a broadcast is refused and logged.
@@ -256,6 +276,7 @@ queue — a slow client never blocks a handler, and frames never interleave.
 | `flight.channels.outbound-buffer-size` | `256` | Queued frames per socket before the oldest are dropped |
 | `flight.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
 | `flight.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
+| `flight.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the

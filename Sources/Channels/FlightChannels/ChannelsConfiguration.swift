@@ -49,18 +49,25 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// of them may be in flight at once. See ``EnvelopeDispatch``.
     public var dispatch: EnvelopeDispatch
 
+    /// What happens when ``outboundBufferSize`` is reached. Defaults to
+    /// closing the socket, because a dropped frame is invisible to the
+    /// client. See ``OutboundOverflow``.
+    public var outboundOverflow: OutboundOverflow
+
     public init(
         heartbeatTimeout: Duration = .seconds(60),
         heartbeatCheckInterval: Duration? = nil,
         outboundBufferSize: Int = 256,
         writeTimeout: Duration? = .seconds(30),
-        dispatch: EnvelopeDispatch = .default
+        dispatch: EnvelopeDispatch = .default,
+        outboundOverflow: OutboundOverflow = .closeSocket
     ) {
         self.heartbeatTimeout = heartbeatTimeout
         self.heartbeatCheckInterval = heartbeatCheckInterval ?? (heartbeatTimeout / 4)
         self.outboundBufferSize = max(1, outboundBufferSize)
         self.writeTimeout = writeTimeout
         self.dispatch = dispatch
+        self.outboundOverflow = outboundOverflow
     }
 
     /// Keys, under Flight's usual dotted namespace:
@@ -72,6 +79,8 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     ///   disables)
     /// - `flight.channels.max-concurrent-envelopes` (Int, default 16; 1
     ///   means one envelope at a time socket-wide)
+    /// - `flight.channels.outbound-overflow` (`"close"` or `"drop-oldest"`,
+    ///   default `"close"`)
     public init(configuration: Configuration) throws {
         let timeoutSeconds = configuration.get(
             "flight.channels.heartbeat-timeout-seconds",
@@ -98,7 +107,14 @@ public struct ChannelsConfiguration: Sendable, Equatable {
             dispatch: try configuration.getIfPresent(
                 "flight.channels.max-concurrent-envelopes", as: Int.self)
                 .map { $0 <= 1 ? .serialPerSocket : .serialPerTopic(maxConcurrent: $0) }
-                ?? .default
+                ?? .default,
+            // Anything other than the two spellings is a typo, and a typo
+            // here would silently choose lossy delivery. Unknown values keep
+            // the safe default rather than being guessed at.
+            outboundOverflow: try configuration.getIfPresent(
+                "flight.channels.outbound-overflow", as: String.self)
+                .map { $0.lowercased() == "drop-oldest" ? .dropOldest : .closeSocket }
+                ?? .closeSocket
         )
     }
 }

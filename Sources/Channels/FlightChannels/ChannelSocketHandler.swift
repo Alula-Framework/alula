@@ -90,10 +90,19 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
         // the writer below is pure I/O.
         let (outbound, outboundContinuation) = AsyncStream<String>.makeStream(
             bufferingPolicy: .bufferingNewest(configuration.outboundBufferSize))
+        // Built before the socket because the socket needs to reach it: an
+        // outbound queue that overflows asks for a close rather than
+        // discarding frames a client could never know it missed.
+        let (finished, finishedContinuation) = AsyncStream<CloseIntent>.makeStream()
         let socket = Socket(
             principal: principal,
             logger: context.logger,
-            outbound: outboundContinuation
+            outbound: outboundContinuation,
+            overflow: configuration.outboundOverflow,
+            requestClose: { code, reason in
+                finishedContinuation.yield(
+                    CloseIntent(code: WebSocketCloseCode(code), reason: reason))
+            }
         )
         let session = SocketSession(
             router: router,
@@ -144,8 +153,6 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
         // of a graceful `flight:close`) arrived at the client as an
         // abnormal 1006. Deciding here, and closing from a task nothing
         // cancels, is what makes the documented codes observable.
-        let (finished, finishedContinuation) = AsyncStream<CloseIntent>.makeStream()
-
         let writer = Task { [configuration] in
             for await text in outbound {
                 do {

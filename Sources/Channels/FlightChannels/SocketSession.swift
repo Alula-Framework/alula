@@ -36,6 +36,24 @@ internal actor SocketSession {
     private var lastActivity = ContinuousClock.now
     private var isTornDown = false
 
+    /// How envelopes are ordered against each other on this socket.
+    private let dispatch: EnvelopeDispatch
+    /// Bounds envelopes in flight for this socket.
+    private let gate: EnvelopeGate
+    /// The tail of each topic's serial chain. A topic's next envelope awaits
+    /// this one, which is what keeps a topic ordered while topics run
+    /// concurrently — and what guarantees a `Channel` is never re-entered.
+    private var topicTails: [String: Task<Void, Never>] = [:]
+    /// Topics this socket may address: a join has been *accepted for
+    /// scheduling*, which is earlier than `joined` being populated.
+    ///
+    /// Two sets rather than one because the join work is now asynchronous. A
+    /// client that sends `flight:join` and a push back to back is entitled to
+    /// have the push routed — it will run after the join on the same chain —
+    /// and keying the decision off `joined` would answer `not_joined` for a
+    /// topic whose join is merely still running.
+    private var routable: Set<String> = []
+
     /// The broadcast seam, handed to a channel factory at join time as part
     /// of its ``ChannelContext``.
     private let broadcaster: ChannelBroadcaster
@@ -46,7 +64,8 @@ internal actor SocketSession {
         socket: Socket,
         outbound: AsyncStream<String>.Continuation,
         logger: Logger,
-        broadcaster: ChannelBroadcaster
+        broadcaster: ChannelBroadcaster,
+        dispatch: EnvelopeDispatch = .default
     ) {
         self.router = router
         self.pubsub = pubsub
@@ -54,6 +73,8 @@ internal actor SocketSession {
         self.outbound = outbound
         self.logger = logger
         self.broadcaster = broadcaster
+        self.dispatch = dispatch
+        self.gate = EnvelopeGate(capacity: dispatch.maxConcurrent)
     }
 
     // MARK: - Liveness
@@ -73,9 +94,9 @@ internal actor SocketSession {
 
         switch ReservedEvent(rawValue: envelope.event) {
         case .join:
-            await join(envelope)
+            await scheduleJoin(envelope)
         case .leave:
-            await leave(envelope)
+            await scheduleTopicWork(envelope) { await $0.leave(envelope) }
         case .heartbeat:
             heartbeat(envelope)
         case .close:
@@ -96,24 +117,86 @@ internal actor SocketSession {
             // client bug — named as such, connection kept.
             socket.sendError(ref: envelope.ref, topic: envelope.topic, reason: ChannelErrorReason.invalidEvent)
         case nil:
-            await dispatchApplicationEvent(envelope)
+            await scheduleTopicWork(envelope) { await $0.dispatchApplicationEvent(envelope) }
         }
         return .proceed
     }
 
-    // MARK: - Join (the join is the gate)
+    // MARK: - Scheduling
 
-    private func join(_ envelope: Envelope) async {
+    /// Admits a join and puts its work on the topic's chain.
+    ///
+    /// The refusals stay synchronous — a reserved topic and a double join are
+    /// both decidable from state this actor already holds, and answering them
+    /// here keeps them ordered ahead of anything the client sends next.
+    private func scheduleJoin(_ envelope: Envelope) async {
         let topic = envelope.topic
         guard topic != ChannelProtocol.controlTopic else {
-            socket.sendError(ref: envelope.ref, topic: topic, reason: ChannelErrorReason.reservedTopic)
+            socket.sendError(
+                ref: envelope.ref, topic: topic, reason: ChannelErrorReason.reservedTopic)
             return
         }
-        guard joined[topic] == nil else {
-            socket.sendError(ref: envelope.ref, topic: topic, reason: ChannelErrorReason.alreadyJoined)
+        guard !routable.contains(topic) else {
+            socket.sendError(
+                ref: envelope.ref, topic: topic, reason: ChannelErrorReason.alreadyJoined)
             return
         }
+        routable.insert(topic)
+        await run(topic: topic) { await $0.join(envelope) }
+    }
+
+    /// Puts work on a topic's chain, refusing a topic this socket never
+    /// joined.
+    private func scheduleTopicWork(
+        _ envelope: Envelope,
+        _ work: @escaping @Sendable (isolated SocketSession) async -> Void
+    ) async {
+        guard routable.contains(envelope.topic) else {
+            socket.sendError(
+                ref: envelope.ref, topic: envelope.topic,
+                reason: ChannelErrorReason.notJoined)
+            return
+        }
+        await run(topic: envelope.topic, work)
+    }
+
+    /// Runs `work` after everything already queued for `topic`.
+    ///
+    /// Serial mode awaits it here, which is precisely the old behaviour: the
+    /// frame loop does not read the next frame until this returns.
+    /// Concurrent mode chains it behind the topic's tail and returns, holding
+    /// one slot of the socket's in-flight budget until it finishes — so the
+    /// frame loop stalls on a full budget rather than on a slow handler.
+    private func run(
+        topic: String,
+        _ work: @escaping @Sendable (isolated SocketSession) async -> Void
+    ) async {
+        guard dispatch.isConcurrent else {
+            await work(self)
+            return
+        }
+        await gate.acquire()
+        let previous = topicTails[topic]
+        let gate = self.gate
+        topicTails[topic] = Task { [weak self] in
+            await previous?.value
+            if let self { await work(self) }
+            await gate.release()
+        }
+    }
+
+    // MARK: - Join (the join is the gate)
+
+    /// The reserved-topic and double-join refusals live in ``scheduleJoin``,
+    /// which answers them before this is ever queued. What remains here is
+    /// everything that needs the router or the channel itself — and every
+    /// failing path has to give the topic back, or a rejected join would
+    /// leave it addressable forever.
+    private func join(_ envelope: Envelope) async {
+        let topic = envelope.topic
+        guard !isTornDown else { return }
         guard let registration = router.match(topic) else {
+            routable.remove(topic)
             socket.sendError(ref: envelope.ref, topic: topic, reason: ChannelErrorReason.unmatchedTopic)
             return
         }
@@ -127,12 +210,14 @@ internal actor SocketSession {
             logger.error("channel factory failed", metadata: [
                 "topic": "\(topic)", "source": "\(registration.source)", "error": "\(error)",
             ])
+            routable.remove(topic)
             socket.sendError(ref: envelope.ref, topic: topic, reason: ChannelErrorReason.handlerError)
             return
         }
 
         switch (await channel.join(topic, socket: socket)).outcome {
         case .rejected(let rejection):
+            routable.remove(topic)
             socket.sendError(ref: envelope.ref, topic: topic, reason: rejection.reason)
 
         case .accepted(let initialState):
@@ -233,7 +318,11 @@ internal actor SocketSession {
     // MARK: - Leave
 
     private func leave(_ envelope: Envelope) async {
+        routable.remove(envelope.topic)
         guard let entry = joined.removeValue(forKey: envelope.topic) else {
+            // Reachable when a join was refused by its channel and the client
+            // leaves anyway: the topic was routable, so this queued, and
+            // there is nothing to leave.
             socket.sendError(ref: envelope.ref, topic: envelope.topic, reason: ChannelErrorReason.notJoined)
             return
         }
@@ -288,6 +377,16 @@ internal actor SocketSession {
     internal func teardown() async {
         guard !isTornDown else { return }
         isTornDown = true
+        // Cancelled, not awaited. Awaiting would make a hung application
+        // handler able to block teardown — and teardown is what the
+        // heartbeat watchdog and the protocol-violation path call to get rid
+        // of exactly that socket. In-flight envelopes are dropped; a client
+        // that needs its push acknowledged before closing has the reply's
+        // `ref` to wait on.
+        for tail in topicTails.values { tail.cancel() }
+        topicTails = [:]
+        routable = []
+        await gate.drain()
         let entries = joined
         joined = [:]
         for (topic, entry) in entries {

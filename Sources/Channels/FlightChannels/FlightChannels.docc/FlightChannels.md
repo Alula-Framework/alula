@@ -100,6 +100,7 @@ build rather than a production socket.
 
 - ``FlightChannelsModule``
 - ``ChannelsConfiguration``
+- ``EnvelopeDispatch``
 - ``ChannelRegistration``
 - ``ChannelRouter``
 - ``ChannelSocketHandler``

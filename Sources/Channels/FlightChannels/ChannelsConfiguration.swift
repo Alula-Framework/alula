@@ -45,16 +45,22 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// frame in this long is not going to absorb the next.
     public var writeTimeout: Duration?
 
+    /// How a socket's envelopes are ordered against each other — and how many
+    /// of them may be in flight at once. See ``EnvelopeDispatch``.
+    public var dispatch: EnvelopeDispatch
+
     public init(
         heartbeatTimeout: Duration = .seconds(60),
         heartbeatCheckInterval: Duration? = nil,
         outboundBufferSize: Int = 256,
-        writeTimeout: Duration? = .seconds(30)
+        writeTimeout: Duration? = .seconds(30),
+        dispatch: EnvelopeDispatch = .default
     ) {
         self.heartbeatTimeout = heartbeatTimeout
         self.heartbeatCheckInterval = heartbeatCheckInterval ?? (heartbeatTimeout / 4)
         self.outboundBufferSize = max(1, outboundBufferSize)
         self.writeTimeout = writeTimeout
+        self.dispatch = dispatch
     }
 
     /// Keys, under Flight's usual dotted namespace:
@@ -64,6 +70,8 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// - `flight.channels.outbound-buffer-size` (Int, default 256)
     /// - `flight.channels.write-timeout-seconds` (Double, default 30; 0
     ///   disables)
+    /// - `flight.channels.max-concurrent-envelopes` (Int, default 16; 1
+    ///   means one envelope at a time socket-wide)
     public init(configuration: Configuration) throws {
         let timeoutSeconds = configuration.get(
             "flight.channels.heartbeat-timeout-seconds",
@@ -83,7 +91,14 @@ public struct ChannelsConfiguration: Sendable, Equatable {
             // should write that down rather than delete a line.
             writeTimeout: try configuration.getIfPresent(
                 "flight.channels.write-timeout-seconds", as: Double.self)
-                .map { $0 <= 0 ? nil : Duration.seconds($0) } ?? .seconds(30)
+                .map { $0 <= 0 ? nil : Duration.seconds($0) } ?? .seconds(30),
+            // 1 is the old socket-wide serialization, spelled as a bound
+            // rather than as a separate mode — an operator who wants it back
+            // writes the number down.
+            dispatch: try configuration.getIfPresent(
+                "flight.channels.max-concurrent-envelopes", as: Int.self)
+                .map { $0 <= 1 ? .serialPerSocket : .serialPerTopic(maxConcurrent: $0) }
+                ?? .default
         )
     }
 }

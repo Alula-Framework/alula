@@ -29,6 +29,41 @@ The JS/TS reference client is
 [flight-channels-js](https://github.com/Flight-Framework/flight-channels-js)
 (`@flight-framework/channels` on npm) — same protocol, same versioning.
 
+## Ordering and concurrency
+
+**Envelopes are handled in order within a topic, and concurrently across
+topics.** `flight.channels.max-concurrent-envelopes` (16 by default) bounds
+how many a single socket may have in flight; set it to `1` for the older
+behaviour, one envelope at a time socket-wide.
+
+The frame loop used to handle each envelope completely before reading the
+next, which made every topic on a connection share one queue: a channel
+handler that took 200ms to answer a push on `room:1` delayed everything on
+`room:2` behind it, for no reason other than that they arrived on the same
+socket.
+
+What is preserved is the ordering that a stateful protocol actually needs.
+`flight:join` followed by a push on the same topic still arrive in that order
+— including when the push is sent before the join has been answered — and a
+`Channel` instance is never entered re-entrantly, so handlers keep the
+serialization they were written against. What is given up is ordering
+*between* topics, which are independent by construction: two envelopes on
+different topics may complete in either order. Replies carry the `ref` they
+answer, and the reference clients correlate on it rather than on arrival
+order, so nothing downstream depends on the old guarantee.
+
+Two consequences worth knowing:
+
+- The in-flight bound is what the frame loop waits on when it is reached.
+  Because inbound frames pull rather than buffer (see `Docs/web.md`), that
+  wait reaches the socket — a client flooding one connection is slowed by TCP
+  rather than handed unbounded work to queue.
+- A teardown — `flight:close`, a heartbeat timeout, a protocol violation —
+  cancels envelopes still in flight rather than draining them. Awaiting them
+  would let one hung application handler block the very teardown that exists
+  to get rid of it. A client that needs a push acknowledged before closing
+  has the reply's `ref` to wait on.
+
 ## Backpressure and blast radius
 
 A socket's outbound queue is bounded by
@@ -220,6 +255,7 @@ queue — a slow client never blocks a handler, and frames never interleave.
 | `flight.channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
 | `flight.channels.outbound-buffer-size` | `256` | Queued frames per socket before the oldest are dropped |
 | `flight.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
+| `flight.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the

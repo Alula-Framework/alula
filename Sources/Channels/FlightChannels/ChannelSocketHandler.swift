@@ -101,7 +101,8 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
             socket: socket,
             outbound: outboundContinuation,
             logger: context.logger,
-            broadcaster: broadcaster
+            broadcaster: broadcaster,
+            dispatch: configuration.dispatch
         )
         context.logger.debug("channel socket opened", metadata: [
             "socket": "\(socket.id)",

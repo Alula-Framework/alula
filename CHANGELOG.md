@@ -4,6 +4,144 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-09-19
+
+Typed request inputs and route authorization on the HTTP side; bounded,
+concurrent sockets on the other. Several defaults changed — see **Changed**,
+which is where the upgrade notes are.
+
+### Added
+
+- **Path parameters arrive typed.** A route says `/users/:id`, a handler says
+  `id: UUID`, and the two are checked against each other at compile time — a
+  handler asking for a segment the path does not declare is a build error
+  naming the ones it does. `PathParameterConvertible` covers `String`, the
+  integer types, `Double`, `Bool` and `UUID`; conform your own for a `Slug` or
+  a tenant so validity is decided once, at the edge. A segment that does not
+  parse is a 400 naming the parameter and the expected type, not a 500 from an
+  unwrap.
+
+- **Query parameters decode into a type.** A `query:` handler parameter is
+  decoded by the same `FormDecoder` that reads form bodies, so repeated keys
+  behave the way they already did. Note that Swift's synthesized `Decodable`
+  does not use a property's default when a key is absent — it throws — so
+  `var page: Int` means the request must carry `page`. Most query fields want
+  to be optional. `RequestContext.query(_:)` is the same decoding for
+  middleware and context-only handlers.
+
+- **Roles protect routes**, declared where the route is:
+  `@Controller("/admin", roles: [AppRole.admin])` and `roles:` on every route
+  macro. Roles **add** rather than replace, which is the opposite of
+  `pipelines:` and deliberate: replacement is right for lanes because a route
+  must be able to say "this one is public", and wrong for roles, where it
+  would let a route widen access beyond its controller. Any-of within a
+  declaration, and-across declarations. `roles:` on a `.public` route is a
+  build error. `RouteRole` needs nothing beyond the conformance for a
+  String-backed enum.
+
+- **Redirects that say which code they are.** `Response.redirect(to:_:)` takes
+  an enum rather than a number, because choosing between the five codes is the
+  whole of the feature: `.seeOther` (303) makes the follow-up a GET, which is
+  what a form POST wants; `.temporary` (307) and `.permanent` (308) repeat the
+  method and body. `.found` and `.movedPermanently` are present because
+  clients send them, with doc comments saying to prefer the others.
+  `Response.seeOther` remains.
+
+- **`ErrorMapper` can read the request.** A second initializer receives the
+  `RequestContext`, so a browser application can turn the 401 that
+  `requireRoles` throws into a redirect that knows where to return to. The
+  error-only form is unchanged. `RequestContext.returnTo` percent-encodes the
+  path and query for a query value — `.urlQueryAllowed` permits `&` and `=`,
+  so a return path written raw ends `next` early. A mapping whose status is a
+  redirect renders no error document.
+
+- **CORS**, as a middleware. Origins are `.any`, `.exact`, or a predicate;
+  `.any` with `allowCredentials: true` is refused at construction, because
+  browsers reject `*` on a credentialed request and the obvious rescue —
+  echoing the caller's origin — turns "allow any origin" into "allow any
+  origin to act as any signed-in user". A preflight is answered by the
+  middleware and never reaches the router. `Vary: Origin` on everything whose
+  answer depended on the origin, refusals included. **List it in every lane
+  that serves a browser:** dispatch routes before it runs middleware, so a
+  `CORS` in `.default` does not cover a route on another lane — and the
+  preflight still passes, which makes that failure a confusing one.
+
+- **`ResponseCompression`** — gzip, for clients that asked, on bodies worth
+  compressing. Streaming bodies compress incrementally and flush per chunk, so
+  server-sent events keep arriving as events. It declines anything already
+  carrying `Content-Encoding`, `.file` responses (a range is a range of the
+  *encoded* representation), bodies under the floor, already-compressed media
+  types, and any result that came out larger. A strong `ETag` is weakened when
+  the body changes. gzip only: `deflate` names two wire formats and every
+  client that sends it sends gzip too.
+
+  This adds `CFlightZlib`, a `systemLibrary` target over the system zlib —
+  one modulemap, no new package dependency. Lean images may need the headers
+  (`zlib1g-dev` on Debian; the official Swift images carry them).
+
+- **`Response.appendingVary(on:)`.** CORS, compression and content negotiation
+  each have a claim on `Vary`, and whichever called `settingHeader` last would
+  otherwise decide alone.
+
+- **Channel registrations take `roles:`**, using the same `RouteRole` as the
+  HTTP side, checked before the channel is built. Three gates, answering
+  different questions: `roles:` on `@WebSocketRoute` guards the *upgrade*;
+  `roles:` on a registration guards a topic *pattern*; `Channel.join` guards
+  this user on this topic, because membership of `room:42` is data and no
+  declaration expresses it.
+
+- **`Socket.activeTopics` / `activeTopicCount`**, so an application can write
+  a per-connection policy where it states its other rules. The count was
+  already maintained for the topic observers and was simply unreachable.
+
+### Changed
+
+- **Inbound WebSocket frames pull instead of buffering.**
+  `WebSocketConnection.frames` is now a `WebSocketFrames` sequence that reads
+  one message per demand. It was an `AsyncStream` from `makeStream()` fed by a
+  pump reading as fast as the peer could send — an unbounded buffer, since
+  `maxWebSocketFrameBytes` caps each message and says nothing about how many
+  are queued. The bound is now `webSocketReadAhead × maxWebSocketFrameBytes`
+  per connection, defaulting to one message of read-ahead.
+
+  Source-compatible for `for await` and `makeAsyncIterator()`, and
+  `WebSocketConnection.init(frames: AsyncStream<…>)` still exists for
+  in-memory harnesses. A slow handler now presents as a slow *client* rather
+  than as memory growth.
+
+- **Channel envelopes run in order per topic, concurrently across topics.**
+  Previously one envelope at a time socket-wide, so a handler taking 200ms on
+  `room:1` delayed everything on `room:2`. Order within a topic holds, a
+  `Channel` is never entered re-entrantly, and `flight:join` still precedes a
+  push on the same topic. **Ordering between topics is no longer guaranteed.**
+  Nothing depended on it: replies carry the `ref` they answer and the client
+  correlates on it. `flight.channels.max-concurrent-envelopes` (16) bounds
+  envelopes in flight; `1` restores the old behaviour. A teardown cancels
+  in-flight envelopes rather than draining them, so a hung handler cannot
+  block the teardown meant to remove it.
+
+- **A full outbound queue closes the socket (`4410`) instead of dropping.**
+  Dropping the oldest was undetectable from the other end: `Envelope` carries
+  no sequence number, so a dropped broadcast left no trace and the client's
+  view went silently wrong. A close it can see, and its reconnect re-joins
+  every topic and takes fresh `initialState`.
+  `flight.channels.outbound-overflow: drop-oldest` restores the old behaviour
+  and is right where only the latest value matters. An unrecognised value
+  keeps the safe default rather than being guessed at.
+
+- **Topics per socket are bounded** — `flight.channels.max-topics-per-socket`,
+  64, refusing with `too_many_topics`. Every joined topic costs a channel
+  instance, a PubSub subscription, a fan-in task and an ordering entry, and
+  nothing stopped one connection asking without limit. The bound counts
+  admissions, not settled joins, so a burst cannot outrun it. There is no
+  "unlimited" spelling.
+
+- **Reconnection resynchronises; it does not replay** — unchanged behaviour,
+  newly documented, and newly load-bearing. Closing on overflow makes
+  reconnect a routine path, and resync *is* `initialState`. A channel whose
+  `join` returns `.null` leaves a reconnecting client unable to tell "nothing
+  happened" from "I missed everything".
+
 ## [0.21.2] - 2026-09-19
 
 macOS builds. One line of this package was stopping it, and a stale diagnosis

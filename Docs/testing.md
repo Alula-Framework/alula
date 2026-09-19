@@ -76,8 +76,9 @@ path parameters, headers, a body.
 Composing the real modules is the only way to test the **wiring** — and it
 catches a class of bug the other two cannot, because building the graph is
 where composition mistakes surface: an initializer that throws on real
-configuration, or two modules providing the same type ambiguously, is
-invisible to a test that never composes.
+configuration is invisible to a test that never composes. (Two modules
+providing one type is caught earlier still — the generator refuses it, so the
+build fails before any test runs.)
 
 There is no "compose everything but swap one" — and none is needed. A
 full-composition test composes the real modules:

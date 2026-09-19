@@ -67,6 +67,17 @@ context as a typed value — one copy per request, never shared between them.
 - ``ServiceCompletionPolicy``
 - ``BootstrapError``
 
+### Macros
+
+- ``Component()``
+- ``Service()``
+- ``Repository()``
+- ``Inject(from:)``
+- ``ConfigValue(_:)``
+- ``ConfigValue(_:default:)``
+- ``Settings(_:)``
+- ``Secret()``
+
 ### Modules
 
 - ``FlightModule``

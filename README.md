@@ -23,6 +23,8 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
 | `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
+| `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
+| `*Client` | Swift client halves: `FlightChannelsClient` for joining topics over a socket, `FlightPresenceClient` for applying presence state and diffs. |
 | `*Testing` | Test support for Web, PubSub, Channels, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
 
 Per-product documentation lives in [Docs/](Docs/), and
@@ -32,7 +34,7 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.20.0")
+.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.21.1")
 ```
 
 ```swift
@@ -58,14 +60,14 @@ Both are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.20.0", traits: ["Web"])
+         from: "0.21.1", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.20.0", traits: ["Security"])
+         from: "0.21.1", traits: ["Security"])
 
 // Just composition and lifecycle — 7 resolved dependencies instead of 29.
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.20.0")
+.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.21.1")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the

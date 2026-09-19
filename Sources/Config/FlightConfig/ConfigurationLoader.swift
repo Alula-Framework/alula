@@ -41,9 +41,9 @@ extension Configuration {
     ///     explicitly rather than relying on where it happened to start.
     ///   - prefix: The word every spelling derives from: `<prefix>.yaml`,
     ///     `<prefix>-{env}.yaml`, `<PREFIX>_ENV`, `<PREFIX>_SERVER_PORT`.
-    ///     Defaults to ``ConfigPrefix/default`` — `flight`. Changing it moves
+    ///     Defaults to `ConfigPrefix.default` — `flight`. Changing it moves
     ///     the base file out of reach of the build-time `@ConfigValue` key
-    ///     check, which then warns rather than verifying; see ``ConfigPrefix``.
+    ///     check, which then warns rather than verifying; see `ConfigPrefix`.
     ///   - environment: Overrides environment resolution. Defaults to nil,
     ///     meaning `FLIGHT_ENV` is read from `processEnvironment` —
     ///     the one place in an app's lifetime that variable is consulted.

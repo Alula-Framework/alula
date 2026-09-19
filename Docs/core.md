@@ -30,7 +30,7 @@ struct App {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.20.0")
+    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.21.1")
 ]
 ```
 
@@ -174,6 +174,88 @@ provides into whatever injects it, by type.
 Order is resolved from the declared dependencies and is deterministic: the
 same module set always produces the same order. A cycle is a startup error
 naming the modules involved.
+
+### Two providers of one type
+
+Wiring by type has one thing it cannot decide for you. If two modules each
+provide a `ConnectionPool`, an unqualified `@Inject var pool: ConnectionPool`
+does not say which one it meant, and the build stops rather than picking.
+
+This is a shape worth supporting — a primary pool and a replica, a real
+client and a recording one — so the fix is to name the default rather than to
+give the types different names. In the module that lists both providers:
+
+```swift
+struct AppModule: FlightModule {
+    static let includedModules: [any FlightModule.Type] = [
+        PrimaryPoolModule.self, ReplicaPoolModule.self,
+    ]
+    // What an unqualified @Inject of a doubly-provided type resolves to.
+    static var defaultProviders: [any FlightModule.Type] { [PrimaryPoolModule.self] }
+}
+```
+
+Everything that asks for a `ConnectionPool` by type now gets the primary one.
+Where you want the other, name it at the injection site:
+
+```swift
+@Component
+struct ReportBuilder {
+    @Inject var pool: ConnectionPool                             // primary
+    @Inject(from: ReplicaPoolModule.self) var replica: ConnectionPool
+}
+```
+
+`@Inject(from:)` is a compile-time choice like every other part of the graph:
+it names a module type, it is resolved by the generator, and it costs nothing
+at runtime. It is only needed for the ambiguous types — the rest of the
+application keeps injecting by type alone.
+
+You do not have to know in advance which types are ambiguous. The build tells
+you when a second provider appears, and the diagnostic contains both lines
+above with your own module and type names already substituted in.
+
+## Configuration as a typed value
+
+`@ConfigValue` binds one key to one property. A group of related settings is a
+type instead:
+
+```swift
+@Settings("auth")
+struct AuthSettings {
+    var issuer: String = "myapp"
+    @Secret var signingKey: String           // required — no default
+    var tokenLifetime: Duration = .hours(12) // "12h", "500ms", ...
+
+    func validate() throws {
+        guard signingKey.count >= 32 else { throw AuthError.signingKeyTooShort }
+    }
+}
+```
+
+Keys are derived from the namespace and the property name, kebab-cased:
+`auth.issuer`, `auth.signing-key`, `auth.token-lifetime`. A property with a
+default reads as "use it only if the key is absent"; a property without one is
+**required**, and a required key missing from `flight.yaml` is a build error,
+not a first-request surprise. An explicit `@ConfigValue("other.key")` on a
+property overrides the derived name.
+
+A `validate()` taking no parameters runs once, right after construction, at
+composition — the place a bad value should fail. The type composes like
+anything else: `@Inject var settings: AuthSettings` wherever you need it.
+
+Two constraints the macro enforces rather than letting you discover: a property
+may not be `Optional` (a key that may or may not exist has no single answer for
+"what did we configure" — give it a concrete default), and a property with a
+default must be `var`, since the generated initializer overrides that default
+when configuration supplies a value.
+
+`@Secret` marks a property whose value must not leak into logs. When any
+property carries it, the generated `description` renders that field as
+`<REDACTED>`, so a stray `logger.info("\(settings)")` or a crash report does
+not print it. It governs the settings object's own textual representation —
+marking the underlying key secret in Flight Config's diagnostic dump is a
+separate mechanism, `Configuration.load(secrets:)`.
 
 ## Transactions
 

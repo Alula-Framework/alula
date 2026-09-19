@@ -42,7 +42,7 @@ public struct Configuration: Sendable {
     public let environment: FlightEnvironment?
 
     /// The prefix this configuration's file and variable names derive from.
-    /// Set by `Configuration.load`; ``ConfigPrefix/default`` for
+    /// Set by `Configuration.load`; `ConfigPrefix.default` for
     /// hand-assembled stacks. Used to make `ConfigError.missingKey` name the
     /// file and the environment variable an operator would actually reach for
     /// — under a custom prefix, telling them to set `FLIGHT_SERVER_PORT` would

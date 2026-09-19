@@ -53,6 +53,11 @@ property-level `@Inject("name")`, which the wiring never read — two `@Inject`
 properties of one type silently received the same instance, and are now a
 build error instead.
 
+``Inject(from:)`` is not one of them reinstated. It names the *module* that
+provides a value, which answers "which of two modules" — a different question
+from "which of two conformers", where there is no module involved and the
+concrete type is still the answer.
+
 ## Dependencies the scan can't see
 
 Not everything is a scanned component. A dependency provided some other way —
@@ -76,9 +81,29 @@ to the program.
 is skipped silently, so nothing that depends on it will be wired. Declare
 components at file scope.
 
-**Matching is by base name.** Two modules each with a `UserService` look like
-one type to the checker. Composition itself is unambiguous — it keys on type
-identity — so this affects diagnostic quality, not correctness.
+**Matching is by base name.** The checker and the composer both key on the
+last dotted component of a type name, so two modules each providing a
+`UserService` look like one type to either of them, even though Swift
+considers them distinct. This is not only a matter of diagnostic quality:
+composition sees two providers of one type and stops, because an unqualified
+`@Inject` cannot say which of them it meant.
+
+Two providers of one type is a legitimate shape — a primary pool and a
+replica, say — so the build asks you to name the default rather than refusing
+it outright. ``FlightModule/defaultProviders`` declares which one an
+unqualified `@Inject` resolves to, and ``Inject(from:)`` names the other
+wherever you want it instead:
+
+```swift
+extension AppModule {
+    static var defaultProviders: [any FlightModule.Type] { [PrimaryPoolModule.self] }
+}
+
+@Inject var pool: ConnectionPool                        // primary
+@Inject(from: ReplicaPoolModule.self) var replica: ConnectionPool
+```
+
+The diagnostic spells out both lines with your own module names in them.
 
 **Xcode does not run it.** The plugin is a `BuildToolPlugin`, which SwiftPM
 runs and Xcode projects do not. An Xcode-only target needs its wiring

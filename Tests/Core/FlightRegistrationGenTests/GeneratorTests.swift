@@ -1559,6 +1559,50 @@ struct GeneratorTests {
         #expect(!result.generated.contains("<#"))
     }
 
+    @Test("defaultProviders also settles a module initializer parameter")
+    func defaultProviderSettlesInitParameter() throws {
+        // The @Inject case is covered above. A module's *initializer* is the
+        // other side of the same matching rule, and it is the one the docs
+        // lead with — `init(clock: Clock)` satisfied by whichever module
+        // provides a `Clock`. It resolves through the same `provider(of:for:)`,
+        // so a nomination has to settle it too; nothing pinned that it did.
+        //
+        // The asymmetry this also documents: an init parameter has no
+        // `from:` to write, so the default is all it can get.
+        let result = try generate([
+            "Main.swift": """
+            import FlightCore
+            enum System: Sendable {}
+            enum Fixed: Sendable {}
+            struct Clock: Sendable {}
+            struct ClockModule<Kind: Sendable>: FlightModule {
+            let clock: Clock
+            init() { clock = Clock() }
+            }
+            struct GreetingModule: FlightModule {
+            static var dependencies: [any FlightModule.Type] {
+            [ClockModule<System>.self, ClockModule<Fixed>.self]
+            }
+            static var defaultProviders: [any FlightModule.Type] { [ClockModule<System>.self] }
+            let greeting: String
+            init(clock: Clock) { greeting = "hello" }
+            }
+            @main struct Main {
+            static func main() async {
+            await Flight.run(
+            configuration: .load(), modules: [GreetingModule.self],
+            composedBy: flightComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        // The nominated module's property, not the other one and not a
+        // stalled composition.
+        #expect(result.generated.contains("GreetingModule(clock: clockModuleSystem.clock)"))
+        #expect(!result.generated.contains("Composition is ambiguous"))
+    }
+
     @Test("from: naming a module the application does not include is an error")
     func namedProviderMustBeInTheApplication() throws {
         let result = try generate([

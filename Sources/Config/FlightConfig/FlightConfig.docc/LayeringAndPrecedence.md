@@ -48,7 +48,7 @@ datasource.pool_size  →  FLIGHT_DATASOURCE_POOL_SIZE
 Setting one overrides both files. This is how a deployment platform injects
 values without a configuration change, and it is where secrets belong.
 
-The `FLIGHT_` is ``ConfigPrefix/default``, and the file names come from the
+The `FLIGHT_` is `ConfigPrefix.default`, and the file names come from the
 same word. An application that needs another namespace — two Flight services
 sharing a container, or a platform that already injects `FLIGHT_*` — passes
 its own, and all four spellings follow together:

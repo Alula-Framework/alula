@@ -586,8 +586,11 @@ if ProcessInfo.processInfo.environment["FLIGHT_BUILD_DOCS"] != nil {
 //
 //     FLIGHT_STRICT_WARNINGS=1 swift build --enable-all-traits
 if ProcessInfo.processInfo.environment["FLIGHT_STRICT_WARNINGS"] != nil {
-    // Plugin targets reject build settings outright.
-    for target in package.targets where target.type != .plugin {
+    // Plugin and system targets both reject build settings outright — a
+    // system library is a modulemap over headers somebody else compiled, so
+    // there is nothing here to warn about. Omitting `.system` failed only
+    // under this environment variable, which is to say only in CI.
+    for target in package.targets where target.type != .plugin && target.type != .system {
         var settings = target.swiftSettings ?? []
         settings.append(.treatAllWarnings(as: .error))
         target.swiftSettings = settings

@@ -34,12 +34,15 @@ Requires **Swift 6.3+** — 6.2.x cannot resolve this package's traits.
 Runs on Linux and macOS 15+; building on a Mac needs the macOS 26 SDK,
 for the reason in the [README](../README.md#requirements).
 
-**Linux is the verified platform.** The manifest declares macOS 15+, iOS 18+,
-tvOS 18+, watchOS 11+ and visionOS 2+, but swift-configuration 1.2.0 does not
-currently compile against Apple's Foundation — it uses `Data.bytes`, which
-ships with the Linux toolchain's swift-foundation and is not in the macOS SDK.
-CI runs the Apple-platform job on every commit so the day that changes is
-visible, but it is not gating today.
+**Linux and macOS, with one asterisk on the Mac.** The manifest declares
+`.macOS(.v15)` and nothing else — no iOS, tvOS, watchOS or visionOS, which an
+earlier version of this paragraph claimed for it.
+
+The asterisk: swift-configuration takes `FoundationEssentials` where the SDK
+offers it and `Foundation` where it does not, and only the latter lacks the
+`Data.bytes` it wants. So building on a Mac needs the **macOS 26 SDK**, while
+the deployment target stays at macOS 15. Both CI jobs run on `macos-26` and
+gate merges; Linux is still where the test suite runs.
 
 ## Layering
 

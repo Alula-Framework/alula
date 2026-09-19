@@ -160,6 +160,12 @@ whole application without binding a port.
 
 - ``Cookie``
 
+### Redirects
+
+- ``Response/redirect(to:_:)``
+- ``Response/Redirect``
+- ``RequestContext/returnTo``
+
 ### Request bodies
 
 - ``RequestBodyStream``

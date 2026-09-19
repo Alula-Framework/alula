@@ -91,11 +91,17 @@ public func compose(_ chain: [MiddlewareRegistration], around responder: @escapi
 ///   never to the client.
 public func errorResponse(for error: any Error, context: RequestContext) -> Response {
     let render = context.coders.renderError
-    if let mapped = context.errorMapper.map(error) {
+    if let mapped = context.errorMapper.map(error, context) {
         if mapped.status.kind == .serverError {
             context.logger.error("request failed: \(String(describing: error))")
         }
-        var response = render(mapped.status, mapped.message)
+        // A mapper may answer with a redirect — a 401 becoming "sign in
+        // first". That is not an error document, and rendering one would put
+        // a problem+json body behind a `Location` no client reads it past.
+        var response =
+            mapped.status.kind == .redirection
+            ? Response.status(mapped.status)
+            : render(mapped.status, mapped.message)
         for field in mapped.headers where response.headers[field.name] == nil {
             response = response.settingHeader(field.name, field.value)
         }

@@ -207,9 +207,11 @@ extension Response {
 
     /// A `303 See Other` — the redirect that turns a form POST into a GET,
     /// so a reload does not re-submit. The one a login form wants.
+    ///
+    /// ``Response/redirect(to:_:)`` is the same response and offers the other
+    /// four codes; this spelling stays because it reads well next to the
+    /// `Set-Cookie` a login writes on the way past.
     public static func seeOther(_ location: String) -> Response {
-        var headers: HTTPFields = [:]
-        headers[.location] = location
-        return .fixed(status: .seeOther, headers: headers, body: Data())
+        .redirect(to: location, .seeOther)
     }
 }

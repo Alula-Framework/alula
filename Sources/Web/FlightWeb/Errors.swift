@@ -60,6 +60,27 @@ public struct HTTPError: HTTPErrorRepresentable, Sendable {
 /// (`HTTPErrorRepresentable`, else an opaque 500). The mapper is consulted
 /// first, so an application may also override how a framework error renders
 /// — its own call, in one visible place rather than at every call site.
+///
+/// ## Reading the request
+///
+/// A second form receives the ``RequestContext``, because the most common
+/// reason to remap a status needs to know what was asked for. A browser
+/// application wants the 401 that ``requireRoles(_:in:)`` throws to become
+/// "go and sign in", and a sign-in page that does not know where to return to
+/// is half a feature:
+///
+/// ```swift
+/// let errorMapper = ErrorMapper { error, context in
+///     guard (error as? HTTPErrorRepresentable)?.httpStatus == .unauthorized,
+///           context.request.headers[.accept]?.contains("text/html") == true
+///     else { return nil }                     // API callers keep their 401
+///     return .redirect(to: "/login?next=\(context.returnTo)")
+/// }
+/// ```
+///
+/// The `Accept` check is the point of the example rather than decoration: the
+/// same route serves a browser and a script, and redirecting the script to a
+/// login page turns a clean 401 into a 200 full of HTML.
 public struct ErrorMapper: Sendable {
     /// What an error becomes on the wire.
     public struct Mapping: Sendable {
@@ -79,17 +100,39 @@ public struct ErrorMapper: Sendable {
             self.message = message
             self.headers = headers
         }
+
+        /// A redirect rather than a rendered error — the shape "not signed in"
+        /// takes for a browser.
+        ///
+        /// The message is empty because a 3xx body is not shown; see
+        /// ``Response/redirect(to:_:)`` for which code to choose.
+        public static func redirect(
+            to location: String, _ kind: Response.Redirect = .seeOther
+        ) -> Mapping {
+            var headers: HTTPFields = [:]
+            headers[.location] = location
+            return Mapping(kind.status, "", headers: headers)
+        }
     }
 
     /// The shape an error should take on the wire, or `nil` to decline.
-    public let map: @Sendable (any Error) -> Mapping?
+    ///
+    /// Both `init`s store one of these; the error-only form ignores the
+    /// context. `errorResponse(for:context:)` is the caller.
+    public let map: @Sendable (any Error, RequestContext) -> Mapping?
 
+    /// A mapper that decides from the error alone.
     public init(_ map: @escaping @Sendable (any Error) -> Mapping?) {
+        self.map = { error, _ in map(error) }
+    }
+
+    /// A mapper that also reads the request — see *Reading the request*.
+    public init(_ map: @escaping @Sendable (any Error, RequestContext) -> Mapping?) {
         self.map = map
     }
 
     /// Declines everything — what an application that registered none gets.
-    public static let none = ErrorMapper { _ in nil }
+    public static let none = ErrorMapper { (_: any Error) in nil }
 }
 
 /// Routing-layer failures (§4).

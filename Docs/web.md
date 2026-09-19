@@ -308,12 +308,52 @@ faster than its reader is slowed by it rather than buffered ahead of it.
 ```swift
 response.settingCookie(Cookie(name: "session", value: token))   // HttpOnly + SameSite=Lax by default
 request.cookie("session")
-Response.seeOther("/dashboard")                                  // the 303 a form-post login wants
 Cookie.expiring("session")                                       // deletion
 ```
 
 `settingCookie` appends rather than replaces, because several cookies means
 several headers.
+
+### Redirects
+
+```swift
+return .redirect(to: "/projects/\(project.id)")   // 303: the follow-up is a GET
+return .redirect(to: "/v2/reports", .permanent)   // 308: same method, and remember it
+```
+
+The status is an enum rather than a number, because choosing between the five
+codes *is* the feature: `.seeOther` (303) makes the follow-up a GET, which is
+what a form POST wants; `.temporary` (307) and `.permanent` (308) repeat the
+method and body, which is what moving an endpoint wants and what handling a
+POST does not. `.found` (302) and `.movedPermanently` (301) are there because
+clients send them, with doc comments saying to prefer the other two. The body
+is always empty — no browser shows a 3xx body.
+
+`Response.seeOther` remains as the spelling that reads well beside the
+`Set-Cookie` a login writes.
+
+A browser application usually wants "not signed in" to mean "go and sign in",
+and that decision belongs in the `ErrorMapper`, which now receives the
+request:
+
+```swift
+let errorMapper = ErrorMapper { error, context in
+    guard (error as? any HTTPErrorRepresentable)?.httpStatus == .unauthorized,
+          context.request.headers[.accept]?.contains("text/html") == true
+    else { return nil }                     // API callers keep their 401
+    return .redirect(to: "/login?next=\(context.returnTo)")
+}
+```
+
+`context.returnTo` is this request's path and query, percent-encoded to sit
+inside a query value — `.urlQueryAllowed` leaves `&` and `=` in place, so a
+return path written raw ends the `next` parameter early and the caller comes
+back having lost half their query. The `Accept` gate is the load-bearing part
+of the example: the same route serves a browser and a script, and redirecting
+the script turns a clean 401 into a 200 full of HTML.
+
+A mapping whose status is a redirect renders no error document. The
+error-only `ErrorMapper { error in … }` form is unchanged.
 
 ### Files, assets and uploads
 

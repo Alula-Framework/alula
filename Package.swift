@@ -15,7 +15,7 @@ import PackageDescription
 // driver onto an application that does not use one.
 let package = Package(
     name: "flight",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     products: [
         // Configuration: the parser and vocabulary (dependency-free) and the
         // runtime facade over swift-configuration.

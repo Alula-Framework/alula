@@ -123,7 +123,7 @@ jobs:
 
   macos:
     name: Build on macOS
-    runs-on: macos-15
+    runs-on: macos-26
     # Advisory, and there were two blockers stacked behind this flag, not one.
     #
     # The first was ours: `Duration.nanoseconds(Double)` in FlightConfigCore,

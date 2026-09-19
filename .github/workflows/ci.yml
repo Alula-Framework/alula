@@ -123,32 +123,22 @@ jobs:
 
   macos:
     name: Build on macOS
-    runs-on: macos-15
-    # Advisory, and there were two blockers stacked behind this flag, not one.
+    runs-on: macos-26
+    # Required, and green. Two blockers were stacked here, and neither was the
+    # one this job spent four releases blaming.
     #
-    # The first was ours: `Duration.nanoseconds(Double)` in FlightConfigCore,
-    # macOS 26+, fixed in d35b350. It failed *first* because FlightConfigCore
-    # is the dependency-free half of Config and compiles before
-    # swift-configuration is reached — so the log showed only our error, and a
-    # commit message here briefly claimed the upstream one was imaginary. It
-    # is not; fixing ours simply uncovered it.
+    # The first was ours: `Duration.nanoseconds(Double)` in FlightConfigCore is
+    # macOS 26+, fixed in d35b350. It failed first because FlightConfigCore is
+    # the dependency-free half of Config and compiles before
+    # swift-configuration is reached, so its error was the only one in the log.
     #
-    # The second is upstream and stands:
-    #
-    #   .build/checkouts/swift-configuration/Sources/Configuration/Providers/
-    #     Files/FileProvider.swift:189: value of type 'Data' has no member 'bytes'
-    #
-    # That file imports FoundationEssentials where it can and Foundation
-    # otherwise. On Linux it gets the former, whose `Data` has `.bytes`; on a
-    # Darwin SDK older than macOS 26 it gets the latter, which does not. So
-    # this is an SDK-and-deployment-target question rather than a bug we can
-    # patch, and raising `platforms:` is the lever — at the cost of dropping
-    # every macOS below 26.
-    #
-    # Drop this flag once the job is green: the `platforms: [.macOS(.v15)]`
-    # claim in Package.swift is either true or it is not, and a permanently
-    # red advisory check just teaches people to ignore CI.
-    continue-on-error: true
+    # The second was swift-configuration's `FileProvider.swift`, which takes
+    # FoundationEssentials where it can and Foundation otherwise — and on the
+    # macos-15 image got the latter, whose `Data` has no `.bytes`. That is an
+    # SDK question, not a deployment-target one: on macos-26 it builds with
+    # `platforms: [.macOS(.v15)]` untouched. Measured both ways rather than
+    # assumed — .v26 + macos-26 passed, and so did .v15 + macos-26, which is
+    # the one that costs nobody a platform.
     steps:
       - uses: actions/checkout@v4
 

@@ -74,6 +74,15 @@ public enum ChannelErrorReason {
     public static let unmatchedTopic = "unmatched_topic"
     /// Join refused: this socket already holds this topic's channel.
     public static let alreadyJoined = "already_joined"
+
+    /// This socket holds as many topics as it is allowed to.
+    ///
+    /// A bound rather than a policy judgement: every joined topic costs a
+    /// channel instance, a PubSub subscription and a task, and nothing about
+    /// the protocol stopped one connection from asking for them without
+    /// limit. A client meeting this is either misbehaving or needs a second
+    /// connection.
+    public static let tooManyTopics = "too_many_topics"
     /// Message on a topic this socket has not joined.
     public static let notJoined = "not_joined"
     /// Join refused: the control topic (`ChannelProtocol.controlTopic`)

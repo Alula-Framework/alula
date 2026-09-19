@@ -64,13 +64,36 @@ public struct ChannelRegistration: Sendable {
     /// Called once per successful topic match at join time.
     public let makeChannel: @Sendable (ChannelContext) throws -> any Channel
 
+    /// Roles a socket must carry to join any topic matching this pattern,
+    /// checked before the channel is built.
+    ///
+    /// Any-of within the list, as on an HTTP route — and the same
+    /// `RouteRole` type, so an application declares one enum and uses it on
+    /// both sides rather than keeping two vocabularies in step.
+    ///
+    /// **This is the coarse half of the gate.** It answers "may this kind of
+    /// client address this kind of topic at all" — `admin:*` for admins —
+    /// which is a property of the pattern and can be declared where the
+    /// pattern is. It cannot answer "is this user a member of `room:42`",
+    /// because that is a question about data, and the answer lives in
+    /// ``Channel/join(_:socket:)`` where it always has. Declaring roles here
+    /// does not replace that check; it saves a channel from being
+    /// constructed for a caller who could never have been admitted.
+    ///
+    /// `roles:` on `@WebSocketRoute` guards the *upgrade* — whether this
+    /// client may open a socket at all. This guards a topic on an already
+    /// open one. They are different questions and both are worth asking.
+    public let roles: [any RouteRole]
+
     public init(
         _ topicPattern: String,
+        roles: [any RouteRole] = [],
         source: String = "<direct>",
         makeChannel: @escaping @Sendable (ChannelContext) throws -> any Channel
     ) {
         self.topicPattern = topicPattern
         self.source = source
+        self.roles = roles
         self.makeChannel = makeChannel
     }
 

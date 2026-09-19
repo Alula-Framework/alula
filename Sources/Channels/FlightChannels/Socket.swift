@@ -236,6 +236,28 @@ public final class Socket: Sendable, Identifiable {
         }
     }
 
+    /// The topics this socket currently holds.
+    ///
+    /// Membership as observed from the socket, so a topic appears once its
+    /// join has fully established (subscribed, replied) and disappears when
+    /// it is left or the socket closes.
+    ///
+    /// Exposed because a channel's own `join` is where an application states
+    /// policy, and it could not see this: the joined set lives in the
+    /// session, so any per-connection rule — a plan limit, a tenant quota,
+    /// "one room at a time" — needed a side table keyed by ``id``.
+    /// ``ChannelsConfiguration/maxTopicsPerSocket`` is the framework's blunt
+    /// bound; this is what a considered one is written against.
+    public var activeTopics: Set<String> {
+        observation.withLock { $0.active }
+    }
+
+    /// How many topics this socket holds — ``activeTopics`` without building
+    /// the set.
+    public var activeTopicCount: Int {
+        observation.withLock { $0.active.count }
+    }
+
     /// How many outbound envelopes this socket has dropped for being behind.
     public var droppedEnvelopeCount: Int {
         Int(droppedEnvelopes.load(ordering: .relaxed))

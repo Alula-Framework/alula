@@ -38,6 +38,8 @@ internal actor SocketSession {
 
     /// How envelopes are ordered against each other on this socket.
     private let dispatch: EnvelopeDispatch
+    /// How many topics this socket may hold at once.
+    private let maxTopics: Int
     /// Bounds envelopes in flight for this socket.
     private let gate: EnvelopeGate
     /// The tail of each topic's serial chain. A topic's next envelope awaits
@@ -65,7 +67,8 @@ internal actor SocketSession {
         outbound: AsyncStream<String>.Continuation,
         logger: Logger,
         broadcaster: ChannelBroadcaster,
-        dispatch: EnvelopeDispatch = .default
+        dispatch: EnvelopeDispatch = .default,
+        maxTopics: Int = 64
     ) {
         self.router = router
         self.pubsub = pubsub
@@ -74,6 +77,7 @@ internal actor SocketSession {
         self.logger = logger
         self.broadcaster = broadcaster
         self.dispatch = dispatch
+        self.maxTopics = max(1, maxTopics)
         self.gate = EnvelopeGate(capacity: dispatch.maxConcurrent)
     }
 
@@ -141,6 +145,15 @@ internal actor SocketSession {
                 ref: envelope.ref, topic: topic, reason: ChannelErrorReason.alreadyJoined)
             return
         }
+        // Counted against admissions rather than completed joins: a client
+        // that sends a thousand joins in a burst has a thousand of them
+        // pending long before any has finished, and a bound that only sees
+        // finished joins would not be a bound at all.
+        guard routable.count < maxTopics else {
+            socket.sendError(
+                ref: envelope.ref, topic: topic, reason: ChannelErrorReason.tooManyTopics)
+            return
+        }
         routable.insert(topic)
         await run(topic: topic) { await $0.join(envelope) }
     }
@@ -198,6 +211,11 @@ internal actor SocketSession {
         guard let registration = router.match(topic) else {
             routable.remove(topic)
             socket.sendError(ref: envelope.ref, topic: topic, reason: ChannelErrorReason.unmatchedTopic)
+            return
+        }
+        if let refusal = Self.roleRefusal(registration.roles, for: socket.principal) {
+            routable.remove(topic)
+            socket.sendError(ref: envelope.ref, topic: topic, reason: refusal)
             return
         }
 
@@ -332,6 +350,22 @@ internal actor SocketSession {
         if let ref = envelope.ref {
             socket.sendReply(ref: ref, topic: envelope.topic, payload: .object([:]))
         }
+    }
+
+    /// The reason a socket may not address a topic, or nil to let it
+    /// through.
+    ///
+    /// Anonymous and under-privileged stay distinct for the same reason the
+    /// web layer keeps 401 and 403 apart: "sign in" and "you cannot do this"
+    /// are different instructions, and collapsing them leaves a client
+    /// retrying something that will never work.
+    private static func roleRefusal(
+        _ roles: [any RouteRole], for principal: (any ChannelPrincipal)?
+    ) -> String? {
+        guard !roles.isEmpty else { return nil }
+        guard let principal else { return ChannelErrorReason.unauthenticated }
+        let permitted = roles.contains { principal.hasRole($0.roleName) }
+        return permitted ? nil : ChannelErrorReason.forbidden
     }
 
     // MARK: - Heartbeat

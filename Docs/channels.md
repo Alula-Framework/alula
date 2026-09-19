@@ -156,7 +156,11 @@ struct AppModule: FlightModule {
             // needs, not a container to look it up in.
             ChannelRegistration("room:*") { channel in
                 RoomChannel(broadcaster: channel.broadcaster, chat: chat)
-            }
+            },
+            // Roles gate the pattern, before the channel is built.
+            ChannelRegistration("admin:*", roles: [AppRole.admin]) { _ in
+                AdminChannel()
+            },
         ]
     }
 }
@@ -243,14 +247,16 @@ One envelope, both directions, JSON text frames in v1:
   (join rejected, handler error) is `flight:error` with the ref.
 - Close codes beyond RFC 6455's set: `4000` heartbeat timeout, `4408` write
   timeout (the peer stopped reading — still talking, no longer listening),
-  `4400` protocol violation (undecodable envelope); binary frames close with
+  `4410` outbound overflow (reading, but slower than the rate published to
+  it — reconnect and resynchronise), `4400` protocol violation (undecodable
+  envelope); binary frames close with
   `1003` (the binary codec is a later, negotiated addition). Every
   server-initiated close sends its code: the frame is written by the socket
   handler after its tasks are joined, because a close issued from inside one
   of them raced that task's own cancellation and reached the peer as `1006`.
 - Server-produced error reasons: `unauthenticated`, `forbidden`,
-  `unmatched_topic`, `already_joined`, `not_joined`, `reserved_topic`,
-  `handler_error`, `invalid_event`.
+  `unmatched_topic`, `already_joined`, `not_joined`, `too_many_topics`,
+  `reserved_topic`, `handler_error`, `invalid_event`.
 
 Channel traffic travels on the bus under `flight:channels:<topic>`, not on
 the topic string a client joined — `ChannelProtocol.busTopic(_:)` is the
@@ -267,6 +273,69 @@ replay. Per-socket inbound processing is serial (one envelope fully handled
 before the next), and all outbound writes funnel through one per-socket
 queue — a slow client never blocks a handler, and frames never interleave.
 
+## Who may join what
+
+Two gates, asking different questions, and both worth asking.
+
+`roles:` on a `ChannelRegistration` answers **"may this kind of client
+address this kind of topic at all"** — `admin:*` for admins. That is a
+property of the pattern, so it is declared where the pattern is, checked
+before the channel is constructed, and any-of within the list. It uses
+`RouteRole`, the same type `@Controller` and the route macros take, so an
+application declares one enum and uses it on both sides instead of keeping
+two vocabularies in step. An anonymous socket gets `unauthenticated`, a
+socket with the wrong roles gets `forbidden` — kept apart because "sign in"
+and "you cannot do this" are different instructions.
+
+`Channel.join` answers **"may *this* user join *this* topic"**. Membership of
+`room:42` is data, not a role, and no declaration can express it. Roles do
+not replace this check; they save a channel from being built for a caller who
+could never have been admitted.
+
+`roles:` on `@WebSocketRoute` is a third question again — whether this client
+may open a socket at all — and guards the upgrade, not any topic on it.
+
+## How many topics one socket may hold
+
+`flight.channels.max-topics-per-socket` (64) bounds it. Every joined topic
+costs a channel instance, a PubSub subscription, a fan-in task and an entry
+in the session's per-topic ordering — five allocations, all driven by client
+input, and nothing used to stop one connection asking for them without limit.
+Over the bound, a join is refused with `too_many_topics`.
+
+The bound counts **admissions, not settled joins**: a client that sends a
+thousand joins in a burst has a thousand pending long before any has
+finished, and a bound that only saw finished joins would not be a bound.
+Leaving a topic frees its slot.
+
+There is deliberately no "unlimited" spelling — unlimited is what this
+replaced. An application needing more writes the larger number down.
+
+For a considered policy rather than a blunt bound, `Socket.activeTopics` and
+`Socket.activeTopicCount` are readable from inside `Channel.join`, so a plan
+limit or a tenant quota can live where the application states its other
+rules.
+
+## Reconnection resynchronises; it does not replay
+
+A client that reconnects re-joins every topic it wanted and takes each
+channel's fresh `initialState`. **Nothing published while it was gone is
+replayed**, and the protocol has no cursor to replay from — same boundary
+Phoenix draws.
+
+This became load-bearing when overflow started closing sockets rather than
+dropping frames: reconnect-and-resync is now a routine path, not an
+exceptional one. So `initialState` is doing more work than it looks like it
+is. A channel whose `join` returns `.null` gives a reconnecting client nothing
+to rebuild from, and the client cannot tell the difference between "nothing
+happened" and "I missed everything" — which is the gap the overflow close was
+meant to remove, reintroduced one level up.
+
+The rule of thumb: `initialState` should carry whatever a client needs to
+render the topic correctly having seen none of its history. If that is
+expensive, it is still cheaper than being wrong, and the reconnect that asks
+for it is rare.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -277,6 +346,7 @@ queue — a slow client never blocks a handler, and frames never interleave.
 | `flight.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
 | `flight.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
 | `flight.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
+| `flight.channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the

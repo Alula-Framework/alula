@@ -54,13 +54,27 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// client. See ``OutboundOverflow``.
     public var outboundOverflow: OutboundOverflow
 
+    /// How many topics one socket may hold at once.
+    ///
+    /// Every joined topic costs a channel instance, a PubSub subscription, a
+    /// fan-in task and an entry in the session's per-topic ordering — five
+    /// allocations, all driven by client input, and until this existed
+    /// nothing bounded how many a single connection could ask for.
+    ///
+    /// Sixty-four is generous for anything legitimate: a chat client holds a
+    /// handful, a dashboard a few dozen. There is deliberately no "unlimited"
+    /// spelling — unlimited is the bug this replaced. An application that
+    /// genuinely needs more writes the larger number down.
+    public var maxTopicsPerSocket: Int
+
     public init(
         heartbeatTimeout: Duration = .seconds(60),
         heartbeatCheckInterval: Duration? = nil,
         outboundBufferSize: Int = 256,
         writeTimeout: Duration? = .seconds(30),
         dispatch: EnvelopeDispatch = .default,
-        outboundOverflow: OutboundOverflow = .closeSocket
+        outboundOverflow: OutboundOverflow = .closeSocket,
+        maxTopicsPerSocket: Int = 64
     ) {
         self.heartbeatTimeout = heartbeatTimeout
         self.heartbeatCheckInterval = heartbeatCheckInterval ?? (heartbeatTimeout / 4)
@@ -68,6 +82,7 @@ public struct ChannelsConfiguration: Sendable, Equatable {
         self.writeTimeout = writeTimeout
         self.dispatch = dispatch
         self.outboundOverflow = outboundOverflow
+        self.maxTopicsPerSocket = max(1, maxTopicsPerSocket)
     }
 
     /// Keys, under Flight's usual dotted namespace:
@@ -81,6 +96,7 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     ///   means one envelope at a time socket-wide)
     /// - `flight.channels.outbound-overflow` (`"close"` or `"drop-oldest"`,
     ///   default `"close"`)
+    /// - `flight.channels.max-topics-per-socket` (Int, default 64)
     public init(configuration: Configuration) throws {
         let timeoutSeconds = configuration.get(
             "flight.channels.heartbeat-timeout-seconds",
@@ -114,7 +130,9 @@ public struct ChannelsConfiguration: Sendable, Equatable {
             outboundOverflow: try configuration.getIfPresent(
                 "flight.channels.outbound-overflow", as: String.self)
                 .map { $0.lowercased() == "drop-oldest" ? .dropOldest : .closeSocket }
-                ?? .closeSocket
+                ?? .closeSocket,
+            maxTopicsPerSocket: try configuration.getIfPresent(
+                "flight.channels.max-topics-per-socket", as: Int.self) ?? 64
         )
     }
 }

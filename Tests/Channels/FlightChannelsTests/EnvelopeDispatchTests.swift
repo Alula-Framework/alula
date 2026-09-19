@@ -241,3 +241,113 @@ struct EnvelopeDispatchTests {
         wire.close()
     }
 }
+
+// MARK: - Topic bound
+
+/// Joins anything, and reports what the socket says it holds.
+private struct CountingChannel: Channel {
+    func join(_ topic: String, socket: Socket) async -> JoinResult {
+        .ok(initialState: .number(Double(socket.activeTopicCount)))
+    }
+
+    func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult {
+        .reply(.number(Double(socket.activeTopicCount)))
+    }
+}
+
+private struct CountingModule: FlightModule {
+    let channels: [ChannelRegistration] = [
+        ChannelRegistration("many:*", source: "CountingModule") { _ in CountingChannel() }
+    ]
+}
+
+@Suite("Topics per socket", .timeLimit(.minutes(1)))
+struct TopicBoundTests {
+
+    private func harness(maxTopics: Int) throws -> TestClient {
+        let configuration = Configuration(values: [
+            "flight.channels.max-topics-per-socket": "\(maxTopics)"
+        ])
+        let pubsub = try FlightPubSubModule(configuration: configuration)
+        let channels = try FlightChannelsModule(
+            bus: pubsub.bus, configuration: configuration,
+            channels: CountingModule().channels)
+        return try TestClient(routes: [channels.socketRoute("/socket") { _ in nil }])
+    }
+
+    @Test("a socket cannot hold more topics than the bound allows")
+    func boundIsEnforced() async throws {
+        let client = try harness(maxTopics: 3)
+        let wire = ChannelWireClient(socket: try await client.webSocket("/socket"))
+
+        for index in 0..<3 {
+            try wire.send(ref: "\(index)", topic: "many:\(index)", event: "flight:join")
+            #expect(try await wire.nextEnvelope()?.event == "flight:reply")
+        }
+
+        // Every join costs a channel, a subscription and a task. Nothing
+        // used to stop a connection asking for them without limit.
+        try wire.send(ref: "over", topic: "many:4", event: "flight:join")
+        let refused = try await wire.nextEnvelope()
+        #expect(refused?.event == "flight:error")
+        #expect(refused?.payload["reason"] == .string("too_many_topics"))
+        wire.close()
+    }
+
+    @Test("leaving a topic frees its slot")
+    func leavingFreesASlot() async throws {
+        let client = try harness(maxTopics: 1)
+        let wire = ChannelWireClient(socket: try await client.webSocket("/socket"))
+
+        try wire.send(ref: "1", topic: "many:a", event: "flight:join")
+        _ = try await wire.nextEnvelope()
+        try wire.send(ref: "2", topic: "many:b", event: "flight:join")
+        #expect(try await wire.nextEnvelope()?.payload["reason"] == .string("too_many_topics"))
+
+        try wire.send(ref: "3", topic: "many:a", event: "flight:leave")
+        _ = try await wire.nextEnvelope()
+        try wire.send(ref: "4", topic: "many:b", event: "flight:join")
+        // A bound that counted admissions but never released them would be a
+        // one-way ratchet: a long-lived socket would run itself out.
+        #expect(try await wire.nextEnvelope()?.event == "flight:reply")
+        wire.close()
+    }
+
+    @Test("a burst of joins is bounded, not merely the settled count")
+    func burstsAreBounded() async throws {
+        let client = try harness(maxTopics: 2)
+        let wire = ChannelWireClient(socket: try await client.webSocket("/socket"))
+
+        // Sent without waiting for any reply: the bound has to hold against
+        // admissions in flight, not against joins that have finished.
+        for index in 0..<10 {
+            try wire.send(ref: "\(index)", topic: "many:\(index)", event: "flight:join")
+        }
+        var accepted = 0
+        var refused = 0
+        for _ in 0..<10 {
+            guard let envelope = try await wire.nextEnvelope() else { break }
+            if envelope.event == "flight:reply" { accepted += 1 }
+            if envelope.payload["reason"] == .string("too_many_topics") { refused += 1 }
+        }
+        #expect(accepted == 2)
+        #expect(refused == 8)
+        wire.close()
+    }
+
+    @Test("a socket can count its own topics, for policy a channel owns")
+    func socketReportsItsTopics() async throws {
+        let client = try harness(maxTopics: 10)
+        let wire = ChannelWireClient(socket: try await client.webSocket("/socket"))
+        try wire.send(ref: "1", topic: "many:a", event: "flight:join")
+        _ = try await wire.nextEnvelope()
+        try wire.send(ref: "2", topic: "many:b", event: "flight:join")
+        _ = try await wire.nextEnvelope()
+
+        try wire.send(ref: "3", topic: "many:a", event: "ping")
+        // Both joins are established by now, and a handler can see it — which
+        // is what an application needs to write a quota of its own.
+        #expect(try await wire.nextEnvelope()?.payload == .number(2))
+        wire.close()
+    }
+}

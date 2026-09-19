@@ -42,7 +42,9 @@ dependencies: [
 )
 ```
 
-Requires Swift 6.2+. Linux and macOS 15+.
+Requires **Swift 6.3+** — 6.2.x cannot resolve this package's traits.
+Runs on Linux and macOS 15+; building on a Mac needs the macOS 26 SDK,
+for the reason in the [README](../README.md#requirements).
 
 `Flight.run` is `bootstrap` that does not throw: it starts the application,
 and if it *cannot* start it prints why and exits `1`. A `main` that throws

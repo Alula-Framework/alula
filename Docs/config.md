@@ -30,7 +30,9 @@ dependencies: [
 ])
 ```
 
-Requires Swift 6.2+, inherited from swift-configuration.
+Requires **Swift 6.3+** — 6.2.x cannot resolve this package's traits.
+Runs on Linux and macOS 15+; building on a Mac needs the macOS 26 SDK,
+for the reason in the [README](../README.md#requirements).
 
 **Linux is the verified platform.** The manifest declares macOS 15+, iOS 18+,
 tvOS 18+, watchOS 11+ and visionOS 2+, but swift-configuration 1.2.0 does not

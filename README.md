@@ -102,16 +102,28 @@ onto an application that does not use one.
 
 ## Requirements
 
-Swift 6.3+ (see Traits above for why), Linux or macOS 15+. Strict concurrency
-throughout — every target builds in Swift 6 language mode.
+| | Requirement |
+| --- | --- |
+| Swift | **6.3 or later** — see [Traits](#traits) for why 6.2.x will not do |
+| Deployment target | macOS 15+, or Linux |
+| Building on macOS | **the macOS 26 SDK (Xcode 26)** |
+| Language mode | Swift 6, strict concurrency throughout |
 
-> **macOS is not currently buildable**, for a reason upstream of this package:
-> `apple/swift-configuration` 1.2.0 — its latest release — does not compile on
-> Darwin, because `FileProvider.swift` reaches for `Data.bytes`, which exists
-> on the Linux Foundation it was written against and not on the Darwin one.
-> Nothing here can fix it, and pinning an unreleased `main` is worse than
-> saying so. The macOS CI job runs and reports honestly rather than gating
-> merges. Recorded in [GAPS.md](GAPS.md) §1.
+The two macOS rows are different things, and the difference is the only
+surprising entry here. `platforms: [.macOS(.v15)]` is the *deployment* target
+and is accurate: what you build runs on macOS 15. But *compiling* it on a Mac
+needs the macOS 26 SDK, because `apple/swift-configuration` imports
+FoundationEssentials where it can and Foundation otherwise, and only the newer
+SDK offers the former — on an older one it reaches for a `Data.bytes` that
+Darwin's Foundation does not have.
+
+Measured rather than assumed, both ways round: `.macOS(.v26)` on a `macos-26`
+runner builds, and so does `.macOS(.v15)` on the same runner, which is why the
+floor stayed where it is. On `macos-15` it fails.
+
+> The macOS CI job **builds**; it does not run the test suite, which needs
+> service containers macOS runners do not have. So macOS is a supported build
+> platform, verified every push, and Linux is where the 1084 tests run.
 
 ## Testing
 

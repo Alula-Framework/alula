@@ -165,7 +165,8 @@ first draft were about test coverage and two of them were wrong. Check before
 believing an entry here.
 
 ### ✅ No macOS build anywhere *(fixed 2026-08-25)*
-Every package now has a `macos-15` job. The repos are public, so the 10×
+Every package now has a macOS job (`macos-26` for flight and flight-data — see
+below; `macos-15` elsewhere). The repos are public, so the 10×
 private-repo billing note no longer applies.
 
 Two things had to be learned the hard way: `swift-actions/setup-swift` only
@@ -180,19 +181,37 @@ hangar's, swift-changeset's and `flight-cli`'s macOS builds are green.
 `flight-cli`'s matters most — Homebrew runs on macOS, so that gap is now
 unblocked.
 
-**And the job immediately earned its place.** `flight` and `flight-data` do
-**not** build on macOS, and the cause is upstream:
-`apple/swift-configuration` 1.2.0 — the latest release — calls `Data.bytes`
-in `FileProvider.swift`, which exists on the Linux Foundation it was written
-against and not on the Darwin one. Nothing in either package can fix it, and
-pinning to an unreleased `main` is worse than knowing.
+**And the job immediately earned its place** — then spent four releases
+describing the wrong cause. It reported that `flight` and `flight-data` could
+not build on macOS because `apple/swift-configuration` calls `Data.bytes` in
+`FileProvider.swift`, that this was purely upstream, and that
+`platforms: [.macOS(.v15)]` was therefore **false today**. Both jobs were
+`continue-on-error: true` on that basis.
 
-So `platforms: [.macOS(.v15)]` in those two `Package.swift` files is
-**false today**. Both jobs are `continue-on-error: true` with the reason
-written into the workflow; drop that line the moment upstream ships a fix. A
-permanently red required check only teaches people to ignore CI.
+*(fixed 2026-09-19)* Two blockers were stacked, and neither conclusion held.
 
-*Worth reporting upstream — an outward-facing action, so yours to make.*
+The first was ours and was never mentioned: `Duration.nanoseconds(Double)` in
+FlightConfigCore is macOS 26+. It failed *first* — FlightConfigCore is the
+dependency-free half of Config and compiles before swift-configuration is
+reached — so the log showed only our error, and the upstream diagnosis above
+was written over the top of a failure that had not even been observed yet.
+
+The second is upstream and real, but it is an **SDK** question rather than
+something unfixable. `FileProvider.swift` imports FoundationEssentials where it
+can and Foundation otherwise; the `macos-15` image gives it the latter, whose
+`Data` has no `.bytes`. The `macos-26` image gives it the former.
+
+So the deployment target was never the problem, and `platforms: [.macOS(.v15)]`
+was never false. Measured both ways rather than assumed:
+
+| floor | runner | result |
+| --- | --- | --- |
+| `.macOS(.v26)` | `macos-26` | builds |
+| `.macOS(.v15)` | `macos-26` | builds — 5306 steps, 595s |
+| `.macOS(.v15)` | `macos-15` | fails in FileProvider |
+
+Both repositories now run the job on `macos-26` with the advisory flag removed,
+and the floor untouched at macOS 15. Nothing needed reporting upstream.
 
 ---
 

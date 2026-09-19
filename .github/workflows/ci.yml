@@ -124,15 +124,26 @@ jobs:
   macos:
     name: Build on macOS
     runs-on: macos-15
-    # Advisory for one more run, while the fix below is confirmed.
+    # Advisory, and there were two blockers stacked behind this flag, not one.
     #
-    # This said the reason was upstream — that swift-configuration 1.2.0's
-    # FileProvider.swift reached for a `Data.bytes` that Darwin's Foundation
-    # lacks, and that nothing here could fix it. That was not true, and the
-    # job's own log said so: the only error on Darwin was ours, a
-    # `Duration.nanoseconds(Double)` in FlightConfigCore that is macOS 26+.
-    # One line, on our side of the fence, blamed on a dependency for four
-    # releases while the log sat there naming the file and the line.
+    # The first was ours: `Duration.nanoseconds(Double)` in FlightConfigCore,
+    # macOS 26+, fixed in d35b350. It failed *first* because FlightConfigCore
+    # is the dependency-free half of Config and compiles before
+    # swift-configuration is reached — so the log showed only our error, and a
+    # commit message here briefly claimed the upstream one was imaginary. It
+    # is not; fixing ours simply uncovered it.
+    #
+    # The second is upstream and stands:
+    #
+    #   .build/checkouts/swift-configuration/Sources/Configuration/Providers/
+    #     Files/FileProvider.swift:189: value of type 'Data' has no member 'bytes'
+    #
+    # That file imports FoundationEssentials where it can and Foundation
+    # otherwise. On Linux it gets the former, whose `Data` has `.bytes`; on a
+    # Darwin SDK older than macOS 26 it gets the latter, which does not. So
+    # this is an SDK-and-deployment-target question rather than a bug we can
+    # patch, and raising `platforms:` is the lever — at the cost of dropping
+    # every macOS below 26.
     #
     # Drop this flag once the job is green: the `platforms: [.macOS(.v15)]`
     # claim in Package.swift is either true or it is not, and a permanently

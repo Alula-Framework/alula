@@ -1,6 +1,6 @@
+import FlightMacroSupport
 import FlightRouteScan
 import SwiftDiagnostics
-import FlightMacroSupport
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -41,7 +41,9 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         let properties = collectInjectedProperties(from: declaration, in: context)
         guard validateDistinctInjectedTypes(properties, in: context) else { return [] }
-        guard validateNonInjectedStorage(declaration, injected: properties, in: context) else { return [] }
+        guard validateNonInjectedStorage(declaration, injected: properties, in: context) else {
+            return []
+        }
 
         let basePath = RouteScanning.basePath(
             of: node, diagnostics: MacroRouteDiagnostics(context: context))
@@ -152,6 +154,9 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         var call = "controller.\(route.methodName)(context"
         if route.bodyTypeText != nil { call += ", body: body" }
+        for parameter in route.pathParameters {
+            call += ", \(parameter.name): \(parameter.name)"
+        }
         call += ")"
         if route.isAsync { call = "await \(call)" }
         if route.isThrows { call = "try \(call)" }
@@ -160,6 +165,16 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         if let bodyType = route.bodyTypeText {
             handlerLines.append(
                 "let body = try FlightWeb.decodeRequestBody(\(bodyType).self, from: context)")
+        }
+        // Parsed before the controller is called, so a handler never receives
+        // a segment it would have to check. A segment that will not parse is a
+        // 400 from here, naming the parameter and the type.
+        for parameter in route.pathParameters {
+            handlerLines.append(
+                """
+                let \(parameter.name) = try FlightWeb.decodePathParameter(\
+                \(parameter.typeText).self, named: "\(parameter.name)", from: context)
+                """)
         }
         if route.kind.isUpgrade {
             handlerLines.append("let upgradeHandler = \(call)")
@@ -292,7 +307,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         let controllerLanes = laneSpellings(in: controller)
         let routeLanes = laneSpellings(in: route)
 
-        let dropped = controllerLanes
+        let dropped =
+            controllerLanes
             .filter(securityLaneSpellings.contains)
             .filter { !routeLanes.contains($0) }
         guard !dropped.isEmpty else { return }
@@ -417,13 +433,14 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             let isVar = variable.bindingSpecifier.tokenKind == .keyword(.var)
             for binding in variable.bindings {
                 guard binding.accessorBlock == nil,
-                      binding.initializer == nil,
-                      let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                      !injectedNames.contains(pattern.identifier.text)
+                    binding.initializer == nil,
+                    let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
+                    !injectedNames.contains(pattern.identifier.text)
                 else { continue }
                 if isVar, let type = binding.typeAnnotation?.type,
-                   type.is(OptionalTypeSyntax.self)
-                    || type.as(IdentifierTypeSyntax.self)?.name.text == "Optional" {
+                    type.is(OptionalTypeSyntax.self)
+                        || type.as(IdentifierTypeSyntax.self)?.name.text == "Optional"
+                {
                     continue
                 }
                 context.diagnoseError(
@@ -448,7 +465,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             guard let kind = injectionKind(of: variable, in: context) else { continue }
             guard let binding = variable.bindings.first,
-                  let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
+                let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
             else { continue }
             guard let typeAnnotation = binding.typeAnnotation else {
                 context.diagnoseError(
@@ -476,7 +493,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
     ) -> InjectedProperty.Kind? {
         for attribute in variable.attributes {
             guard let attr = attribute.as(AttributeSyntax.self),
-                  let name = attr.attributeName.as(IdentifierTypeSyntax.self)?.name.text
+                let name = attr.attributeName.as(IdentifierTypeSyntax.self)?.name.text
             else { continue }
             switch name {
             case "Inject":
@@ -490,7 +507,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                     )
                     return nil
                 }
-                return .configValue(key: key, defaultValue: labeledArgumentSource(of: attr, label: "default"))
+                return .configValue(
+                    key: key, defaultValue: labeledArgumentSource(of: attr, label: "default"))
             default:
                 continue
             }
@@ -500,14 +518,18 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
     private static func firstArgumentSource(of attribute: AttributeSyntax) -> String? {
         guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
-              let first = arguments.first, first.label == nil
+            let first = arguments.first, first.label == nil
         else { return nil }
         let text = first.expression.trimmedDescription
         return text == "nil" ? nil : text
     }
 
-    private static func labeledArgumentSource(of attribute: AttributeSyntax, label: String) -> String? {
-        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else { return nil }
+    private static func labeledArgumentSource(of attribute: AttributeSyntax, label: String)
+        -> String?
+    {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
+            return nil
+        }
         for argument in arguments where argument.label?.text == label {
             return argument.expression.trimmedDescription
         }

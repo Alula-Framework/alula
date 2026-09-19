@@ -24,6 +24,20 @@ public enum RouteKind: String, CaseIterable {
 }
 
 /// One mapped handler method, as scanned from the controller body.
+/// One handler parameter bound to a path segment: `id: UUID` against `:id`.
+public struct PathParameterBinding: Sendable {
+    /// The label, which is also the `:name` it binds to. One name rather than
+    /// two is the point: a rename cannot leave them disagreeing.
+    public let name: String
+    /// The declared type, verbatim.
+    public let typeText: String
+
+    public init(name: String, typeText: String) {
+        self.name = name
+        self.typeText = typeText
+    }
+}
+
 public struct ScannedRoute {
     public let kind: RouteKind
     /// The path pattern's literal content ("/users/:id").
@@ -31,6 +45,9 @@ public struct ScannedRoute {
     public let methodName: String
     /// Has a second, `body:`-labeled parameter of this type.
     public let bodyTypeText: String?
+    /// Handler parameters bound to `:name` segments, in signature order.
+    /// Empty for a handler that reads them from the context itself.
+    public let pathParameters: [PathParameterBinding]
     /// The `maxBodyBytes:` argument's source text, verbatim — nil means
     /// the transport default.
     public let maxBodyBytesText: String?
@@ -67,8 +84,8 @@ public enum RouteScanning {
         var found: [(RouteKind, String, String?, String?, AttributeSyntax)] = []
         for element in function.attributes {
             guard let attribute = element.as(AttributeSyntax.self),
-                  let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text,
-                  let kind = RouteKind(rawValue: name)
+                let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text,
+                let kind = RouteKind(rawValue: name)
             else { continue }
             guard let path = literalPath(of: attribute) else {
                 diagnostics.error(
@@ -78,11 +95,13 @@ public enum RouteScanning {
                 )
                 continue
             }
-            found.append((
-                kind, path,
-                labeledArgumentText(of: attribute, named: "maxBodyBytes"),
-                labeledArgumentText(of: attribute, named: "pipelines"),
-                attribute))
+            found.append(
+                (
+                    kind, path,
+                    labeledArgumentText(of: attribute, named: "maxBodyBytes"),
+                    labeledArgumentText(of: attribute, named: "pipelines"),
+                    attribute
+                ))
         }
         return found
     }
@@ -106,8 +125,8 @@ public enum RouteScanning {
     /// a plain (non-interpolated) string literal.
     private static func literalPath(of attribute: AttributeSyntax) -> String? {
         guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
-              let first = arguments.first, first.label == nil,
-              let literal = first.expression.as(StringLiteralExprSyntax.self)
+            let first = arguments.first, first.label == nil,
+            let literal = first.expression.as(StringLiteralExprSyntax.self)
         else { return nil }
         var path = ""
         for segment in literal.segments {
@@ -178,8 +197,8 @@ public enum RouteScanning {
 
         let parameters = Array(function.signature.parameterClause.parameters)
         guard let first = parameters.first,
-              first.firstName.tokenKind == .wildcard,
-              typeName(first.type).hasSuffix("RequestContext")
+            first.firstName.tokenKind == .wildcard,
+            typeName(first.type).hasSuffix("RequestContext")
         else {
             diagnostics.error(
                 "route.signature",
@@ -189,18 +208,59 @@ public enum RouteScanning {
             return []
         }
 
+        // Everything after the context is either the request body or a path
+        // segment. `body:` keeps its reserved label; anything else is matched
+        // against the `:name` segments the route declares, which is what makes
+        // a typo in either one a build error rather than a nil at runtime.
         var bodyTypeText: String? = nil
-        if parameters.count >= 2 {
-            let second = parameters[1]
-            guard parameters.count == 2, second.firstName.text == "body" else {
+        var pathParameters: [PathParameterBinding] = []
+        let declaredSegments = mappings.reduce(into: Set<String>()) { names, mapping in
+            names.formUnion(pathSegmentNames(in: mapping.1))
+        }
+        for parameter in parameters.dropFirst() {
+            let label = parameter.firstName.text
+            if label == "body" {
+                guard bodyTypeText == nil else {
+                    diagnostics.error(
+                        "route.signature",
+                        "Route handler '\(name)' declares 'body:' more than once.",
+                        at: function)
+                    return []
+                }
+                bodyTypeText = parameter.type.trimmedDescription
+                continue
+            }
+            guard parameter.firstName.tokenKind != .wildcard else {
                 diagnostics.error(
                     "route.signature",
-                    "Route handler '\(name)' may take at most one extra parameter, labeled 'body:', decoded from the request body.",
-                    at: function
-                )
+                    """
+                    Route handler '\(name)' has an unlabeled parameter after the context. \
+                    Label it 'body:' to decode it from the request body, or name it after a \
+                    path segment to receive that segment parsed.
+                    """,
+                    at: parameter)
                 return []
             }
-            bodyTypeText = second.type.trimmedDescription
+            guard declaredSegments.contains(label) else {
+                let available =
+                    declaredSegments.isEmpty
+                    ? "this route's path declares none"
+                    : "declared: "
+                        + declaredSegments.sorted().map { ":\($0)" }
+                        .joined(separator: ", ")
+                diagnostics.error(
+                    "route.pathparameter",
+                    """
+                    Route handler '\(name)' takes '\(label):', but no path segment is named \
+                    ':\(label)' — \(available). A path parameter's label is the segment it \
+                    binds to, so the two cannot drift apart.
+                    """,
+                    at: parameter)
+                return []
+            }
+            pathParameters.append(
+                PathParameterBinding(
+                    name: label, typeText: parameter.type.trimmedDescription))
         }
 
         let effects = function.signature.effectSpecifiers
@@ -249,6 +309,7 @@ public enum RouteScanning {
                 path: path,
                 methodName: name,
                 bodyTypeText: bodyTypeText,
+                pathParameters: pathParameters,
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,
                 attribute: attribute,
@@ -260,6 +321,17 @@ public enum RouteScanning {
         }
     }
 
+    /// The `:name` segments a path pattern declares.
+    ///
+    /// `**` is deliberately absent: the catch-all binds the remainder of the
+    /// path, which is a string by nature and has no label to bind to.
+    static func pathSegmentNames(in path: String) -> Set<String> {
+        Set(
+            path.split(separator: "/")
+                .filter { $0.hasPrefix(":") }
+                .map { String($0.dropFirst()) })
+    }
+
     /// The `@Controller` base path — its first, unlabeled string-literal
     /// argument. Empty for `@Controller` with no path, and for `nil`.
     public static func basePath(
@@ -267,7 +339,7 @@ public enum RouteScanning {
         diagnostics: some RouteDiagnostics
     ) -> String {
         guard let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-              let first = arguments.first, first.label == nil
+            let first = arguments.first, first.label == nil
         else { return "" }
         if first.expression.trimmedDescription == "nil" { return "" }
         guard let literal = first.expression.as(StringLiteralExprSyntax.self) else {

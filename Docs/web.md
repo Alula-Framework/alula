@@ -29,12 +29,49 @@ struct UserController {
     @Inject var userService: UserService          // Flight Core DI, unchanged
 
     @GetRoute("/users/:id")
-    func getUser(_ context: RequestContext) async throws -> UserResponse {
-        guard let id = context.pathParam("id") else {
-            throw HTTPError(.badRequest, "missing id")
-        }
-        return try await userService.find(id)        // UserResponse: Codable + ResponseEncodable
+    func getUser(_ context: RequestContext, id: UUID) async throws -> UserResponse {
+        try await userService.find(id)               // UserResponse: Codable + ResponseEncodable
     }
+
+### Path parameters arrive typed
+
+A handler parameter named after a `:segment` receives it parsed:
+
+```swift
+@GetRoute("/orders/:orderID/lines/:line")
+func line(_ context: RequestContext, orderID: UUID, line: Int) async throws -> Line
+```
+
+The label *is* the segment it binds to, so the two cannot drift apart — asking
+for a segment the path does not declare is a build error naming the ones it
+does:
+
+```
+error: Route handler 'user' takes 'slug:', but no path segment is named
+':slug' — declared: :id. A path parameter's label is the segment it binds to,
+so the two cannot drift apart.
+```
+
+A segment that will not parse never reaches the handler: it is a 400 naming
+the parameter and the type it expected. `String`, the integer types, `Double`,
+`Bool` and `UUID` are understood; conform `PathParameterConvertible` for
+anything else, and the rule for what the segment may be lives at the edge
+rather than in every handler that receives it:
+
+```swift
+struct Slug: PathParameterConvertible {
+    let value: String
+    init?(pathParameter text: String) {
+        guard text.allSatisfy({ $0.isLowercase || $0.isNumber || $0 == "-" })
+        else { return nil }
+        self.value = text
+    }
+}
+```
+
+`context.pathParam("id")` still returns the raw `String`, and
+`context.pathParam("id", as: UUID.self)` parses one where a handler signature
+cannot reach — inside middleware, say.
 
     @PostRoute("/users")
     func createUser(_ context: RequestContext, body: CreateUserRequest) async throws -> UserResponse {

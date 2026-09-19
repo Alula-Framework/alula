@@ -57,8 +57,14 @@ struct PresenceGossipFrame: Codable {
     let v: Int
     let message: PresenceGossipMessage
 
+    /// Shared. Gossip is per-message and per-node: on a busy cluster this is
+    /// the most frequently encoded type in the package, and neither coder
+    /// carries configuration worth rebuilding.
+    private static let frameEncoder = JSONEncoder()
+    private static let frameDecoder = JSONDecoder()
+
     static func encode(_ message: PresenceGossipMessage) -> Data? {
-        try? JSONEncoder().encode(PresenceGossipFrame(v: PresenceGossip.version, message: message))
+        try? frameEncoder.encode(PresenceGossipFrame(v: PresenceGossip.version, message: message))
     }
 
     /// nil for undecodable payloads; `.some(nil)`… avoided — returns the
@@ -66,8 +72,8 @@ struct PresenceGossipFrame: Codable {
     /// reasons for logging.
     static func decode(_ data: Data) -> (message: PresenceGossipMessage?, unknownVersion: Int?) {
         struct VersionProbe: Codable { let v: Int }
-        guard let frame = try? JSONDecoder().decode(PresenceGossipFrame.self, from: data) else {
-            let probed = try? JSONDecoder().decode(VersionProbe.self, from: data)
+        guard let frame = try? frameDecoder.decode(PresenceGossipFrame.self, from: data) else {
+            let probed = try? frameDecoder.decode(VersionProbe.self, from: data)
             if let probed, probed.v != PresenceGossip.version {
                 return (nil, probed.v)
             }

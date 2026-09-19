@@ -134,7 +134,11 @@ public func decodeQuery<Value: Decodable>(
 ) throws -> Value {
     let query = context.request.rawQuery
     do {
-        return try FormDecoder().decode(type, from: Data(query.utf8))
+        // The application's decoder, not a fresh one. A form *body* goes
+        // through `context.coders.formDecoder`, and a query string reaching
+        // for its own instance meant the two could be configured apart
+        // without anything saying so.
+        return try context.coders.formDecoder.decode(type, from: Data(query.utf8))
     } catch let error as DecodingError {
         throw HTTPError(.badRequest, queryErrorMessage(error, type: type))
     }

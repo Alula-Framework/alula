@@ -89,6 +89,11 @@ public enum ProblemDetails {
         let detail: String?
     }
 
+    /// Shared. Every 404, 401 and 500 goes through the closure below, and a
+    /// fresh encoder per error response is an allocation for a fixed shape
+    /// that is never configured.
+    private static let encoder = JSONEncoder()
+
     /// The default ``WebCoders/renderError``.
     public static let render: @Sendable (HTTPResponse.Status, String) -> Response = { status, message in
         let body = Body(
@@ -97,7 +102,7 @@ public enum ProblemDetails {
             detail: message == status.reasonPhrase ? nil : message)
         // A three-field struct of primitives cannot fail to encode; the
         // fallback keeps this total rather than trapping on the impossible.
-        guard let data = try? JSONEncoder().encode(body) else {
+        guard let data = try? encoder.encode(body) else {
             return .status(status)
         }
         var headers: HTTPFields = [:]
@@ -178,8 +183,11 @@ public enum SimpleErrorBody {
         let error: String
     }
 
+    /// Shared, for the reason ``ProblemDetails`` gives.
+    private static let encoder = JSONEncoder()
+
     public static let render: @Sendable (HTTPResponse.Status, String) -> Response = { status, message in
-        guard let data = try? JSONEncoder().encode(Body(status: status.code, error: message))
+        guard let data = try? encoder.encode(Body(status: status.code, error: message))
         else {
             return .status(status)
         }

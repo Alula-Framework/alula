@@ -13,6 +13,11 @@ struct TokenHeader: Sendable, Equatable {
         let kid: String?
     }
 
+    /// Shared: `parse` runs on every token validation, which is every
+    /// authenticated request, and the decoder is configured with nothing —
+    /// so a fresh one per request bought an allocation and no behaviour.
+    private static let headerDecoder = JSONDecoder()
+
     static func parse(_ token: String) throws(TokenValidationError) -> TokenHeader {
         let segments = token.split(separator: ".", omittingEmptySubsequences: false)
         guard segments.count == 3 else {
@@ -26,7 +31,7 @@ struct TokenHeader: Sendable, Equatable {
                 kind: .malformedToken, reason: "JOSE header is not valid base64url"
             )
         }
-        guard let fields = try? JSONDecoder().decode(Fields.self, from: headerData) else {
+        guard let fields = try? Self.headerDecoder.decode(Fields.self, from: headerData) else {
             throw TokenValidationError(
                 kind: .malformedToken, reason: "JOSE header is not a valid JSON object"
             )

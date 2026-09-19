@@ -4,6 +4,53 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.2] - 2026-09-19
+
+macOS builds. One line of this package was stopping it, and a stale diagnosis
+was hiding that for four releases.
+
+### Fixed
+
+- **`Duration.nanoseconds(Double)` is macOS 26+.** `ConfigDecodable`'s duration
+  parser called it for the `"500ns"` case, so every Darwin build of this
+  package failed with *"'nanoseconds' is only available in macOS 26.0 or
+  newer"* — at a `platforms: [.macOS(.v15)]` deployment target, which is the
+  one this package declares. Linux has no availability gating, so it compiled
+  there and the Darwin log went unread.
+
+  `.seconds`, `.milliseconds` and `.microseconds` have taken a `Double` since
+  macOS 13, so the fix is `.microseconds(magnitude / 1_000)`. It is exact
+  attosecond for attosecond, and better than the integer overload, which
+  truncates `"0.5ns"` to zero.
+
+### Changed
+
+- **The macOS CI job is required rather than advisory**, and runs on
+  `macos-26`. It had been `continue-on-error: true` since it was written, on
+  the stated grounds that Darwin was blocked by something only upstream could
+  fix.
+
+  Two blockers were stacked. Ours, above, failed first — FlightConfigCore is
+  the dependency-free half of Config and compiles before swift-configuration is
+  reached — so its error was the only one in the log, and the upstream
+  diagnosis had been written over a failure nobody had yet observed. The second
+  is real but is an *SDK* question: swift-configuration takes
+  FoundationEssentials where the SDK offers it and Foundation where it does
+  not, and only the latter lacks `Data.bytes`.
+
+  So the deployment target was never the lever. Measured both ways:
+  `.macOS(.v26)` on `macos-26` builds, and so does `.macOS(.v15)`, which is why
+  the floor is untouched. **Building on a Mac needs the macOS 26 SDK; what you
+  build still runs on macOS 15.**
+
+### Documentation
+
+- Requirements now state the build SDK and the deployment target as separate
+  things, because they are. The README had said macOS "is not currently
+  buildable"; `config.md` had claimed the manifest declares iOS, tvOS, watchOS
+  and visionOS support, which it never has; and two guides required Swift 6.2
+  where the package requires 6.3.
+
 ## [0.21.1] - 2026-09-19
 
 `@Settings` composes. It never had: every release before this one failed to

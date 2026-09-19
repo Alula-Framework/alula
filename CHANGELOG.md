@@ -6,8 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.21.1] - 2026-09-19
 
-`@Settings` composes. It never had: 0.21.0 and everything before it failed to
-build any application declaring one.
+`@Settings` composes. It never had: every release before this one failed to
+build an application whose component graph needed a settings type.
 
 ### Fixed
 
@@ -15,10 +15,16 @@ build any application declaring one.
   graph so that *projecting* one onto a graph property could not skip the
   `validate()` its initializer runs. Excluding it made it arrive as a graph
   *root* instead, and roots are resolved from what modules provide — no module
-  provides a settings type, so any application with one failed with "no module
-  in this application provides AppSettings", naming a type the generator had
-  scanned itself. The graph constructs rather than projects, so building it as
-  a node runs its own init, and `validate()` with it.
+  provides a settings type, so the build failed with "no module in this
+  application provides AppSettings", naming a type the generator had scanned
+  itself. The graph constructs rather than projects, so building it as a node
+  runs its own init, and `validate()` with it.
+
+  The reach is any `@Component`, `@Service` or `@Repository` that injects a
+  settings type — anything that makes it a node of the component graph. A
+  settings type injected *only* by a `@Controller` composed fine, because a
+  route terminal is constructed per request along a different path, which is
+  part of why this survived as long as it did.
 
   A settings node now always receives `_flightConfiguration:` and always
   constructs with `try`: `@Settings` generates a throwing

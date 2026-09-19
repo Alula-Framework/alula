@@ -71,6 +71,14 @@ struct WireController {
         return "impatient"
     }
 
+    /// Deliberately slower than a client can send, so the wire test drives
+    /// the credit-gated pump into its backpressure path rather than its
+    /// happy one.
+    @WebSocketRoute("/ws-slow")
+    func slowSocket(_ context: RequestContext) -> any WebSocketUpgradeHandler {
+        SlowEchoHandler()
+    }
+
     @WebSocketRoute("/ws/:room")
     func socket(_ context: RequestContext) -> any WebSocketUpgradeHandler {
         WireEchoHandler(room: context.pathParam("room") ?? "?")
@@ -167,4 +175,23 @@ func withRunningServer(
     try await body(port)
     server.cancel()
     _ = try? await server.value
+}
+
+
+/// Echoes, slowly. One message at a time with a pause, which is exactly the
+/// shape that used to let an unbounded inbound buffer grow.
+struct SlowEchoHandler: WebSocketUpgradeHandler {
+    func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+        for await frame in connection.frames {
+            switch frame {
+            case .text(let text):
+                try await Task.sleep(for: .milliseconds(5))
+                try await connection.send("echo: \(text)")
+            case .close:
+                return
+            default:
+                continue
+            }
+        }
+    }
 }

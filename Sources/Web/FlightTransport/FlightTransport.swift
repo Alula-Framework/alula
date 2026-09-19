@@ -107,6 +107,7 @@ public struct FlightTransport: ServerTransport {
                             inbound: inbound,
                             outbound: outbound,
                             maxMessageBytes: configuration.maxWebSocketFrameBytes,
+                            readAhead: configuration.webSocketReadAhead,
                             logger: logger
                         )
                     }
@@ -340,17 +341,42 @@ public struct FlightTransport: ServerTransport {
         return await dispatch(streamed)
     }
 
+    /// Drives one upgraded connection: a credit-gated pump on one side, the
+    /// handler on the other.
+    ///
+    /// **The pump only reads when the handler has asked for more.** It used
+    /// to read as fast as the peer sent, into an `AsyncStream` built with
+    /// `makeStream()` — whose buffer is unbounded. `maxMessageBytes` caps each
+    /// message and says nothing about how many are queued, so a peer that
+    /// sent faster than the handler worked grew this process's memory with no
+    /// limit at all. The comment on `dispatchStreaming`, thirty lines up, had
+    /// been making exactly this argument about request bodies the whole time.
+    ///
+    /// `readAhead` credits are issued up front and one more each time the
+    /// handler takes a frame, so at most that many messages are ever
+    /// outstanding: the bound is `readAhead × maxMessageBytes` per connection
+    /// rather than "whatever arrives". One credit is the default, which keeps
+    /// the pump parked in `nextMessage` — reading the *next* message while
+    /// the handler works on the current one — so a peer's close is still
+    /// noticed promptly whenever the handler is keeping up. When it is not
+    /// keeping up, the socket goes undrained and TCP slows the peer down,
+    /// which is the entire point.
     static func runUpgradedConnection(
         _ upgrade: WebSocketUpgrade,
         inbound: WebSocketInboundStream,
         outbound: WebSocketOutboundWriter,
         maxMessageBytes: Int,
+        readAhead: Int,
         logger: Logger
     ) async throws {
         let (frames, continuation) = AsyncStream<FlightWeb.WebSocketFrame>.makeStream()
+        let (credits, creditContinuation) = AsyncStream<Void>.makeStream()
+        for _ in 0..<max(1, readAhead) { creditContinuation.yield(()) }
+        let handoff = InboundFrameHandoff(
+            frames.makeAsyncIterator(), credits: creditContinuation)
 
         let connection = WebSocketConnection(
-            frames: frames,
+            frames: WebSocketFrames(pulling: { await handoff.next() }),
             send: { frame in
                 do {
                     switch frame {
@@ -401,8 +427,19 @@ public struct FlightTransport: ServerTransport {
                 // this stream simply ends, so a clean end honestly reports
                 // "no status". What changed is that an *abnormal* end no
                 // longer pretends to be a clean one.
+                var creditIterator = credits.makeAsyncIterator()
                 do {
-                    while let message = try await iterator.nextMessage(maxSize: maxMessageBytes) {
+                    // One read per credit. Awaiting here rather than in
+                    // `nextMessage` is what leaves bytes in the socket buffer
+                    // for the kernel to push back on.
+                    while await creditIterator.next() != nil {
+                        guard
+                            let message = try await iterator.nextMessage(
+                                maxSize: maxMessageBytes)
+                        else {
+                            continuation.yield(.close(code: .noStatus, reason: ""))
+                            break
+                        }
                         switch message {
                         case .text(let text):
                             continuation.yield(.text(text))
@@ -410,7 +447,6 @@ public struct FlightTransport: ServerTransport {
                             continuation.yield(.binary(Data(buffer: buffer)))
                         }
                     }
-                    continuation.yield(.close(code: .noStatus, reason: ""))
                 } catch is CancellationError {
                     continuation.yield(.close(code: .goingAway, reason: "server shutting down"))
                 } catch {
@@ -447,9 +483,38 @@ public struct FlightTransport: ServerTransport {
             // and the handler's frame iteration has ended.
             await group.next()
             group.cancelAll()
+            // Releases a pump parked on a credit that is never coming.
+            creditContinuation.finish()
         }
     }
 
+}
+
+/// Hands frames to the handler and pays the pump a credit for each one taken.
+///
+/// Outside any actor for the reason `BodyPuller` is: `next()` on a stream
+/// iterator is `mutating` and `async`. Access is serialized by
+/// ``WebSocketFrames``' single-consumer contract, which is what the
+/// `@unchecked` attests.
+final class InboundFrameHandoff: @unchecked Sendable {
+    private var iterator: AsyncStream<FlightWeb.WebSocketFrame>.AsyncIterator
+    private let credits: AsyncStream<Void>.Continuation
+
+    init(
+        _ iterator: AsyncStream<FlightWeb.WebSocketFrame>.AsyncIterator,
+        credits: AsyncStream<Void>.Continuation
+    ) {
+        self.iterator = iterator
+        self.credits = credits
+    }
+
+    func next() async -> FlightWeb.WebSocketFrame? {
+        let frame = await iterator.next()
+        // After the take, not before: the pump then fetches the next message
+        // while the handler is still working on this one.
+        if frame != nil { credits.yield(()) }
+        return frame
+    }
 }
 
 

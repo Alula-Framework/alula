@@ -644,6 +644,23 @@ Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
    is not writable through that seam. In-process (`TestClient.webSocket`)
    surfaces the routed status; plain HTTP requests to the same path get the
    routed response on the wire as normal.
+9. **Inbound WebSocket frames pull; they are not buffered.**
+   `WebSocketConnection.frames` is a `WebSocketFrames` sequence that reads one
+   message per demand, so a handler that has not asked for the next frame is
+   not draining the socket and TCP slows the peer down. It used to be an
+   `AsyncStream` fed by a pump running as fast as the peer could send, whose
+   buffer is unbounded: `maxWebSocketFrameBytes` caps each message and says
+   nothing about how many are queued, so a fast client against a slow handler
+   grew this process's memory with no limit. The bound is now
+   `webSocketReadAhead × maxWebSocketFrameBytes` per connection, defaulting to
+   one message of read-ahead — enough for the pump to fetch the next message
+   while the handler works on the current one, which is also what keeps a
+   peer's close noticed promptly.
+
+   The trade is that a slow handler now presents as a slow *client* rather
+   than as memory growth. That is the right way round: one is a bug report,
+   the other is an outage. `WebSocketConnection.init(frames: AsyncStream<…>)`
+   still exists for in-memory harnesses, and carries the buffer it always did.
 
 ## Layout
 

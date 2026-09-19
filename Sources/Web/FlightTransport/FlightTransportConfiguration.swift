@@ -43,6 +43,16 @@ public struct FlightTransportConfiguration: ServerTransportConfiguration {
     /// closed — enforced before dispatch ever runs.
     public var maxRequestBodyBytes: Int
     public var maxWebSocketFrameBytes: Int
+    /// How many inbound WebSocket messages may be outstanding — read from the
+    /// socket but not yet taken by the handler — per connection.
+    ///
+    /// This is the memory bound on inbound traffic: `webSocketReadAhead ×
+    /// maxWebSocketFrameBytes` per connection, rather than however fast the
+    /// peer can send. One is the right answer for almost everything: the pump
+    /// fetches the next message while the handler works on the current one,
+    /// so the pipeline stays full without a queue forming. Raise it only for
+    /// a handler that is genuinely bursty, and remember what it multiplies.
+    public var webSocketReadAhead: Int
 
     /// How long a connection may sit without completing a request before it
     /// is closed. `nil` waits forever, which is what this used to do.
@@ -170,6 +180,7 @@ public struct FlightTransportConfiguration: ServerTransportConfiguration {
         backlog: Int = 256,
         maxRequestBodyBytes: Int = 1 << 20,
         maxWebSocketFrameBytes: Int = 1 << 20,
+        webSocketReadAhead: Int = 1,
         idleTimeout: Duration? = .seconds(60),
         tls: TLS? = nil,
         onBound: (@Sendable (_ port: Int) -> Void)? = nil
@@ -179,6 +190,7 @@ public struct FlightTransportConfiguration: ServerTransportConfiguration {
         self.backlog = backlog
         self.maxRequestBodyBytes = maxRequestBodyBytes
         self.maxWebSocketFrameBytes = maxWebSocketFrameBytes
+        self.webSocketReadAhead = webSocketReadAhead
         self.idleTimeout = idleTimeout
         self.tls = tls
         self.onBound = onBound

@@ -65,24 +65,37 @@ public struct WebSocketCloseCode: Sendable, Equatable, RawRepresentable {
 /// this type, which is what lets an HTTP/2 transport serve every existing
 /// handler unmodified.
 ///
-/// `frames` is a single-consumer stream: iterate it from exactly one task
+/// `frames` is a single-consumer sequence: iterate it from exactly one task
 /// (normally the `WebSocketUpgradeHandler` body). It finishes when the peer
 /// closes or the transport shuts the connection down.
 public struct WebSocketConnection: Sendable {
     /// Inbound frames, protocol frames already handled by the transport.
-    public let frames: AsyncStream<WebSocketFrame>
+    public let frames: WebSocketFrames
 
     private let sendFrame: @Sendable (WebSocketFrame) async throws -> Void
     private let closeConnection: @Sendable (WebSocketCloseCode, String) async throws -> Void
 
     public init(
-        frames: AsyncStream<WebSocketFrame>,
+        frames: WebSocketFrames,
         send: @escaping @Sendable (WebSocketFrame) async throws -> Void,
         close: @escaping @Sendable (WebSocketCloseCode, String) async throws -> Void
     ) {
         self.frames = frames
         self.sendFrame = send
         self.closeConnection = close
+    }
+
+    /// Builds one over a stream, for a transport that already has one in hand.
+    ///
+    /// Carries a buffer, and therefore no backpressure — what the stream's
+    /// producer puts in it is bounded only by the producer. Fine for an
+    /// in-memory pair in a test, wrong for a socket: see ``WebSocketFrames``.
+    public init(
+        frames: AsyncStream<WebSocketFrame>,
+        send: @escaping @Sendable (WebSocketFrame) async throws -> Void,
+        close: @escaping @Sendable (WebSocketCloseCode, String) async throws -> Void
+    ) {
+        self.init(frames: WebSocketFrames(frames), send: send, close: close)
     }
 
     /// Sends one frame. Throws `WebSocketError.connectionClosed` once the
@@ -136,4 +149,70 @@ public typealias UpgradedConnection = WebSocketConnection
 /// at composition, not at the first request that hits it.
 public enum UpgradeKind: Sendable, Equatable, CaseIterable {
     case webSocket
+}
+
+
+/// Inbound frames, pulled one at a time.
+///
+/// **Pull-based on purpose**, and for the reason the HTTP body path already
+/// gives: the obvious shape — a task reading the socket and feeding an
+/// `AsyncStream` — carries an unbounded buffer, so the feeder races ahead of
+/// the handler and a peer that sends faster than the handler works grows the
+/// server's memory without limit. A per-message size cap does not help; it
+/// bounds each message, not how many are queued.
+///
+/// Pulling one frame per demand instead puts backpressure where it belongs:
+/// a handler that has not asked for the next frame is a handler that is not
+/// reading the socket, and TCP slows the peer down. The cost is that a slow
+/// handler is now visible as a slow *client* rather than as memory growth,
+/// which is the trade worth making — one of those is a bug report and the
+/// other is an outage.
+///
+/// Single-consumer: iterate from exactly one task.
+public struct WebSocketFrames: AsyncSequence, Sendable {
+    public typealias Element = WebSocketFrame
+
+    private let pull: @Sendable () async -> WebSocketFrame?
+
+    /// Builds one from a source that yields a frame per demand and `nil` when
+    /// the connection is done. A transport's own constructor.
+    public init(pulling next: @escaping @Sendable () async -> WebSocketFrame?) {
+        self.pull = next
+    }
+
+    /// Adapts a stream, for transports and harnesses that produce one. The
+    /// stream's buffering is then what bounds memory, which for an
+    /// `AsyncStream` built with `makeStream()` is nothing at all.
+    public init(_ stream: AsyncStream<WebSocketFrame>) {
+        let source = StreamSource(stream)
+        self.init(pulling: { await source.next() })
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(pull: pull)
+    }
+
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        let pull: @Sendable () async -> WebSocketFrame?
+        public mutating func next() async -> WebSocketFrame? { await pull() }
+    }
+
+    /// Holds a stream's iterator, which is neither `Sendable` nor safe to
+    /// advance concurrently.
+    ///
+    /// Outside any actor because `next()` is `mutating` and `async`, which an
+    /// actor-isolated property cannot offer. Access is serialized by this
+    /// sequence's single-consumer contract instead — the same attestation,
+    /// for the same reason, as `BodyPuller` on the request-body side.
+    private final class StreamSource: @unchecked Sendable {
+        private var iterator: AsyncStream<WebSocketFrame>.AsyncIterator
+
+        init(_ stream: AsyncStream<WebSocketFrame>) {
+            self.iterator = stream.makeAsyncIterator()
+        }
+
+        func next() async -> WebSocketFrame? {
+            await iterator.next()
+        }
+    }
 }

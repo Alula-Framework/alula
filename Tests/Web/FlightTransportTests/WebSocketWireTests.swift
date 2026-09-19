@@ -99,6 +99,30 @@ struct WebSocketWireTests {
         }
     }
 
+    @Test func aBurstSurvivesASlowHandler() async throws {
+        // The inbound pump now reads only what the handler has asked for, so
+        // a client that outruns the handler is throttled by TCP rather than
+        // queued in this process. What must not change is delivery: nothing
+        // dropped, nothing reordered, however far behind the handler falls.
+        try await withRunningServer { port in
+            try await withWebSocket(port: port, path: "/ws-slow") { inbound, outbound in
+                var iterator = inbound.makeAsyncIterator()
+                let count = 20
+                for index in 0..<count {
+                    try await outbound.write(self.maskedText("m\(index)"))
+                }
+                var received: [String] = []
+                for _ in 0..<count {
+                    guard let frame = try await iterator.next(),
+                        let text = self.text(of: frame)
+                    else { break }
+                    received.append(text)
+                }
+                #expect(received == (0..<count).map { "echo: m\($0)" })
+            }
+        }
+    }
+
     @Test func pingIsAutoPonged() async throws {
         try await withRunningServer { port in
             try await withWebSocket(port: port, path: "/ws/lobby") { inbound, outbound in

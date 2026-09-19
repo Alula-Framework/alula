@@ -236,6 +236,7 @@ whole application without binding a port.
 - ``ServerSentEventWriter``
 - ``WebSocketConnection``
 - ``UpgradeResponse``
+- ``WebSocketFrames``
 - ``WebSocketUpgrade``
 - ``UpgradeKind``
 - ``WebSocketUpgradeHandler``

@@ -91,7 +91,7 @@ public func compose(_ chain: [MiddlewareRegistration], around responder: @escapi
 ///   never to the client.
 public func errorResponse(for error: any Error, context: RequestContext) -> Response {
     let render = context.coders.renderError
-    if let mapped = context.errorMapper.map(error, context) {
+    if let mapped = context.errorMapper.map(error, in: context) {
         if mapped.status.kind == .serverError {
             context.logger.error("request failed: \(String(describing: error))")
         }

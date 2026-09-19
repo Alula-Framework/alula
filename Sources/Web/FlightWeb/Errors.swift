@@ -117,18 +117,51 @@ public struct ErrorMapper: Sendable {
 
     /// The shape an error should take on the wire, or `nil` to decline.
     ///
-    /// Both `init`s store one of these; the error-only form ignores the
-    /// context. `errorResponse(for:context:)` is the caller.
-    public let map: @Sendable (any Error, RequestContext) -> Mapping?
+    /// The context is optional here and not in either initializer, because a
+    /// mapper can be *asked* without one — see ``map(_:)``.
+    private let mapping: @Sendable (any Error, RequestContext?) -> Mapping?
 
     /// A mapper that decides from the error alone.
     public init(_ map: @escaping @Sendable (any Error) -> Mapping?) {
-        self.map = { error, _ in map(error) }
+        self.mapping = { error, _ in map(error) }
     }
 
     /// A mapper that also reads the request — see *Reading the request*.
     public init(_ map: @escaping @Sendable (any Error, RequestContext) -> Mapping?) {
-        self.map = map
+        self.mapping = { error, context in
+            // Declines rather than guessing. A mapper written against the
+            // request cannot answer a question asked without one, and `nil`
+            // already means "not mine" — the error then takes the ordinary
+            // path instead of a shape decided from half its inputs.
+            guard let context else { return nil }
+            return map(error, context)
+        }
+    }
+
+    /// The shape this error should take, with the request in hand. What the
+    /// pipeline calls.
+    public func map(_ error: any Error, in context: RequestContext) -> Mapping? {
+        mapping(error, context)
+    }
+
+    /// The shape this error should take, asked without a request.
+    ///
+    /// This exists for the pattern a mapper reaches for when an error *wraps*
+    /// another — a failed step carrying the underlying failure — and wants
+    /// the inner one mapped by the same rules:
+    ///
+    /// ```swift
+    /// case ChatError.multiStepFailed(let step, let underlying):
+    ///     if let inner = mapper().map(underlying) {
+    ///         return .init(inner.status, "step '\(step)': \(inner.message)")
+    ///     }
+    /// ```
+    ///
+    /// A mapper built from the request-reading initializer declines here, for
+    /// the reason above. Inside such a mapper you already hold the context,
+    /// so recurse with ``map(_:in:)`` and nothing is lost.
+    public func map(_ error: any Error) -> Mapping? {
+        mapping(error, nil)
     }
 
     /// Declines everything — what an application that registered none gets.

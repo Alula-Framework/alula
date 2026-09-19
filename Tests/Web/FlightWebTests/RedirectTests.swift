@@ -3,6 +3,7 @@ import FlightWeb
 import FlightWebTesting
 import Foundation
 import HTTPTypes
+import Logging
 import Testing
 
 @Controller("/app")
@@ -154,6 +155,55 @@ struct RedirectTests {
         let response = await client.get("/app/dashboard")
         #expect(response.status == .gone)
         #expect(response.bodyText.contains("subscription required"))
+    }
+
+    @Test("a mapper can map a wrapped error by the same rules")
+    func mappersRecurse() async throws {
+        // The pattern a shipped template uses and which a released version of
+        // this type broke: an error that *carries* another — a failed step, a
+        // retry exhausted — unwrapping it and asking for the inner one to be
+        // mapped. `map` was a stored two-argument closure for one release, so
+        // `mapper().map(underlying)` stopped compiling.
+        struct StepFailed: Error {
+            let step: String
+            let underlying: any Error
+        }
+        @Sendable func mapper() -> ErrorMapper {
+            ErrorMapper { (error: any Error) -> ErrorMapper.Mapping? in
+                switch error {
+                case let step as StepFailed:
+                    guard let inner = mapper().map(step.underlying) else {
+                        return .init(.internalServerError, "step '\(step.step)' failed")
+                    }
+                    return .init(inner.status, "step '\(step.step)': \(inner.message)")
+                case let http as HTTPError:
+                    return .init(http.httpStatus, http.httpMessage)
+                default:
+                    return nil
+                }
+            }
+        }
+
+        let wrapped = StepFailed(step: "charge", underlying: HTTPError(.conflict, "already paid"))
+        let mapped = try #require(mapper().map(wrapped))
+        #expect(mapped.status == .conflict)
+        #expect(mapped.message == "step 'charge': already paid")
+        #expect(mapper().map(StepFailed(step: "x", underlying: CancellationError()))?.status
+            == .internalServerError)
+    }
+
+    @Test("a request-reading mapper declines when asked without a request")
+    func contextualMapperDeclinesWithoutContext() {
+        // Rather than guessing from half its inputs: `nil` already means
+        // "not mine", so the error takes the ordinary path.
+        let contextual = ErrorMapper { (_: any Error, context: RequestContext) -> ErrorMapper.Mapping? in
+            .init(.badGateway, context.request.path)
+        }
+        #expect(contextual.map(HTTPError(.badRequest)) == nil)
+
+        let context = RequestContext(
+            request: Request(method: .get, path: "/brew"), logger: Logger(label: "t"))
+        #expect(contextual.map(HTTPError(.badRequest), in: context)?.message == "/brew")
     }
 
     @Test("a mapper's non-redirect headers still merge, as they did")

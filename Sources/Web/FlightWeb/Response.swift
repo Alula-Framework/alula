@@ -81,6 +81,25 @@ extension Response {
         .fixed(status: status, headers: headers, body: Data())
     }
 
+    /// Adds header names to `Vary`, keeping what is already there.
+    ///
+    /// Replacing `Vary` is the bug this exists to prevent: content
+    /// negotiation, CORS and compression each have a claim on it, and the
+    /// last one to call `settingHeader` would otherwise decide alone — which
+    /// makes a shared cache serve one client's representation to another.
+    /// Names already listed are not repeated, so layering two middleware that
+    /// both vary on the same thing is harmless.
+    public func appendingVary(on names: [HTTPField.Name]) -> Response {
+        let existing = headers[.vary]
+        let already = Set(
+            (existing ?? "")
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+        let additions = names.map(\.canonicalName).filter { !already.contains($0.lowercased()) }
+        guard !additions.isEmpty else { return self }
+        return settingHeader(.vary, ((existing.map { [$0] } ?? []) + additions).joined(separator: ", "))
+    }
+
     public static var noContent: Response { .status(.noContent) }
     public static var notFound: Response {
         .problem(status: .notFound, message: "Not Found")

@@ -277,6 +277,80 @@ container; conform a type to `Middleware` and hand it to
 `MiddlewareRegistration.lane(_:_:)`, returning early from `handle` rather than
 a result enum.
 
+### CORS
+
+```swift
+MiddlewareRegistration.lane(.default, [
+    CORS(
+        allowedOrigins: .exact(["https://app.example.com"]),
+        allowedMethods: [.get, .post, .patch, .delete],
+        allowedHeaders: .exact([.contentType, .authorization]),
+        exposedHeaders: [.eTag],
+        allowCredentials: true,
+        maxAge: .seconds(600))
+])
+```
+
+Origins are `.any` (a literal `*`), `.exact(Set<String>)`, or
+`.matching { origin in … }` for the cases a set cannot express. Be stricter
+than `hasSuffix` in a predicate: `"https://evil-example.com"` ends with
+`example.com`, and that mistake is the whole of several CVEs.
+
+`.any` with `allowCredentials: true` is refused at construction, so it fails
+at startup rather than in a browser console. Browsers reject
+`Access-Control-Allow-Origin: *` on a credentialed request, so the
+combination cannot work; the alternative — quietly echoing the caller's
+origin instead of `*` — is how "allow any origin" becomes "allow any origin
+to act as any signed-in user".
+
+A preflight (`OPTIONS` carrying `Access-Control-Request-Method`) is answered
+by the middleware and never reaches the router: `204` with the negotiated
+headers, or `403` naming whichever of origin or method was refused. Every
+other request passes through and the headers are added to whatever comes
+back, error responses included — a 500 a page cannot read is a 500 nobody
+can debug. A request with no `Origin` is left entirely alone.
+
+**List `CORS` in every lane that serves a browser.** Dispatch routes first
+and then runs the matched route's lane, so a `CORS` in `.default` does not
+run for a route that names `pipelines: [.authenticated]`. The preflight still
+works — `OPTIONS` matches no route, and the no-match path runs the default
+lane — which makes the failure a confusing one: preflight passes, the real
+request comes back without `Access-Control-Allow-Origin`.
+
+### Compression
+
+```swift
+MiddlewareRegistration.lane(.default, [ResponseCompression()])
+```
+
+gzip, for clients that asked for it, on bodies worth compressing. Streaming
+bodies are compressed incrementally and flushed per chunk, so server-sent
+events keep arriving as events.
+
+It declines, on purpose: anything already carrying `Content-Encoding` (a
+`StaticAssets` `.br` variant is better than anything computed per request,
+and gzip-wrapped brotli helps nobody), `.file` responses (a range is a range
+*of the encoded representation*, so compressing after range selection answers
+a different question), bodies under `minimumBytes` (gzip has framing overhead
+and a floor; below ~1 KiB it reliably makes things bigger), media types not
+in `compressibleTypes`, and any result that came out larger than it went in.
+
+A strong `ETag` is weakened to `W/"…"` when a body is compressed, because a
+strong validator promises byte-for-byte identity and the gzip of a body is
+not the body. `Vary: Accept-Encoding` is set either way — the *uncompressed*
+copy is the one that needs it, or a cache hands it to a client that would
+have been sent gzip.
+
+gzip only. `deflate` is the trap it has always been: RFC 9110 says the zlib
+format, a large minority of servers shipped raw DEFLATE, and clients learned
+to guess — a server offering it picks between two wire formats sharing one
+name, and every client that sends `deflate` sends `gzip` too. Brotli is worth
+adding and needs its own system library, so it is a later additive case.
+
+This is the one part of Flight Web that links a C library: `CFlightZlib`, a
+`systemLibrary` target over the system zlib. Lean images may need the headers
+(`zlib1g-dev` on Debian; the official Swift images carry them).
+
 ### Bodies
 
 Request bodies are buffered by default, bounded by

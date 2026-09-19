@@ -232,9 +232,20 @@ let package = Package(
                 .product(name: "ServiceContextModule", package: "swift-service-context", condition: .when(traits: ["Web"])),
                 .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["Web"])),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                .target(name: "CFlightZlib", condition: .when(traits: ["Web"])),
             ],
             path: "Sources/Web/FlightWeb",
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        // The system zlib, for `ResponseCompression`. A systemLibrary rather
+        // than a package: zlib is present wherever Swift is (corelibs
+        // Foundation already links it), so this costs a modulemap instead of
+        // a dependency. Lean container images may still need the headers —
+        // `zlib1g-dev` on Debian, which the official Swift images carry.
+        .systemLibrary(
+            name: "CFlightZlib",
+            path: "Sources/Web/CFlightZlib",
+            providers: [.apt(["zlib1g-dev"]), .yum(["zlib-devel"]), .brew(["zlib"])]
         ),
         // The ONLY target in Flight that knows what the transport wraps.
         // Depends on FlightWeb one-way — routing and middleware never
@@ -445,6 +456,9 @@ let package = Package(
             dependencies: [
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])), .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                // Inflating what ResponseCompression produced: the only claim
+                // worth testing is that a real decoder reads it back.
+                .target(name: "CFlightZlib", condition: .when(traits: ["Web"])),
             ],
             path: "Tests/Web/FlightWebTests"
         ),

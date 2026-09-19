@@ -137,6 +137,7 @@ whole application without binding a port.
 - ``Request``
 - ``RequestContext``
 - ``Response``
+- ``Response/appendingVary(on:)``
 - ``ResponseEncodable``
 - ``ContentType``
 - ``WebCoders``
@@ -159,6 +160,18 @@ whole application without binding a port.
 ### Cookies
 
 - ``Cookie``
+
+### Cross-origin requests
+
+- ``CORS``
+- ``AllowedOrigins``
+- ``AllowedHeaders``
+
+### Compression
+
+- ``ResponseCompression``
+- ``ContentEncoding``
+- ``CompressionLevel``
 
 ### Redirects
 

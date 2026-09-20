@@ -15,6 +15,50 @@ struct ModuleTests {
         ])
     }
 
+    @Test("OIDC settings accept the kebab-case spelling the rest of Flight uses")
+    func kebabCaseKeysAreAccepted() throws {
+        // Every other namespace is kebab-case, so `jwks-url` is what someone
+        // writes from habit — and it used to be read as absent, handing back
+        // the default for a key they had set. `Configuration` cannot
+        // enumerate keys, so nothing could have caught that.
+        let kebab = try OIDCSecurityConfiguration(
+            configuration: Configuration(values: [
+                "security.oidc.issuer": testIssuer,
+                "security.oidc.audience": testAudience,
+                "security.oidc.jwks-url": "https://idp.example.com/keys",
+                "security.oidc.clock-skew-leeway": "120",
+                "security.oidc.roles-claim": "my_roles",
+            ]))
+        #expect(kebab.jwksURL?.absoluteString == "https://idp.example.com/keys")
+        #expect(kebab.clockSkewLeeway == 120)
+        #expect(kebab.rolesClaims == ["my_roles"])
+    }
+
+    @Test("the snake_case spelling that shipped keeps working")
+    func snakeCaseKeysStillWork() throws {
+        let snake = try OIDCSecurityConfiguration(
+            configuration: Configuration(values: [
+                "security.oidc.issuer": testIssuer,
+                "security.oidc.audience": testAudience,
+                "security.oidc.jwks_url": "https://idp.example.com/legacy",
+                "security.oidc.clock_skew_leeway": "90",
+            ]))
+        #expect(snake.jwksURL?.absoluteString == "https://idp.example.com/legacy")
+        #expect(snake.clockSkewLeeway == 90)
+    }
+
+    @Test("kebab-case wins when both are set")
+    func kebabCaseIsCanonical() throws {
+        let both = try OIDCSecurityConfiguration(
+            configuration: Configuration(values: [
+                "security.oidc.issuer": testIssuer,
+                "security.oidc.audience": testAudience,
+                "security.oidc.jwks_max_stale": "111",
+                "security.oidc.jwks-max-stale": "222",
+            ]))
+        #expect(both.jwksMaxStaleAge == 222)
+    }
+
     @Test("the security module declares middleware and lanes, but no validator")
     func securityModuleRegistersAuthenticationOnly() throws {
         // Declared as values now: the composition root hands them to

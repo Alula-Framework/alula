@@ -167,6 +167,31 @@ public struct OIDCSecurityConfiguration: Sendable {
         }
     }
 
+    /// Reads a `security.oidc.*` setting, accepting either spelling.
+    ///
+    /// Every other configuration namespace in Flight is kebab-case —
+    /// `flight.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`,
+    /// `flight.presence.max-entries-per-frame`. These keys shipped
+    /// snake_case, following OIDC's own spec vocabulary (`jwks_uri`,
+    /// `client_id`), and the inconsistency is invisible until someone writes
+    /// `jwks-url` from habit and is handed the default instead of the value
+    /// they set. There is no way to catch that: `Configuration` cannot
+    /// enumerate its keys, so an unknown one cannot be refused the way an
+    /// unknown *value* is.
+    ///
+    /// So both work. Kebab-case is canonical and wins if both are set;
+    /// snake_case is what shipped and keeps working.
+    private static func setting<T: ConfigDecodable>(
+        _ configuration: Configuration, _ name: String, as type: T.Type
+    ) throws -> T? {
+        if let value = try configuration.getIfPresent("security.oidc.\(name)", as: type) {
+            return value
+        }
+        let legacy = name.replacingOccurrences(of: "-", with: "_")
+        guard legacy != name else { return nil }
+        return try configuration.getIfPresent("security.oidc.\(legacy)", as: type)
+    }
+
     /// Reads the `security.oidc.*` keys from Flight Config.
     /// Missing required keys fail here — surfaced at composition, so a
     /// misconfigured app fails at startup, not on its first request.
@@ -174,33 +199,29 @@ public struct OIDCSecurityConfiguration: Sendable {
         try self.init(
             issuer: configuration.get("security.oidc.issuer", as: String.self),
             audience: configuration.get("security.oidc.audience", as: String.self),
-            jwksURL: configuration.getIfPresent("security.oidc.jwks_url", as: URL.self),
-            jwksCacheTTL: try configuration.getIfPresent(
-                "security.oidc.jwks_cache_ttl", as: Int.self).map(TimeInterval.init)
-                ?? Defaults.jwksCacheTTL,
-            clockSkewLeeway: try configuration.getIfPresent(
-                "security.oidc.clock_skew_leeway", as: Int.self).map(TimeInterval.init)
-                ?? Defaults.clockSkewLeeway,
-            jwksRefreshCooldown: try configuration.getIfPresent(
-                "security.oidc.jwks_refresh_cooldown", as: Int.self).map(TimeInterval.init)
-                ?? Defaults.jwksRefreshCooldown,
-            jwksMaxStaleAge: try configuration.getIfPresent(
-                "security.oidc.jwks_max_stale", as: Int.self).map(TimeInterval.init)
-                ?? Defaults.jwksMaxStaleAge,
+            jwksURL: Self.setting(configuration, "jwks-url", as: URL.self),
+            jwksCacheTTL: try Self.setting(configuration, "jwks-cache-ttl", as: Int.self)
+                .map(TimeInterval.init) ?? Defaults.jwksCacheTTL,
+            clockSkewLeeway: try Self.setting(configuration, "clock-skew-leeway", as: Int.self)
+                .map(TimeInterval.init) ?? Defaults.clockSkewLeeway,
+            jwksRefreshCooldown: try Self.setting(
+                configuration, "jwks-refresh-cooldown", as: Int.self)
+                .map(TimeInterval.init) ?? Defaults.jwksRefreshCooldown,
+            jwksMaxStaleAge: try Self.setting(configuration, "jwks-max-stale", as: Int.self)
+                .map(TimeInterval.init) ?? Defaults.jwksMaxStaleAge,
             jwksTransport: try Self.transportPolicy(
-                configuration.getIfPresent("security.oidc.jwks_transport", as: String.self)),
+                Self.setting(configuration, "jwks-transport", as: String.self)),
             rolesClaims: Self.claimList(
-                try configuration.getIfPresent("security.oidc.roles_claim", as: String.self),
+                try Self.setting(configuration, "roles-claim", as: String.self),
                 default: Defaults.rolesClaims
             ),
             scopesClaims: Self.claimList(
-                try configuration.getIfPresent("security.oidc.scopes_claim", as: String.self),
+                try Self.setting(configuration, "scopes-claim", as: String.self),
                 default: Defaults.scopesClaims
             ),
             allowedAlgorithms: Set(
                 Self.claimList(
-                    try configuration.getIfPresent(
-                        "security.oidc.allowed_algorithms", as: String.self),
+                    try Self.setting(configuration, "allowed-algorithms", as: String.self),
                     default: Array(Defaults.allowedAlgorithms)
                 ))
         )

@@ -146,15 +146,25 @@ All keys live under `security.oidc.` (env-var form `FLIGHT_SECURITY_OIDC_*`):
 |-------------------------|----------|---------|---------|
 | `issuer`                | yes      | —       | Must equal the token's `iss` exactly |
 | `audience`              | yes      | —       | Token's `aud` must include it |
-| `jwks_url`              | no       | OIDC discovery | Explicit JWKS endpoint |
-| `jwks_cache_ttl`        | no       | `3600`  | Seconds keys stay fresh |
-| `clock_skew_leeway`     | no       | `60`    | Seconds of leeway on `exp`/`nbf` |
-| `jwks_refresh_cooldown` | no       | `30`    | Minimum seconds between JWKS fetches |
-| `jwks_max_stale`        | no       | `21600` | Seconds a cached key set may be served while the IdP is unreachable |
-| `jwks_transport`        | no       | `https_only` | `https_only`, `allow_insecure_loopback`, `allow_insecure_anywhere` |
-| `roles_claim`           | no       | `roles,groups,realm_access.roles` | Comma-separated claim names/dot-paths, unioned |
-| `scopes_claim`          | no       | `scope,scp` | Same; space-delimited strings are split |
-| `allowed_algorithms`    | no       | every asymmetric algorithm JWTKit verifies | Comma-separated `alg` allowlist — see *Algorithms* below |
+| `jwks-url`              | no       | OIDC discovery | Explicit JWKS endpoint |
+| `jwks-cache-ttl`        | no       | `3600`  | Seconds keys stay fresh |
+| `clock-skew-leeway`     | no       | `60`    | Seconds of leeway on `exp`/`nbf` |
+| `jwks-refresh-cooldown` | no       | `30`    | Minimum seconds between JWKS fetches |
+| `jwks-max-stale`        | no       | `21600` | Seconds a cached key set may be served while the IdP is unreachable |
+| `jwks-transport`        | no       | `https_only` | `https_only`, `allow_insecure_loopback`, `allow_insecure_anywhere` |
+| `roles-claim`           | no       | `roles,groups,realm_access.roles` | Comma-separated claim names/dot-paths, unioned |
+| `scopes-claim`          | no       | `scope,scp` | Same; space-delimited strings are split |
+| `allowed-algorithms`    | no       | every asymmetric algorithm JWTKit verifies | Comma-separated `alg` allowlist — see *Algorithms* below |
+
+These keys shipped snake_case (`jwks_url`), following OIDC's own spec
+vocabulary, while every other namespace in Flight is kebab-case
+(`flight.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
+**Both spellings are read.** Kebab-case is canonical and wins if both are
+set; the snake_case spelling keeps working. The inconsistency was invisible
+until someone wrote `jwks-url` from habit and got the default instead of
+their value — and nothing could catch that, because `Configuration` cannot
+enumerate its keys, so an unknown *key* cannot be refused the way an
+unrecognized *value* is.
 
 Missing required keys fail at composition — startup, not first request.
 An unrecognized `jwks_transport` value fails there too, rather than falling

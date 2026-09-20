@@ -82,6 +82,18 @@ struct RouterTests {
         #expect(match.pathParameters["name"] == "a b")
     }
 
+    @Test func malformedEscapeIsLeftAlone() throws {
+        // Segments are only handed to the percent decoder when they contain
+        // a `%`, so this is the case that still reaches it and still fails
+        // to decode. It must arrive verbatim rather than empty or nil.
+        let router = try Router(routes: [route(.get, "/users/:id")])
+        guard case .matched(let match) = router.route(method: .get, path: "/users/a%ZZb") else {
+            Issue.record("expected a match")
+            return
+        }
+        #expect(match.pathParameters["id"] == "a%ZZb")
+    }
+
     @Test func encodedSlashCannotChangeStructure() throws {
         let router = try Router(routes: [route(.get, "/users/:id")])
         // "a%2Fb" decodes to "a/b" but must stay a single segment.

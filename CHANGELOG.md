@@ -40,6 +40,19 @@ that CI had never once scheduled.
   cannot enumerate keys, so an unknown *key* cannot be refused the way an
   unrecognized *value* is — which is why this could not have been caught.
 
+- **A handler's arguments are passed in the order it declares them.** The
+  generated call was built body, then query, then path segments, so a
+  signature like
+
+  ```swift
+  func archive(_ context: RequestContext, slug: String, body: ArchiveRequest)
+  ```
+
+  failed with `argument 'slug' must precede argument 'body'`, reported inside
+  the macro expansion, for an ordering rule nothing documented and no
+  diagnostic named. Putting `body:` first worked, and there was no way to
+  learn that except by trying.
+
 ### Changed
 
 - **A handler returning a `Codable` model without `ResponseEncodable` now

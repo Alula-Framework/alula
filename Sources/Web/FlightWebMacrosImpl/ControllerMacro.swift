@@ -174,11 +174,14 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
     ) -> String {
         let kind = route.kind.isUpgrade ? ".upgrade(.webSocket)" : ".http"
 
+        // In the handler's own declaration order. Swift requires arguments
+        // in that order, and emitting a fixed body-then-query-then-segments
+        // order made `(_ context:, slug: String, body: Request)` fail with
+        // `argument 'slug' must precede argument 'body'` from inside this
+        // expansion — an ordering rule nothing documented.
         var call = "controller.\(route.methodName)(context"
-        if route.bodyTypeText != nil { call += ", body: body" }
-        if route.queryTypeText != nil { call += ", query: query" }
-        for parameter in route.pathParameters {
-            call += ", \(parameter.name): \(parameter.name)"
+        for label in route.argumentLabels {
+            call += ", \(label): \(label)"
         }
         call += ")"
         if route.isAsync { call = "await \(call)" }

@@ -212,3 +212,58 @@ struct QueryStructTests {
         #expect(response.bodyText == "7:acme:hi")
     }
 }
+
+// MARK: - Argument order
+
+private struct Note: Codable, Equatable { let text: String }
+
+/// Both orders of `body:` against a path parameter. The generated call has to
+/// follow the handler's declaration order, because Swift requires arguments
+/// in that order — emitting a fixed one made a handler that put the path
+/// parameter first fail with `argument 'slug' must precede argument 'body'`,
+/// reported inside the macro expansion, for a rule nothing documented.
+@Controller("/order")
+private struct ArgumentOrderController {
+    @PostRoute("/before/:slug")
+    func pathFirst(_ context: RequestContext, slug: String, body: Note) async throws -> String {
+        "\(slug):\(body.text)"
+    }
+
+    @PostRoute("/after/:slug")
+    func bodyFirst(_ context: RequestContext, body: Note, slug: String) async throws -> String {
+        "\(slug):\(body.text)"
+    }
+
+    @GetRoute("/mixed/:a/:b")
+    func several(_ context: RequestContext, b: Int, a: String) async throws -> String {
+        "\(a):\(b)"
+    }
+}
+
+@Suite("Handler argument order")
+struct ArgumentOrderTests {
+    private func client() throws -> TestClient {
+        try TestClient(
+            routes: ArgumentOrderController.flightRoutes { _ in ArgumentOrderController() })
+    }
+
+    @Test("a path parameter declared before the body")
+    func pathBeforeBody() async throws {
+        let response = try await (try client()).post("/order/before/abc", json: Note(text: "hi"))
+        #expect(response.bodyText.contains("abc:hi"))
+    }
+
+    @Test("a path parameter declared after the body")
+    func bodyBeforePath() async throws {
+        let response = try await (try client()).post("/order/after/xyz", json: Note(text: "yo"))
+        #expect(response.bodyText.contains("xyz:yo"))
+    }
+
+    @Test("several path parameters in an order the path does not use")
+    func reorderedSegments() async throws {
+        // `:a/:b` in the path, `b:` then `a:` in the handler — the binding is
+        // by name, so the declaration order is free and the call must follow it.
+        let response = await (try client()).get("/order/mixed/hello/42")
+        #expect(response.bodyText.contains("hello:42"))
+    }
+}

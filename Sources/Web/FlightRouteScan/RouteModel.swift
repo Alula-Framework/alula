@@ -50,6 +50,21 @@ public struct ScannedRoute {
     /// Handler parameters bound to `:name` segments, in signature order.
     /// Empty for a handler that reads them from the context itself.
     public let pathParameters: [PathParameterBinding]
+    /// Every argument label after the context, **in the order the handler
+    /// declares them** — `"body"`, `"query"`, or a path segment's name.
+    ///
+    /// The call the macro generates has to use this order, because Swift
+    /// requires arguments in declaration order. Emitting a fixed
+    /// body-then-query-then-segments order meant a handler written as
+    /// `(_ context:, slug: String, body: Request)` failed with
+    /// `argument 'slug' must precede argument 'body'`, pointing inside the
+    /// expansion — a parameter-ordering rule nothing documented and no
+    /// diagnostic named.
+    ///
+    /// Every entry is emitted as `label: label`, which is uniform: `body`
+    /// and `query` are the names of the locals decoded above the call, and a
+    /// path parameter's local is its own name.
+    public let argumentLabels: [String]
     /// The `maxBodyBytes:` argument's source text, verbatim — nil means
     /// the transport default.
     public let maxBodyBytesText: String?
@@ -225,6 +240,7 @@ public enum RouteScanning {
         var bodyTypeText: String? = nil
         var queryTypeText: String? = nil
         var pathParameters: [PathParameterBinding] = []
+        var argumentLabels: [String] = []
         let declaredSegments = mappings.reduce(into: Set<String>()) { names, mapping in
             names.formUnion(pathSegmentNames(in: mapping.1))
         }
@@ -239,6 +255,7 @@ public enum RouteScanning {
                     return []
                 }
                 bodyTypeText = parameter.type.trimmedDescription
+                argumentLabels.append("body")
                 continue
             }
             if label == "query" {
@@ -250,6 +267,7 @@ public enum RouteScanning {
                     return []
                 }
                 queryTypeText = parameter.type.trimmedDescription
+                argumentLabels.append("query")
                 continue
             }
             guard parameter.firstName.tokenKind != .wildcard else {
@@ -283,6 +301,7 @@ public enum RouteScanning {
             pathParameters.append(
                 PathParameterBinding(
                     name: label, typeText: parameter.type.trimmedDescription))
+            argumentLabels.append(label)
         }
 
         let effects = function.signature.effectSpecifiers
@@ -333,6 +352,7 @@ public enum RouteScanning {
                 bodyTypeText: bodyTypeText,
                 queryTypeText: queryTypeText,
                 pathParameters: pathParameters,
+                argumentLabels: argumentLabels,
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,
                 rolesText: roles,

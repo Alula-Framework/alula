@@ -238,7 +238,18 @@ private struct ArgumentOrderController {
     func several(_ context: RequestContext, b: Int, a: String) async throws -> String {
         "\(a):\(b)"
     }
+
+    /// All three kinds interleaved, path first. The emission used to be a
+    /// fixed body-query-segments order, so every arrangement but one failed.
+    @PostRoute("/all/:tenant/:id")
+    func everything(
+        _ context: RequestContext, tenant: String, query: Page, id: Int, body: Note
+    ) async throws -> String {
+        "\(tenant)|\(id)|\(body.text)|\(query.page ?? 0)"
+    }
 }
+
+private struct Page: Codable, Equatable { let page: Int? }
 
 @Suite("Handler argument order")
 struct ArgumentOrderTests {
@@ -257,6 +268,13 @@ struct ArgumentOrderTests {
     func bodyBeforePath() async throws {
         let response = try await (try client()).post("/order/after/xyz", json: Note(text: "yo"))
         #expect(response.bodyText.contains("xyz:yo"))
+    }
+
+    @Test("body, query and path parameters interleaved in any order")
+    func allThreeKinds() async throws {
+        let response = try await (try client()).post(
+            "/order/all/acme/7?page=3", json: Note(text: "n"))
+        #expect(response.bodyText.contains("acme|7|n|3"))
     }
 
     @Test("several path parameters in an order the path does not use")

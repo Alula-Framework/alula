@@ -7,6 +7,78 @@ per-connection lifecycle and delivers updates to clients. Presence adds the
 conflict-free merge semantics and the diffing that make a distributed
 "who's here" list correct without central coordination.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | `Web` |
+| **Products** | `FlightPresence` |
+| **Module** | `FlightPresenceModule.self` |
+| **Pulls in** | `FlightPubSubModule and FlightChannelsModule` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1", traits: ["Web"]),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightWeb", package: "flight"),
+            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "FlightPresence", package: "flight"),
+            .product(name: "FlightPubSub", package: "flight"),
+            .product(name: "FlightChannels", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightCore
+import FlightPubSub
+import FlightChannels
+import FlightTransport
+import FlightWeb
+import FlightPresence
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [
+                FlightWebModule<FlightTransport>.self,
+                FlightPresenceModule.self,
+                AppModule.self,
+            ],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+Presence rides on Channels, which rides on PubSub. Listing the presence module
+is enough: the dependency DAG builds all three.
+
+**Depend on the products of what it pulls in, too.** The generated composition
+root names every module in the DAG, so a target that lists only
+`FlightPresence` fails to build with `cannot find `FlightPubSubModule` in scope`
+— from generated code, which is a confusing place to read it.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## The model in one paragraph
 
 One identity may be present many times: a user with three browser tabs is

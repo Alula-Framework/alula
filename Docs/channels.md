@@ -16,6 +16,77 @@ It sits exactly between two things that already exist:
 What Channels adds is the per-connection, per-topic session protocol:
 join/leave, routing to handlers, replies, heartbeats, reconnection.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | `Web` |
+| **Products** | `FlightChannels` |
+| **Module** | `FlightChannelsModule.self` |
+| **Pulls in** | `FlightPubSubModule` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1", traits: ["Web"]),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightWeb", package: "flight"),
+            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "FlightChannels", package: "flight"),
+            .product(name: "FlightPubSub", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightChannels
+import FlightCore
+import FlightPubSub
+import FlightTransport
+import FlightWeb
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [
+                FlightWebModule<FlightTransport>.self,
+                FlightChannelsModule.self,
+                AppModule.self,
+            ],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+A socket has to be served, so an application using Channels also runs a web
+module and a transport — `FlightWebModule<FlightTransport>.self` — and mounts
+the socket with a `@WebSocketRoute`. See `Docs/web.md`.
+
+**Depend on the products of what it pulls in, too.** The generated composition
+root names every module in the DAG, so a target that lists only
+`FlightChannels` fails to build with `cannot find `FlightPubSubModule` in scope`
+— from generated code, which is a confusing place to read it.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## Targets
 
 | Product | What | Depends on |

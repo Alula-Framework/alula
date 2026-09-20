@@ -5,6 +5,68 @@ what components are registered, which modules are healthy, basic runtime facts �
 served over HTTP. This README covers usage and records the choices the
 implementation had to make.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | `Web` |
+| **Products** | `FlightActuator` |
+| **Module** | `ActuatorModule.self` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1", traits: ["Web"]),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightWeb", package: "flight"),
+            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "FlightActuator", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightActuator
+import FlightCore
+import FlightTransport
+import FlightWeb
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [
+                FlightWebModule<FlightTransport>.self,
+                ActuatorModule.self,
+                AppModule.self,
+            ],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+The actuator serves HTTP endpoints, so it runs alongside a web module and a
+transport.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## Usage
 
 Actuator is an ordinary `FlightModule` — registered like everything else,

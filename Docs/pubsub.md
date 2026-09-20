@@ -14,6 +14,60 @@ multi-node story needs. Modeled on
 - **No Web dependency** — usable by a headless app (job coordination, cache
   invalidation) with no HTTP at all.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | none |
+| **Products** | `FlightPubSub` |
+| **Module** | `FlightPubSubModule.self` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1"),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightPubSub", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightCore
+import FlightPubSub
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [FlightPubSubModule.self, AppModule.self],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+No trait: PubSub is in the traitless set, so a worker that publishes and
+subscribes needs no `traits:` argument at all.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## Usage
 
 ```swift

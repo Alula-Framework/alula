@@ -9,6 +9,63 @@ transport instead of hand-rolling HTTP; §5.6 containment) on top of Flight
 Core's `FlightModule` composition — through exactly one channel,
 `FlightModule`, like every other Flight package.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | `Web` |
+| **Products** | `FlightWeb`, `FlightTransport` |
+| **Module** | `FlightWebModule<FlightTransport>.self` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1", traits: ["Web"]),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightWeb", package: "flight"),
+            .product(name: "FlightTransport", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightCore
+import FlightTransport
+import FlightWeb
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+Choosing a transport is choosing a module: `FlightWebModule` is generic over
+`ServerTransport`, and `FlightTransport` is the HummingbirdCore-backed one
+this package ships. Any conforming transport is a peer.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## What's here
 
 | Product | Contents |

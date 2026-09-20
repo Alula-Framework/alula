@@ -15,6 +15,72 @@ that delegates its cryptographic core to [JWTKit](https://github.com/vapor/jwt-k
 (SSWG Graduated, SwiftCrypto-backed); Flight owns only the orchestration —
 JWKS fetching/rotation, claim policy, and error hygiene.
 
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | `Security` |
+| **Products** | `FlightSecurityCore` |
+| **Module** | `FlightOIDCModule.self` |
+| **Pulls in** | `FlightSecurityModule` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1", traits: ["Security"]),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightWeb", package: "flight"),
+            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "FlightSecurityCore", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightCore
+import FlightTransport
+import FlightWeb
+import FlightSecurityCore
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [
+                FlightWebModule<FlightTransport>.self,
+                FlightOIDCModule.self,
+                AppModule.self,
+            ],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+`Security` enables `Web` — naming it is enough; you do not name both.
+
+`FlightOIDCModule` is the batteries-included path: it reads `security.oidc.*`
+and builds a validator. To bring your own, list `FlightSecurityModule` instead
+and hand it a `TokenValidator`.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
+
 ## Quick start
 
 ```swift

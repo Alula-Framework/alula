@@ -25,7 +25,59 @@ it finds a `@Controller`. And a scheduled job is an ordinary method on an
 ordinary component, so testing it needs no scheduler: construct the type with
 a stub service and call the method.
 
-Add `FlightSchedulerModule` to `bootstrap` and that is the whole setup.
+## Adding this module
+
+| | |
+|---|---|
+| **Trait** | none |
+| **Products** | `FlightScheduler` |
+| **Module** | `FlightSchedulerModule.self` |
+
+```swift
+// Package.swift
+dependencies: [
+    .package(
+        url: "https://github.com/Flight-Framework/flight.git",
+        from: "0.22.1"),
+],
+targets: [
+    .executableTarget(
+        name: "App",
+        dependencies: [
+            .product(name: "FlightCore", package: "flight"),
+            .product(name: "FlightScheduler", package: "flight"),
+        ],
+        // Required. It scans this target for the Flight macros and writes
+        // `flightComposeModules`; without it there is no composition root
+        // to pass to `Flight.run`.
+        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    )
+]
+```
+
+```swift
+// Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
+// cannot coexist with @main.
+import FlightCore
+import FlightScheduler
+
+@main
+struct Main {
+    static func main() async {
+        await Flight.run(
+            configuration: try Configuration.load(),
+            modules: [FlightSchedulerModule.self, AppModule.self],
+            composedBy: flightComposeModules)
+    }
+}
+```
+
+No trait: the scheduler is in the traitless set, so a cron-only worker needs no
+`traits:` argument and no web stack.
+
+The `modules:` list names roots, not an order — the build resolves the
+dependency DAG. A module you write can declare framework modules in its own
+`dependencies`, in which case listing yours is enough.
 
 ## The schedule is a build error, not a 3am surprise
 

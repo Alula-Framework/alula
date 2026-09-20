@@ -66,6 +66,13 @@ that CI had never once scheduled.
   needs no members. Overload resolution prefers the real function whenever it
   applies, so conforming types are unaffected.
 
+- **Routing costs about 1.7µs less per request.** `decodedSegments` handed
+  every segment of every path to `removingPercentEncoding`, a Foundation call
+  that allocates and decodes whether or not there is anything to decode.
+  Guarding on `%` takes routing's fixed cost from ~4.5µs to ~2.8µs in a
+  release build — at ten routes, most of what routing cost at all. The table
+  scan is unchanged and still linear per method.
+
 - Shared coders on repeating paths: `TokenHeader.parse` (once per
   authenticated request), the two error renderers (once per 4xx/5xx), and
   `PresenceGossipFrame` (once per gossip message per node) each built a

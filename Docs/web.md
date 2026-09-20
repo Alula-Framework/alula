@@ -112,8 +112,8 @@ signature cannot reach, and `request.queryParam("page")` still returns the raw
     }
 
     @WebSocketRoute("/chat/:roomId")               // §6.1 — same route table
-    func chat(_ context: RequestContext) throws -> any WebSocketUpgradeHandler {
-        ChatRoomHandler(roomId: context.pathParam("roomId")!)
+    func chat(_ context: RequestContext, roomId: String) throws -> any WebSocketUpgradeHandler {
+        ChatRoomHandler(roomId: roomId)
     }
 
     @GetRoute("/events")                           // §6.2 — SSE is a response shape

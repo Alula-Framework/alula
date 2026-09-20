@@ -111,7 +111,7 @@ That's the whole provider integration: OIDC-compliant IdPs are
 *configuration* of the one generic validator, not separate packages
 (design). The JWKS endpoint is resolved automatically via OIDC
 discovery (`{issuer}/.well-known/openid-configuration`); set
-`security.oidc.jwks_url` only for a non-discoverable setup.
+`security.oidc.jwks-url` only for a non-discoverable setup.
 
 ### Reading the current user
 
@@ -181,28 +181,73 @@ Naming `[.default, .authenticated]` would run `Authentication` twice — once
 per lane — which costs a second validation of the same token; name the lane
 alone unless the default lane carries something the route needs.
 
-Authorization stays in the handler, because it depends on a value rather than
-a lane:
+### Roles are declared on the route
+
+A role requirement is a property of the endpoint, so it is written where the
+endpoint is rather than as the first four lines of the handler:
 
 ```swift
-@PostRoute("/admin/users")
-func createUser(_ context: RequestContext) async throws -> Response {
-    guard context.principal?.hasRole("admin") == true else {
-        throw SecurityError.forbidden
+enum AppRole: String, RouteRole { case admin, billing }
+
+@Controller("/admin", roles: [AppRole.admin])
+struct AdminController {
+    @PostRoute("/users")                                  // needs admin
+    func createUser(_ context: RequestContext, body: NewUser) async throws -> Response {
+        try .json(await users.create(body), status: .created)
     }
-    // ... (equivalently: try context.requireRole("admin"))
+
+    @GetRoute("/invoices", roles: [AppRole.billing])      // needs admin AND billing
+    func invoices(_ context: RequestContext) async throws -> [Invoice] {
+        try await billing.invoices()
+    }
 }
 ```
+
+**Nothing extra wires this to OIDC.** `Principal` conforms to
+`RequestPrincipal`, the authentication middleware writes it onto
+`context.identity`, and the check the macro emits reads it from there — so
+the roles claimed by the token are the roles the route tests. Which claims
+become roles is the `roles-claim` key in the reference below.
+
+An anonymous request is 401; an authenticated one without the role is 403
+naming what would have been enough. Roles **add** rather than replace, so a
+controller's requirement cannot be widened by a route beneath it, and
+`roles:` on a `.public` route is a build error — a lane that establishes no
+principal can only ever reject. The full semantics are in `Docs/web.md`.
+
+### What a role cannot express, the handler still does
+
+Whether this user may see *this* invoice is a fact about data, not a claim on
+a token, and no declaration can state it:
+
+```swift
+@GetRoute("/invoices/:id")
+func invoice(_ context: RequestContext, id: UUID) async throws -> Invoice {
+    let principal = try context.requirePrincipal()        // 401 when absent
+    guard let invoice = try await invoices.find(id) else {
+        throw HTTPError(.notFound, "no invoice \(id)")
+    }
+    guard invoice.ownerID == principal.subject else { throw SecurityError.forbidden }
+    return invoice
+}
+```
+
+`requirePrincipal()`, `requireRole(_:)` and `requireScope(_:)` are for
+exactly this — ownership, tenancy, a rule that reads a row before it can
+decide. `requireRole` remains the handler-side spelling of what `roles:` says
+declaratively; reach for it when the requirement is computed rather than
+fixed.
+
+**Scopes have no declarative form.** There is no `scopes:` on a route, so a
+scope requirement is `try context.requireScope("invoices:write")` in the
+handler. That is an omission rather than a decision, and worth knowing before
+you design around it.
 
 `RequireAuthentication` answers with a bare 401 plus an RFC 6750
 `WWW-Authenticate: Bearer` challenge (`error="invalid_token"` when a
 credential was presented and rejected — and no further detail).
 `SecurityError.unauthenticated` / `.forbidden` thrown from handlers render
 as generic 401/403.
-
-Roles and scopes ride on the token, so v1 authorization is honest one-liners
-(`hasRole`, `requireScope`, …). The declarative engine (`@Secured` macros,
-policies) is a marked next step, not an omission.
 
 ## Configuration reference
 

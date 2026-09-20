@@ -199,3 +199,87 @@ struct EndToEndTests {
         #expect(await client.get("/documents").status == .unauthorized)
     }
 }
+
+// MARK: - Declarative roles against a real token
+
+private enum E2ERole: String, RouteRole { case admin, billing }
+
+/// The shape `Docs/security-core.md` documents: the requirement declared on
+/// the controller, nothing in the handler.
+@Controller("/declared", roles: [E2ERole.admin])
+private struct DeclaredRolesController {
+    @GetRoute("/dashboard")
+    func dashboard(_ context: RequestContext) async throws -> String { "dashboard" }
+
+    @GetRoute("/invoices", roles: [E2ERole.billing])
+    func invoices(_ context: RequestContext) async throws -> String { "invoices" }
+}
+
+@Suite("Declarative roles over OIDC authentication")
+struct DeclarativeRoleTests {
+    let clock = TestClock()
+    let identity = TestIdentity(kid: "roles-key")
+
+    private func makeClient() throws -> TestClient {
+        let source = try InMemoryJWKSSource(json: jwksJSON([identity]))
+        let configuration = Configuration(values: [
+            "security.oidc.issuer": testIssuer,
+            "security.oidc.audience": testAudience,
+        ])
+        let oidc = try InMemoryOIDCModule(
+            configuration: configuration, source: source, clock: clock)
+        let security = FlightSecurityModule(validator: oidc.tokenValidator)
+        return try TestClient(
+            routes: DeclaredRolesController.flightRoutes { _ in DeclaredRolesController() },
+            middleware: security.middleware)
+    }
+
+    private func token(roles: [String]) async throws -> HTTPFields {
+        let claims = standardClaims(
+            now: clock.now, extra: ["roles": .array(roles.map { .string($0) })])
+        var headers: HTTPFields = [:]
+        headers[.authorization] = "Bearer \(try await identity.sign(claims))"
+        return headers
+    }
+
+    @Test("a token's roles satisfy a requirement declared on the controller")
+    func tokenRolesSatisfyDeclaredRequirement() async throws {
+        // The claim the documentation makes: nothing wires the two together.
+        // `Principal` conforms to `RequestPrincipal`, the authentication
+        // middleware writes it onto `context.identity`, and the check the
+        // macro emits reads it from there.
+        let response = await (try makeClient()).get(
+            "/declared/dashboard", headers: try await token(roles: ["admin"]))
+        #expect(response.status == .ok)
+        #expect(response.bodyText.contains("dashboard"))
+    }
+
+    @Test("a token without the role is forbidden, not unauthorized")
+    func wrongRoleIsForbidden() async throws {
+        let response = await (try makeClient()).get(
+            "/declared/dashboard", headers: try await token(roles: ["billing"]))
+        #expect(response.status == .forbidden)
+    }
+
+    @Test("no token at all is unauthorized")
+    func anonymousIsUnauthorized() async throws {
+        #expect(await (try makeClient()).get("/declared/dashboard").status == .unauthorized)
+    }
+
+    @Test("a route's roles narrow the controller's rather than replacing them")
+    func routeRolesNarrow() async throws {
+        let client = try makeClient()
+        // admin alone opens the controller but not this route…
+        #expect(
+            await client.get("/declared/invoices", headers: try await token(roles: ["admin"]))
+                .status == .forbidden)
+        // …and billing alone fails the controller's own requirement.
+        #expect(
+            await client.get("/declared/invoices", headers: try await token(roles: ["billing"]))
+                .status == .forbidden)
+        #expect(
+            await client.get(
+                "/declared/invoices", headers: try await token(roles: ["admin", "billing"])
+            ).status == .ok)
+    }
+}

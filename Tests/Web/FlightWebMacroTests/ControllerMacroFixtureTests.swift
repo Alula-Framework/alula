@@ -951,4 +951,44 @@ struct ControllerMacroFixtureTests {
             macroSpecs: testMacros
         )
     }
+
+    @Test("a path segment named :query collides with the reserved label")
+    func reservedLabelCollidesWithSegment() {
+        // Both readings are defensible — the query string, or the segment —
+        // so the macro refuses rather than picking one. It used to pick: the
+        // reserved label was matched first, so this compiled and then failed
+        // at runtime decoding a query string into the segment's type.
+        assertMacroExpansion(
+            """
+            @Controller
+            struct SearchController {
+                @GetRoute("/search/:query")
+                func search(_ context: RequestContext, query: String) async throws -> String {
+                    query
+                }
+            }
+            """,
+            expandedSource: """
+                struct SearchController {
+                    func search(_ context: RequestContext, query: String) async throws -> String {
+                        query
+                    }
+
+                    init() {
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: """
+                        Route handler 'search' takes 'query:', which is reserved for the request \
+                        query string — but this route's path also declares a ':query' segment, so \
+                        the two readings collide. Rename the segment, or read it with \
+                        context.pathParam("query", as: String.self).
+                        """,
+                    line: 4, column: 44)
+            ],
+            macroSpecs: testMacros
+        )
+    }
 }

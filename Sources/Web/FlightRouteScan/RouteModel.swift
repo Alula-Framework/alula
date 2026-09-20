@@ -246,6 +246,25 @@ public enum RouteScanning {
         }
         for parameter in parameters.dropFirst() {
             let label = parameter.firstName.text
+            // `body:` and `query:` are reserved, and they are matched before
+            // path segments — so a route declaring `:query` and a handler
+            // taking `query:` compiled, bound the *query string* instead of
+            // the segment, and failed at runtime decoding a query into
+            // whatever type the segment was meant to be. Both readings are
+            // defensible, which is why this refuses rather than picking one.
+            if (label == "body" || label == "query"), declaredSegments.contains(label) {
+                diagnostics.error(
+                    "route.reservedsegment",
+                    """
+                    Route handler '\(name)' takes '\(label):', which is reserved for the \
+                    request \(label == "body" ? "body" : "query string") — but this route's \
+                    path also declares a ':\(label)' segment, so the two readings collide. \
+                    Rename the segment, or read it with \
+                    context.pathParam("\(label)", as: String.self).
+                    """,
+                    at: parameter)
+                return []
+            }
             if label == "body" {
                 guard bodyTypeText == nil else {
                     diagnostics.error(

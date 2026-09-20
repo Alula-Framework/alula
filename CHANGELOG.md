@@ -4,6 +4,61 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.1] - 2026-09-20
+
+A source break in 0.22.0, found by running the starter-template verification
+that CI had never once scheduled.
+
+### Fixed
+
+- **`ErrorMapper.map` is callable again.** 0.22.0 turned it from a stored
+  closure into a two-argument one so a mapper could read the request, which
+  stopped this compiling:
+
+  ```swift
+  case ChatError.multiStepFailed(let step, let underlying):
+      if let inner = mapper().map(underlying) { … }
+  ```
+
+  That is the good pattern, not an odd one — an error that *carries* another,
+  unwrapped and mapped by the same rules — and the demo starter template has
+  used it all along. `map` is now two methods over a private closure:
+  `map(_:in:)` is what the pipeline calls, `map(_:)` is the recursion above.
+  A mapper built from the request-reading initializer declines the
+  context-free form rather than guessing from half its inputs.
+
+- **Query strings decode with the application's `FormDecoder`.** A `query:`
+  parameter built its own, while a form *body* goes through
+  `context.coders.formDecoder` — so the two could be configured apart with
+  nothing saying so. Nothing observable differs today, because `FormDecoder`
+  carries no options yet; the seam existed and one side was ignoring it.
+
+- **`security.oidc.*` accepts kebab-case.** Every other namespace in Flight
+  is kebab-case; these shipped snake_case, following OIDC's own vocabulary.
+  Someone writing `security.oidc.jwks-url` from habit was silently handed the
+  default. Both spellings are read now, kebab-case canonical. `Configuration`
+  cannot enumerate keys, so an unknown *key* cannot be refused the way an
+  unrecognized *value* is — which is why this could not have been caught.
+
+### Changed
+
+- **A handler returning a `Codable` model without `ResponseEncodable` now
+  gets told what to do.** It used to be a constraint failure naming an
+  internal function, reported inside a macro expansion:
+
+      requires that 'User' conform to 'ResponseEncodable'
+
+  An unavailable `Encodable`-constrained overload now carries the fix —
+  `struct User: Codable, ResponseEncodable {}` — and says the conformance
+  needs no members. Overload resolution prefers the real function whenever it
+  applies, so conforming types are unaffected.
+
+- Shared coders on repeating paths: `TokenHeader.parse` (once per
+  authenticated request), the two error renderers (once per 4xx/5xx), and
+  `PresenceGossipFrame` (once per gossip message per node) each built a
+  `JSONEncoder` or `JSONDecoder` per call. Allocation only; not measured as a
+  throughput change.
+
 ## [0.22.0] - 2026-09-19
 
 Typed request inputs and route authorization on the HTTP side; bounded,

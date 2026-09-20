@@ -191,7 +191,8 @@ public enum RoutingError: HTTPErrorRepresentable, Sendable, Equatable {
     var logDescription: String {
         switch self {
         case .missingPathParameter(let name):
-            return "handler asked for path parameter ':\(name)' which its route pattern does not bind"
+            return
+                "handler asked for path parameter ':\(name)' which its route pattern does not bind"
         }
     }
 }

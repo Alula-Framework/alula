@@ -160,8 +160,8 @@ public struct CORS: Middleware {
             // may *read* an answer, and has never been a request firewall.
             return vary(response, on: [.origin])
         }
-        var answered = response
-            .settingHeader(.accessControlAllowOrigin, allowOriginValue(for: origin))
+        var answered = response.settingHeader(
+            .accessControlAllowOrigin, allowOriginValue(for: origin))
         if allowCredentials {
             answered = answered.settingHeader(.accessControlAllowCredentials, "true")
         }

@@ -18,6 +18,39 @@ public func encodeResponse<T: ResponseEncodable>(
     try value.response(for: context)
 }
 
+/// Never called. It exists so that the overwhelmingly common mistake — a
+/// `Codable` model returned from a handler, without `ResponseEncodable` in
+/// its conformance list — produces an instruction instead of a constraint.
+///
+/// Swift cannot make every `Encodable` type conform to `ResponseEncodable`
+/// (a protocol cannot be extended to conform to another), so the conformance
+/// has to be written out. It needs no members: the default implementation on
+/// `ResponseEncodable where Self: Encodable` supplies everything. What used
+/// to be left to the reader was *that* — the error said only
+///
+///     requires that 'User' conform to 'ResponseEncodable'
+///
+/// from inside a macro expansion the reader did not write.
+///
+/// Overload resolution prefers the constrained function above whenever it
+/// applies, so a type that does conform never reaches this one.
+@available(
+    *, unavailable,
+    message: """
+        This type is Encodable but not ResponseEncodable. Add it to the \
+        conformance list — it needs no members, because Encodable supplies \
+        them: `struct User: Codable, ResponseEncodable {}`.
+        """
+)
+public func encodeResponse<T: Encodable>(
+    _ value: T,
+    for context: RequestContext
+) throws -> Response {
+    // Unreachable: calling an unavailable function is a compile error, which
+    // is the entire point of the declaration.
+    fatalError("unavailable")
+}
+
 extension RouteRegistration {
     /// Codegen convenience: macro expansions carry the method as the literal
     /// they validated ("GET"); user code should prefer the typed initializer.

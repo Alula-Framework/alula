@@ -5,10 +5,11 @@ disagree.
 
 ## Overview
 
-Configuration resolves from three layers, highest precedence first:
+Configuration resolves highest precedence first:
 
 | Layer | Source | What belongs here |
 |---|---|---|
+| Custom providers | `additionalProviders:` | Remote stores, secret managers — above everything else when supplied |
 | Environment variables | `FLIGHT_SERVER_PORT` | Deployment overrides, secrets |
 | Environment overlay | `flight-{env}.yaml` | What differs per environment |
 | Base | `flight.yaml` | Defaults that hold everywhere |
@@ -112,8 +113,9 @@ failure mode this library is organized around preventing.
 
 ## Custom providers
 
-Anything conforming to swift-configuration's `ConfigProvider` layers in at
-any precedence:
+Anything conforming to swift-configuration's `ConfigProvider` layers in
+**above everything else**. `additionalProviders` is inserted above the
+env-var layer so it wins; there is no parameter for placing one lower:
 
 ```swift
 let configuration = try Configuration.load(

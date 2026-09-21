@@ -344,6 +344,16 @@ struct YAMLRejectionTests {
         expectParseError("a: {b: 1}", containing: "flow style")
     }
 
+    @Test("YAML's reserved indicators")
+    func reservedIndicators() {
+        // `@` and `` ` `` are reserved by the YAML spec for future use, so a
+        // value starting with either means nothing today and cannot be
+        // guessed at. The parser refuses them and the subset document did not
+        // list them — five constructs were documented and six are rejected.
+        expectParseError("a: @reserved", containing: "reserved indicator")
+        expectParseError("a: `reserved", containing: "reserved indicator")
+    }
+
     @Test("block scalars")
     func blockScalars() {
         expectParseError("a: |\n  text", containing: "block scalars")

@@ -46,10 +46,11 @@ gate merges; Linux is still where the test suite runs.
 
 ## Layering
 
-Three layers, highest precedence first:
+Highest precedence first:
 
 | Layer | Source | Purpose |
 |---|---|---|
+| Custom providers | `additionalProviders:` | Remote stores, secret managers — above everything else when supplied |
 | Environment variables | `FLIGHT_SERVER_PORT` | Deployment-time overrides and secrets |
 | Environment overlay | `flight-{env}.yaml` | What differs in staging, production, test |
 | Base | `flight.yaml` | Defaults that hold everywhere |
@@ -297,7 +298,9 @@ from one stack rather than maintaining two:
 let app = Application(configuration: configuration.reader)
 ```
 
-Custom providers layer in at any precedence:
+Custom providers layer in **above everything else** — `additionalProviders`
+is inserted above the env-var layer, so it wins. There is no parameter for
+placing one lower:
 
 ```swift
 let configuration = try Configuration.load(

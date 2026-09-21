@@ -67,6 +67,7 @@ port: 8080          # overridden by FLIGHT_SERVER_PORT
 | Anchors and aliases — `&x`, `*x` | Indirection in a file whose job is to be read at a glance | Repeat the value |
 | Multiple documents — `---` | One file, one configuration | Separate files |
 | Tags — `!!str` | Types come from the Swift side | Quote it |
+| Reserved indicators — `@` and backtick | Reserved by the YAML spec for future use, so they mean nothing today | Quote it |
 
 Each rejection names the line and column:
 

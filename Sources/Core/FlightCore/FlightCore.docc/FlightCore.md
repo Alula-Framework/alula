@@ -65,7 +65,6 @@ context as a typed value — one copy per request, never shared between them.
 - ``AssembledService``
 - ``ServiceShutdownPhase``
 - ``ServiceCompletionPolicy``
-- ``BootstrapError``
 
 ### Macros
 

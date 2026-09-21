@@ -551,6 +551,13 @@ the contract — "provides an adapter", not "provides a Valkey adapter".
 
 ## D13 — A converted module says it cannot be built from its type; the walk refuses
 
+**Status: superseded.** Nothing in this decision survives. `isTypeConstructible`,
+`Flight.instantiateModules` and `TestContainer` are all gone, and so is
+`BootstrapError.moduleRequiresConstruction` — because the walk this refuses
+does not exist any more. Modules are constructed by the generated composer,
+so there is no runtime path that builds one from its type and nothing to
+refuse. Kept for the record of why the trap was replaced.
+
 **Chosen.** `FlightModule` gains `static var isTypeConstructible: Bool`,
 defaulting true. A module that takes what it provides sets it false, and every
 path that builds a module from a type — `Flight.assemble(modules:)`,

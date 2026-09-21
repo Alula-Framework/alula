@@ -1,3 +1,4 @@
+import Configuration
 import FlightConfig
 import Testing
 
@@ -61,12 +62,19 @@ struct AdapterPresenceTests {
         }
     }
 
-    // Not covered here: `isPresent` catches a failing resolve and reports
-    // the key as *present* — "the operator wrote something there, which is
-    // the whole signal". Proving it needs a provider holding a non-scalar,
-    // and `ConfigValue` cannot be named from this target: the
-    // swift-configuration module and `FlightConfig.Configuration` share the
-    // name `Configuration`, so the qualified form resolves to the struct.
-    // The behaviour is the documented one and worth a test from inside the
-    // Config target, where both names resolve.
+    @Test("a key that cannot be decoded still counts as configured")
+    func unreadableKeyCountsAsPresent() {
+        // `isPresent` catches rather than propagates, deliberately: an array
+        // under a key the adapter reads as a string throws on resolve. The
+        // operator still wrote something there, which is the whole signal —
+        // treating a decode failure as "absent" would hand them the silent
+        // fallback this guard exists to prevent.
+        let provider = InMemoryProvider(
+            name: "test",
+            values: ["cache.valkey.url": ProviderValue(.stringArray(["a", "b"]), isSecret: false)])
+        #expect(throws: UnloadedAdapterError.self) {
+            try Configuration(providers: [provider])
+                .requireNoUnloadedAdapter(feature: "cache", candidates: candidates)
+        }
+    }
 }

@@ -35,64 +35,6 @@ public struct AssembledService: Sendable {
     }
 }
 
-/// Vestigial: **nothing throws any of these cases.**
-///
-/// They describe failures the runtime container used to have — a duplicate
-/// registration, an eager singleton whose initializer threw — and
-/// composition moved into generated code before `assemble` runs, so the
-/// failures they name now happen at *build* time, as diagnostics from the
-/// registration generator, or not at all.
-///
-/// Kept because removing a public error type is a source break for anything
-/// that catches it, and because two of the cases describe composition
-/// failures a future change could plausibly reintroduce. A `catch` for this
-/// type today is dead code.
-public enum BootstrapError: Error, CustomStringConvertible {
-    case moduleConfigurationFailed(module: String, underlying: any Error)
-    case singletonConstructionFailed(underlying: any Error)
-
-    /// Two registrations claimed the same type.
-    ///
-    /// Usually a generated existential bridge colliding with a hand-written
-    /// registration, in which case the hand-written one is now redundant and
-    /// should go. Qualifying one of them was the other answer until 0.20.0
-    /// removed qualifiers; registrations are keyed by type alone.
-    case duplicateRegistration(String)
-
-    /// A module named only by its type takes what it provides as initializer
-    /// parameters, so it cannot be built from its type — the composition root
-    /// must construct it.
-    case moduleRequiresConstruction(module: String)
-
-    public var description: String {
-        switch self {
-        case .moduleConfigurationFailed(let module, let underlying):
-            return "Module \(module) failed to build during composition: \(underlying)"
-        case .singletonConstructionFailed(let underlying):
-            return "Eager singleton construction failed at composition: \(underlying)"
-        case .duplicateRegistration(let key):
-            return """
-                Duplicate registration for \(key). Two registrations claim the same type — \
-                often a generated existential bridge colliding with a hand-written \
-                registration, in which case the hand-written one is redundant and should \
-                go. Registrations are keyed by type alone; qualifiers were removed in 0.20.0.
-                """
-        case .moduleRequiresConstruction(let module):
-            return """
-                \(module) takes what it provides as initializer parameters, so it cannot be \
-                built from its type. It was reached by name or through the module dependency \
-                graph.
-
-                Build it and pass the instance instead of the type. An application gets this \
-                for free from the generated composition root — pass \
-                `composedBy: flightComposeModules` to Flight.run, which is what `flight new` \
-                writes. A test that names its own modules passes the built instance in the \
-                same list.
-                """
-        }
-    }
-}
-
 /// Steps 4–8 of the bootstrap sequence: modules composed eagerly in dependency
 /// order, health seeding, service collection. Steps 1–3 (environment, YAML,
 /// Configuration assembly) belong to Flight Config; this function receives

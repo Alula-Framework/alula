@@ -262,7 +262,20 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
                             reason: "binary frames are not part of protocol v1"))
                     await session.teardown()
                     break frames
-                case .close:
+                case .close(let code, let reason):
+                    // A peer's own close arrives as `.noStatus`: WSCore
+                    // consumes the code in its state machine, so there is
+                    // nothing to carry and `.normal` below is the right
+                    // reply. What the transport *synthesizes* is worth
+                    // carrying — `.goingAway` when this process is shutting
+                    // down, `.protocolError` when the stream ended abnormally.
+                    // Flattening those to `1000` told a client draining off a
+                    // node that everything had finished normally, which is
+                    // the same confusion `4408` was separated from `1000` to
+                    // avoid.
+                    if code == .goingAway || code == .protocolError {
+                        finishedContinuation.yield(CloseIntent(code: code, reason: reason))
+                    }
                     break frames // peer closed; stream finishes right after
                 case .ping, .pong:
                     continue // transport already answered; counts as liveness

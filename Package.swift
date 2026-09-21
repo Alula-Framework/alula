@@ -426,6 +426,11 @@ let package = Package(
             dependencies: [
                 "FlightCore",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                // `InMemoryProvider`, for the one behaviour of the
+                // adapter-presence guard that needs a provider holding a
+                // non-scalar: a key that fails to *decode* still counts as
+                // configured.
+                .product(name: "Configuration", package: "swift-configuration"),
             ],
             path: "Tests/Core/FlightCoreTests"
         ),

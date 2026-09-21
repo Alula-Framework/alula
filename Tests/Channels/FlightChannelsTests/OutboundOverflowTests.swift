@@ -186,6 +186,40 @@ struct OutboundOverflowTests {
         try await run.value
     }
 
+    @Test("a shutdown tells the client it is going away, not that all is well")
+    func shutdownCarriesGoingAway() async throws {
+        // The transport synthesizes `.goingAway` when this process is
+        // cancelled. The frame loop used to `break` on any close and yield
+        // `.normal`, so a node draining out of a load balancer told every
+        // client `1000` — indistinguishable from "we finished". That is the
+        // confusion `4408` was separated from `1000` to avoid.
+        let handler = try makeHandler(overflow: "close", bufferSize: 512)
+        let peer = SlowPeer(perFrame: .milliseconds(1))
+        let run = Task { try await handler.handle(upgraded: peer.connection, context: makeContext()) }
+        try peer.send(Envelope(ref: "1", topic: "flood:a", event: ReservedEvent.join.rawValue))
+        try await Task.sleep(for: .milliseconds(100))
+
+        peer.frames.yield(.close(code: .goingAway, reason: "server shutting down"))
+        try await run.value
+        #expect(peer.closed.value?.code == WebSocketCloseCode.goingAway.rawValue)
+    }
+
+    @Test("an ordinary peer close is still a normal closure")
+    func peerCloseStaysNormal() async throws {
+        // A peer's own code never reaches us — WSCore consumes it and the
+        // transport reports `.noStatus` — so `1000` is the honest reply, and
+        // `1005` must never go on the wire.
+        let handler = try makeHandler(overflow: "close", bufferSize: 512)
+        let peer = SlowPeer(perFrame: .milliseconds(1))
+        let run = Task { try await handler.handle(upgraded: peer.connection, context: makeContext()) }
+        try peer.send(Envelope(ref: "1", topic: "flood:a", event: ReservedEvent.join.rawValue))
+        try await Task.sleep(for: .milliseconds(100))
+
+        peer.frames.yield(.close(code: .noStatus, reason: ""))
+        try await run.value
+        #expect(peer.closed.value?.code == 1000)
+    }
+
     @Test("an unknown policy keeps the safe default")
     func unknownPolicyIsSafe() throws {
         // A typo here would silently choose lossy delivery, which is the one

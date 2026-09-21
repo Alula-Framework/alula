@@ -306,22 +306,23 @@ contract in under two hundred lines.
 
 ## Sessions and identity
 
-`FlightSecurityCore` establishes identity from a bearer token. A browser has
-no bearer token; it has a cookie. The bridge is small and explicit:
+`FlightSecurityCore` establishes identity from a bearer token. A browser
+has no bearer token; it has a cookie. With both modules listed, the bridge
+is two calls:
 
 ```swift
-let session = try context.requireSession()
-try session.set("account", account.id)
-session.regenerate()
+try context.requireSession().signIn(principal)   // after the application checked a credential
+try context.requireSession().signOut()
 ```
 
-and a middleware of your own in the lane after `Sessions` that reads the
-value back and writes `context.identity`. Whether the session-backed
-principal ships as part of `FlightSecurityCore` — `session.signIn(principal)`
-and an `Authentication` that falls back to the session — is the next step
-after this module, and it is deliberately not in this release: the ordering
-between `Sessions` and `Authentication` across two modules deserves a
-startup-time check before it deserves to be a feature.
+`Authentication` then finds the principal in the session on every request
+that carries the cookie, and everything downstream — `context.principal`,
+`requirePrincipal()`, `roles:` on a route — works as it does for a token.
+`signIn` regenerates the id; a bearer token, when present, still wins.
+Ordering is `FlightSecurityModule`'s: given the session runtime, it runs
+`Sessions` ahead of `Authentication` in every lane it declares, and a lane
+of your own that gets that backwards is refused at startup. The details are
+in `Docs/security-core.md` under *Signing in with a session*.
 
 ## Testing
 

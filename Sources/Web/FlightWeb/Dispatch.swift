@@ -70,6 +70,31 @@ public enum DispatchBuilder {
         }
     }
 
+    /// A route's chain reads the session before anything put it there.
+    ///
+    /// Composition-time, like the undeclared-lane error, and for the same
+    /// reason: the alternative is a middleware that sees `nil` for
+    /// `context.session` on every request — `Authentication` quietly never
+    /// signing anyone in from their cookie — with nothing anywhere saying why.
+    /// The chain is checked as the route will run it, lanes concatenated, so
+    /// a reader in the default lane and `Sessions` in a second lane the route
+    /// adds is caught too.
+    public struct SessionOrderError: Error, CustomStringConvertible {
+        public let route: String
+        public let reader: String
+        public let sessions: String
+        public var description: String {
+            "Route \(route) runs \(reader) before \(sessions), but \(reader) reads the session \(sessions) puts on the request. List Sessions ahead of it in the lane — FlightSecurityModule does this itself when it is given a SessionRuntime — or drop Sessions from the route's lanes if it needs no session."
+        }
+    }
+
+    static func checkSessionOrder(_ chain: [MiddlewareRegistration], route: String) throws {
+        guard let sessionsIndex = chain.firstIndex(where: \.providesSession) else { return }
+        if let early = chain[..<sessionsIndex].first(where: \.readsSession) {
+            throw SessionOrderError(route: route, reader: early.name, sessions: chain[sessionsIndex].name)
+        }
+    }
+
     /// Routes and middleware arrive as values, read once at composition and
     /// immutable thereafter (Flight Core §2.1).
     ///
@@ -140,6 +165,7 @@ public enum DispatchBuilder {
                 }
                 chain += laneChain
             }
+            try checkSessionOrder(chain, route: "\(route.method.rawValue) \(route.path) (\(route.source))")
             let terminal: Next = { context in
                 // The match that selected this responder, threaded through a
                 // task-local rather than re-derived. This used to re-run the
@@ -182,6 +208,7 @@ public enum DispatchBuilder {
                 }
                 chain += laneChain
             }
+            try checkSessionOrder(chain, route: "assets at \(mount.prefix)")
             mountResponders.append(
                 (mount, compose(chain, around: { context in await mount.respond(to: context) })))
             // A mount whose root does not exist serves nothing but 404s —

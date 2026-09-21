@@ -103,16 +103,25 @@ public struct MiddlewareRegistration: Sendable {
     /// error already promised it was legal. Filtered out when the lane's chain
     /// is assembled, so it costs a request nothing.
     let isLaneMarker: Bool
+    /// The layer is `Sessions`: it puts a session on the context.
+    let providesSession: Bool
+    /// The layer conforms to `SessionReading`: it needs the session there.
+    /// Dispatch checks the two against each other per route chain.
+    let readsSession: Bool
     let handle: @Sendable (RequestContext, Next) async throws -> Response
 
     init(
         name: String, lane: PipelineLane,
         isLaneMarker: Bool = false,
+        providesSession: Bool = false,
+        readsSession: Bool = false,
         handle: @escaping @Sendable (RequestContext, Next) async throws -> Response
     ) {
         self.name = name
         self.lane = lane
         self.isLaneMarker = isLaneMarker
+        self.providesSession = providesSession
+        self.readsSession = readsSession
         self.handle = handle
     }
 
@@ -123,7 +132,9 @@ public struct MiddlewareRegistration: Sendable {
     public init(_ middleware: any Middleware, name: String? = nil) {
         self.init(
             name: name ?? String(reflecting: type(of: middleware)),
-            lane: Self.defaultLane
+            lane: Self.defaultLane,
+            providesSession: middleware is Sessions,
+            readsSession: middleware is any SessionReading
         ) { context, next in
             try await middleware.handle(context, next: next)
         }
@@ -150,7 +161,9 @@ extension MiddlewareRegistration {
         for instance in middleware {
             registrations.append(
                 MiddlewareRegistration(
-                    name: String(reflecting: type(of: instance)), lane: name
+                    name: String(reflecting: type(of: instance)), lane: name,
+                    providesSession: instance is Sessions,
+                    readsSession: instance is any SessionReading
                 ) { context, next in try await instance.handle(context, next: next) })
         }
         return registrations

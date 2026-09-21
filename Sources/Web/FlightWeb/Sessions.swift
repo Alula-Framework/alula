@@ -72,6 +72,15 @@ public struct Sessions: Middleware {
     }
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
+        // Already loaded by a `Sessions` further out in this chain: pass
+        // through. Idempotence is what lets two modules each put this layer
+        // in a lane — `FlightSessionsModule` in the default lane for every
+        // application, and `FlightSecurityModule` ahead of `Authentication`
+        // in the lanes it owns — without a route that names both paying two
+        // loads, or two commits racing over one record.
+        if context.session != nil {
+            return try await next(context)
+        }
         let settings = runtime.settings
         let session = try await load(context)
 
@@ -157,6 +166,17 @@ public struct Sessions: Middleware {
             sameSite: settings.cookieSameSite)
     }
 }
+
+/// A middleware that reads `context.session`, and therefore has to run after
+/// ``Sessions`` in any lane that has one.
+///
+/// Conforming is what lets composition refuse a lane that lists the reader
+/// first — at startup, naming the route and both layers — instead of the
+/// reader seeing an empty session on every request and nothing saying why.
+/// A lane with no `Sessions` in it at all is left alone: the reader then
+/// sees `nil`, which is the documented "not configured" answer, and that is
+/// its business to handle. `Authentication` in FlightSecurityCore conforms.
+public protocol SessionReading: Middleware {}
 
 /// The session store could not answer. Rendered as a bare 503; the reason
 /// is in the log.

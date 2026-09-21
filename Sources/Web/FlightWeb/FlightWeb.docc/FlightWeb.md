@@ -167,7 +167,9 @@ whole application without binding a port.
 - ``FlightSessionsModule``
 - ``SessionSettings``
 - ``SessionRuntime``
+- ``SessionReading``
 - ``RequestContext/requireSession()``
+- ``DispatchBuilder/SessionOrderError``
 - ``SessionUnavailableError``
 - ``SessionNotConfiguredError``
 - ``SessionConfigurationError``

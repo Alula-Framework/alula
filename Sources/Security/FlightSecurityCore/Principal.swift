@@ -47,6 +47,38 @@ public struct Principal: Sendable {
     }
 }
 
+/// The stable identity, persistable: `subject`, `issuer`, `roles`, `scopes`.
+///
+/// `claims` is deliberately not encoded. It is `[String: any Sendable]`
+/// straight off a token — arbitrary JSON the IdP chose to include — and a
+/// session is the wrong place to keep a copy of it: the token it came from
+/// expires, the session does not, and a claim read from the session a week
+/// later is a fact about a token nobody has any more. What a session-backed
+/// principal needs to be — someone, from somewhere, with roles and scopes —
+/// is exactly the four fields kept. A decoded principal has empty `claims`.
+extension Principal: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case subject, issuer, roles, scopes
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            subject: try container.decode(String.self, forKey: .subject),
+            issuer: try container.decode(String.self, forKey: .issuer),
+            roles: try container.decode(Set<String>.self, forKey: .roles),
+            scopes: try container.decode(Set<String>.self, forKey: .scopes))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(subject, forKey: .subject)
+        try container.encode(issuer, forKey: .issuer)
+        try container.encode(roles, forKey: .roles)
+        try container.encode(scopes, forKey: .scopes)
+    }
+}
+
 extension Principal {
     /// The ambient principal for the current task tree.
     ///

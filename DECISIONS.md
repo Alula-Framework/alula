@@ -7,6 +7,50 @@ wrong, say so and it changes.
 
 ---
 
+## D31 — `Sessions` before `Authentication`: owned by the security module, idempotent, and checked
+
+**Context.** Session-backed identity needs `Sessions` to have run before
+`Authentication` reads `context.session`. The two live in different modules,
+and neither depends on the other: an application may have sessions without
+security or security without sessions. D2 derives cross-module lane order
+from the module graph in scan order, which is deterministic but implicit —
+listing `FlightSecurityModule` before `FlightSessionsModule` in an
+application's `dependencies` would silently sign nobody in.
+
+**Chosen.** Three things together:
+
+1. `FlightSecurityModule` takes `sessions: SessionRuntime?` by type and,
+   when it has one, puts `Sessions` ahead of `Authentication` in every lane
+   *it* declares, including its default-lane contribution. The lanes are its
+   to order.
+2. `Sessions` is idempotent: if the context already carries a session, it
+   passes through. So the default lane holding it twice — once from each
+   module, in whichever order the graph puts them — costs one load and one
+   commit.
+3. A `SessionReading` marker protocol on the reader, and a composition-time
+   check in `DispatchBuilder` over each route's concatenated chain: a reader
+   ahead of the first `Sessions` fails startup naming the route and both
+   layers. A chain with no `Sessions` at all is left alone; the reader sees
+   `nil` and that is its documented case.
+
+**Why.** Ownership removes the ordering question for the lanes that matter;
+idempotence removes the double-listing cost that ownership creates; the
+check catches the one remaining way to get it wrong, an application's own
+lane, at startup rather than as a browser that never signs in.
+
+**Alternatives.** Make `FlightSecurityModule` depend on `FlightSessionsModule`
+(forces sessions on every token-only API). Have `Authentication` load the
+session itself (a second store read per request, and two owners of one
+cookie). Rely on D2's scan order and document it (works until someone
+reorders a list nothing checks). A string-suffix check on middleware names
+instead of the protocol (couples FlightWeb to a type name in a package above
+it).
+
+**Cost of reversing.** The marker protocol, two flags on
+`MiddlewareRegistration`, one check, one guard line in `Sessions`.
+
+---
+
 ## D30 — The session cookie is `Secure` unless configuration says otherwise
 
 **Context.** `Cookie` defaults `isSecure` to false, with a reason written at

@@ -1,4 +1,5 @@
 import FlightCore
+import FlightSessions
 import FlightWeb
 import HTTPTypes
 
@@ -11,6 +12,14 @@ import HTTPTypes
 /// unauthenticated. Rejection is ``RequireAuthentication``'s job (or a
 /// handler-level guard), so public routes stay public.
 ///
+/// A request with no bearer token but a session carrying a principal —
+/// one `Session.signIn(_:)` stored — is authenticated from the session.
+/// That is how a browser, which has a cookie and no token, is signed in. A
+/// bearer token, when present, always wins: it is the fresher claim, and a
+/// request that goes to the trouble of sending one means it. This layer
+/// therefore conforms to `SessionReading`, and composition refuses a lane
+/// that runs it ahead of `Sessions`.
+///
 /// `validator` arrives through the initializer like any other dependency —
 /// there is no longer a separate "explicit validator, for manual wiring or
 /// tests" entry point, because that entry point existed only to work around
@@ -22,7 +31,7 @@ import HTTPTypes
 // module could not succeed; the marker keeps the build's scan from treating it
 // as an app component of its own.
 @Middleware
-public struct Authentication: Sendable {
+public struct Authentication: Sendable, SessionReading {
     // Parenthesized: the macro's generated `init(_flight:)` resolves this by
     // appending `.self` to the type text, and `any TokenValidator.self`
     // (unparenthesized) parses as a lookup for a nested type named `self`
@@ -40,23 +49,28 @@ public struct Authentication: Sendable {
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
         guard let token = context.request.bearerToken else {
+            // No token. A session may still say who this is.
+            if let session = context.session {
+                do {
+                    if let principal = try session.principal() {
+                        return try await next(context.authenticated(as: principal))
+                    }
+                } catch {
+                    // A stored principal that no longer decodes — a format
+                    // change, or something else writing under the key.
+                    // Anonymous rather than a 500 on every request until the
+                    // cookie expires; the next sign-in overwrites it.
+                    context.logger.warning(
+                        "stored session principal did not decode; treating the request as anonymous",
+                        metadata: ["reason": "\(error)"])
+                }
+            }
             // No credential: unauthenticated, not an error.
             return try await next(context)
         }
         do {
             let principal = try await validator.validate(token)
-            // One local copy carrying both the identity and the stamped
-            // logger to everything downstream. `context` is a value and the
-            // chain is layered, so writing here is what makes the principal
-            // visible to the handler — no shared mutable holder, and nothing
-            // to resolve out of a scope.
-            //
-            // The subject is stamped onto the logger so downstream lines
-            // correlate; it is the IdP's opaque id, not PII Flight invents.
-            var authenticated = context
-            authenticated.identity = .authenticated(principal)
-            authenticated.logger[metadataKey: "auth.subject"] = "\(principal.subject)"
-            return try await next(authenticated)
+            return try await next(context.authenticated(as: principal))
         } catch {
             // Error hygiene: the specific reason stays in the internal log;
             // the wire sees nothing here, and enforcement points return a
@@ -69,6 +83,23 @@ public struct Authentication: Sendable {
             rejected.identity = .invalidCredential
             return try await next(rejected)
         }
+    }
+}
+
+extension RequestContext {
+    /// One local copy carrying both the identity and the stamped logger to
+    /// everything downstream. `RequestContext` is a value and the chain is
+    /// layered, so writing into the copy handed to `next` is what makes the
+    /// principal visible to the handler — no shared mutable holder, and
+    /// nothing to resolve out of a scope.
+    ///
+    /// The subject is stamped onto the logger so downstream lines correlate;
+    /// it is the IdP's opaque id, not PII Flight invents.
+    fileprivate func authenticated(as principal: Principal) -> RequestContext {
+        var authenticated = self
+        authenticated.identity = .authenticated(principal)
+        authenticated.logger[metadataKey: "auth.subject"] = "\(principal.subject)"
+        return authenticated
     }
 }
 

@@ -5,6 +5,7 @@
 // prose breaks the build.
 
 import FlightCore
+import FlightSecurityCore
 import FlightWeb
 import Foundation
 
@@ -39,6 +40,22 @@ struct AccountController {
     @PostRoute("/logout")
     func logout(_ context: RequestContext) throws -> Response {
         try context.requireSession().destroy()
+        return .seeOther("/")
+    }
+
+    // Identity: the same session carries a `Principal`, and `Authentication`
+    // reads it on every request that has no bearer token.
+    @PostRoute("/sign-in")
+    func signIn(_ context: RequestContext, body: LoginForm) async throws -> Response {
+        let account = try await accounts.authenticate(body.email, body.password)
+        try context.requireSession().signIn(
+            Principal(subject: account.id.uuidString, issuer: "myapp", roles: []))
+        return .seeOther("/")
+    }
+
+    @PostRoute("/sign-out")
+    func signOut(_ context: RequestContext) throws -> Response {
+        try context.requireSession().signOut()
         return .seeOther("/")
     }
 }

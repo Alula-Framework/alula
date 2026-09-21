@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A session can carry the principal.** `Session.signIn(_:)` stores a
+  `Principal` and regenerates the id; `signOut()` forgets it and regenerates
+  again; `principal()` reads it back. `Authentication` authenticates a
+  request with no bearer token from its session, so a browser signs in once
+  and is authenticated by its cookie — `context.principal`,
+  `requirePrincipal()` and `roles:` all work unchanged. A bearer token still
+  wins when present. `Principal` is `Codable` for its stable fields; `claims`
+  are not persisted, because they describe a token nobody has any more.
+  `FlightSecurityModule` takes the session runtime by type and, when it has
+  one, runs `Sessions` ahead of `Authentication` in every lane it declares;
+  `Sessions` is idempotent so the default lane carrying it twice costs one
+  load. A lane that lists a session reader ahead of `Sessions` is refused at
+  startup (`DispatchBuilder.SessionOrderError`), checked per route chain
+  across concatenated lanes; `SessionReading` is the conformance that says
+  a middleware reads the session, and `Authentication` conforms.
+  DECISIONS.md D31 records why the order is owned rather than derived.
+
 ## [0.23.0] - 2026-09-21
 
 Sessions, and a fortnight of documentation being made to agree with the

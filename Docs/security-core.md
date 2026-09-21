@@ -215,6 +215,54 @@ controller's requirement cannot be widened by a route beneath it, and
 `roles:` on a `.public` route is a build error — a lane that establishes no
 principal can only ever reject. The full semantics are in `Docs/web.md`.
 
+### Signing in with a session
+
+A browser has no bearer token; it has a cookie. With `FlightSessionsModule`
+listed, the credential check happens once — a password form, an OIDC
+callback, a magic link, whatever the application does — and the resulting
+`Principal` is stored in the session:
+
+```swift
+@PostRoute("/login")
+func login(_ context: RequestContext, body: LoginForm) async throws -> Response {
+    let account = try await accounts.authenticate(body.email, body.password)
+    try context.requireSession().signIn(
+        Principal(subject: account.id.uuidString, issuer: "myapp", roles: account.roles))
+    return .seeOther("/")
+}
+
+@PostRoute("/logout")
+func logout(_ context: RequestContext) throws -> Response {
+    try context.requireSession().signOut()
+    return .seeOther("/")
+}
+```
+
+From then on `Authentication` finds the principal in the session on every
+request that carries the cookie, and `context.principal`,
+`requirePrincipal()` and `roles:` work exactly as they do for a token. A
+bearer token, when present, still wins — it is the fresher claim.
+
+`signIn` regenerates the session id, every time, because an id handed out
+before authentication must not be the one that is authenticated afterwards.
+`signOut` forgets the principal and regenerates again, keeping the rest of
+the session; `destroy()` is the stronger form. What is stored is the stable
+identity — subject, issuer, roles, scopes — and not the token's `claims`,
+which describe a token nobody has any more.
+
+**Nothing has to be ordered by hand.** `FlightSecurityModule` takes the
+session runtime by type in composition, and when it has one, every lane it
+declares runs `Sessions` ahead of `Authentication`. `Sessions` is idempotent,
+so the default lane carrying it twice — once from each module — costs one
+load. A lane of your own that lists `Authentication` before `Sessions` is
+refused at startup, naming the route and both layers: `Authentication`
+conforms to `SessionReading`, and dispatch checks every route's chain.
+
+`RequireAuthentication` still answers a bare 401 with a `Bearer` challenge.
+A browser application wants that to be a redirect to the login page, which
+is what the `ErrorMapper` that reads the request is for (Flight Web
+§"Redirects").
+
 ### What a role cannot express, the handler still does
 
 Whether this user may see *this* invoice is a fact about data, not a claim on
@@ -374,8 +422,10 @@ are validated is chosen by listing a module:
   `FlightSecurityModule`, so listing it alone is enough. Because the validator
   is built when the module is, bad `security.oidc.*` configuration fails at
   composition — startup, not the first request.
-- **A module of your own** that provides `(any TokenValidator)`, for session
-  cookies, API keys, mTLS, HMAC, or anything else:
+- **A module of your own** that provides `(any TokenValidator)`, for API
+  keys, mTLS, HMAC, or anything else that arrives as a bearer string. (A
+  session cookie is not one of these any more — see *Signing in with a
+  session* above.)
 
 ```swift
 struct MyValidatorModule: FlightModule {
@@ -432,10 +482,11 @@ value described above.
 
 ## Non-goals
 
-Per design: no first-party authentication (no passwords, sessions,
-credential storage), no authorization engine in v1, no hand-rolled
-cryptography, no per-vendor packages for OIDC-compliant providers, no token
-issuance, no TLS opinions.
+Per design: no first-party credential checking (no passwords, no credential
+storage), no authorization engine in v1, no hand-rolled cryptography, no
+per-vendor packages for OIDC-compliant providers, no token issuance, no TLS
+opinions. Sessions carry a principal the application established some other
+way; they do not establish one.
 
 ## Development
 

@@ -423,7 +423,7 @@ let package = Package(
         .target(
             name: "FlightSecurityCore",
             dependencies: [
-                "FlightCore", .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
+                "FlightCore", "FlightSessions", .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
                 .product(name: "AsyncHTTPClient", package: "async-http-client", condition: .when(traits: ["Security"])),
                 .product(name: "Logging", package: "swift-log"),
@@ -595,6 +595,7 @@ let package = Package(
             name: "FlightSecurityCoreTests",
             dependencies: [
                 .target(name: "FlightSecurityCore", condition: .when(traits: ["Security"])), .target(name: "FlightWeb", condition: .when(traits: ["Web"])), .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
+                "FlightSessions", "FlightSessionsTesting",
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
                 .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["Web"])),
             ],

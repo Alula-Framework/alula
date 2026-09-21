@@ -143,6 +143,11 @@ WebSocket's HTTP upgrade is what the channel's join sees.
 - ``Principal``
 - ``AuthenticationState``
 
+A browser signs in once and is authenticated by its cookie afterwards:
+`Session.signIn(_:)` stores the principal, `signOut()` forgets it, and
+``Authentication`` reads it when no bearer token is present. Both are
+extensions on `FlightSessions.Session`; Docs/security-core.md has the flow.
+
 ### Enforcement
 
 - ``Authentication``

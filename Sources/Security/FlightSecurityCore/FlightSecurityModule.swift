@@ -1,4 +1,5 @@
 import FlightCore
+import FlightSessions
 import FlightWeb
 import Logging
 import ServiceLifecycle
@@ -61,22 +62,33 @@ public struct FlightSecurityModule: FlightModule {
     /// it then requires, without depending on the default lane it replaced.
     public let middleware: [MiddlewareRegistration]
 
-    /// - Parameter validator: How tokens are validated — from
-    ///   `FlightOIDCModule`, or from a module of your own. It used to be
-    ///   resolved per request by `Authentication`'s `@Inject`; the middleware
-    ///   is a value now, so it is handed the validator once.
-    public init(validator: any TokenValidator) {
+    /// - Parameters:
+    ///   - validator: How tokens are validated — from `FlightOIDCModule`, or
+    ///     from a module of your own. It used to be resolved per request by
+    ///     `Authentication`'s `@Inject`; the middleware is a value now, so it
+    ///     is handed the validator once.
+    ///   - sessions: The session runtime, when `FlightSessionsModule` is
+    ///     listed — matched by type in composition. With it, every lane this
+    ///     module declares runs `Sessions` ahead of `Authentication`, so a
+    ///     browser signed in with `Session.signIn(_:)` is authenticated from
+    ///     its cookie on every route that names a security lane. The
+    ///     ordering is this module's to own because these are its lanes;
+    ///     `Sessions` is idempotent, so the default lane carrying it twice —
+    ///     once from each module — costs one load. Without it, nothing
+    ///     changes: tokens only.
+    public init(validator: any TokenValidator, sessions: SessionRuntime? = nil) {
         let authentication = Authentication(validator: validator)
         let require = RequireAuthentication()
+        let session: [any Middleware] = sessions.map { [Sessions(runtime: $0)] } ?? []
         self.middleware =
-            MiddlewareRegistration.lane(.default, [authentication])
-            + MiddlewareRegistration.lane(.authentication, [authentication])
-            + MiddlewareRegistration.lane(.authenticated, [authentication, require])
+            MiddlewareRegistration.lane(.default, session + [authentication])
+            + MiddlewareRegistration.lane(.authentication, session + [authentication])
+            + MiddlewareRegistration.lane(.authenticated, session + [authentication, require])
     }
 
     public init() {
         preconditionFailure(
-            "FlightSecurityModule takes a token validator in init(validator:), so it cannot be "
+            "FlightSecurityModule takes a token validator in init(validator:sessions:), so it cannot be "
                 + "instantiated from its type. List FlightOIDCModule, or a module of your own that "
                 + "provides `(any TokenValidator)`, and let the composition root wire it.")
     }

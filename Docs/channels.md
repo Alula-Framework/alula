@@ -170,11 +170,17 @@ outbound stream and the writer drains what was already accepted before the
 close frame goes out.
 
 Nothing in the request path calls `precondition` any more. A reserved event
-name reaching `push`, `pushReserved`, or a broadcast is refused and logged.
-It used to terminate the process — every other connected socket with it —
-because one caller passed a bad name, and while the framework filters
-`flight:`-prefixed events arriving in an envelope, an application deriving a
-name from client *payload* is an ordinary pattern that reached the assertion.
+name reaching `Socket.push` or a broadcast is refused and logged. It used to
+terminate the process — every other connected socket with it — because one
+caller passed a bad name, and while the framework filters `flight:`-prefixed
+events arriving in an envelope, an application deriving a name from client
+*payload* is an ordinary pattern that reached the assertion.
+
+`Socket.pushReserved` enforces the **opposite** rule — it refuses an event
+that is *not* `flight:`-namespaced, because sending reserved events is its
+entire purpose. It is `@_spi(FlightInternal)`, for Flight's own packages
+layered on Channels (Presence today), and application code does not see it
+without an SPI import.
 
 ## Server usage
 
@@ -413,7 +419,7 @@ for it is rare.
 |---|---|---|
 | `flight.channels.heartbeat-timeout-seconds` | `60` | A socket silent this long is closed (any frame counts as liveness) |
 | `flight.channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
-| `flight.channels.outbound-buffer-size` | `256` | Queued frames per socket before the oldest are dropped |
+| `flight.channels.outbound-buffer-size` | `256` | Queued frames per socket before `outbound-overflow` applies |
 | `flight.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
 | `flight.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
 | `flight.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |

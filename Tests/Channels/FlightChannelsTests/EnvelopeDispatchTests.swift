@@ -251,7 +251,16 @@ private struct CountingChannel: Channel {
     }
 
     func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult {
-        .reply(.number(Double(socket.activeTopicCount)))
+        // Both spellings: the count, and the set it counts. `activeTopics`
+        // is what an application writes a real policy against, so it should
+        // agree with the number beside it.
+        guard socket.activeTopics.count == socket.activeTopicCount else {
+            return .error(reason: "activeTopics disagrees with activeTopicCount")
+        }
+        return .reply([
+            "count": .number(Double(socket.activeTopicCount)),
+            "topics": .array(socket.activeTopics.sorted().map { .string($0) }),
+        ])
     }
 }
 
@@ -347,7 +356,9 @@ struct TopicBoundTests {
         try wire.send(ref: "3", topic: "many:a", event: "ping")
         // Both joins are established by now, and a handler can see it — which
         // is what an application needs to write a quota of its own.
-        #expect(try await wire.nextEnvelope()?.payload == .number(2))
+        let reply = try await wire.nextEnvelope()
+        #expect(reply?.payload["count"] == .number(2))
+        #expect(reply?.payload["topics"] == .array([.string("many:a"), .string("many:b")]))
         wire.close()
     }
 }

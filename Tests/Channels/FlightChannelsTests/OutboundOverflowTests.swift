@@ -25,6 +25,29 @@ private struct FloodChannel: Channel {
     func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .none }
 }
 
+/// Floods, and hands its socket back so a test can read what the socket
+/// recorded about the flood.
+private final class SocketBox: @unchecked Sendable {
+    private let state = Mutex<Socket?>(nil)
+    func set(_ socket: Socket) { state.withLock { $0 = socket } }
+    var socket: Socket? { state.withLock { $0 } }
+}
+
+private struct ReportingFloodChannel: Channel {
+    let count: Int
+    let box: SocketBox
+
+    func join(_ topic: String, socket: Socket) async -> JoinResult {
+        box.set(socket)
+        for index in 0..<count {
+            socket.push(topic: topic, event: "flood", payload: ["i": .number(Double(index))])
+        }
+        return .ok(initialState: .null)
+    }
+
+    func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .none }
+}
+
 private struct FloodModule: FlightModule {
     let channels: [ChannelRegistration] = [
         ChannelRegistration("flood:*", source: "FloodModule") { _ in FloodChannel(count: 200) }
@@ -125,6 +148,42 @@ struct OutboundOverflowTests {
 
         try await run.value
         #expect(peer.closed.value?.code == 1000)
+    }
+
+    @Test("drop-oldest counts what it dropped, which is the only trace there is")
+    func dropOldestCountsDrops() async throws {
+        // `Socket.droppedEnvelopeCount` is what the documentation offers as
+        // the reason dropping is not silent — "a subscriber falling behind is
+        // visible rather than silent". Nothing asserted it ever moved.
+        let box = SocketBox()
+        let configuration = Configuration(values: [
+            "flight.channels.outbound-buffer-size": "2",
+            "flight.channels.outbound-overflow": "drop-oldest",
+            "flight.channels.write-timeout-seconds": "30",
+            "flight.channels.heartbeat-timeout-seconds": "30",
+        ])
+        let pubsub = try FlightPubSubModule(configuration: configuration)
+        let channels = try FlightChannelsModule(
+            bus: pubsub.bus, configuration: configuration,
+            channels: [
+                ChannelRegistration("flood:*", source: "T") { _ in
+                    ReportingFloodChannel(count: 200, box: box)
+                }
+            ])
+        let handler = channels.sockets.handler(principal: nil)
+        let peer = SlowPeer()
+        let run = Task { try await handler.handle(upgraded: peer.connection, context: makeContext()) }
+        try peer.send(Envelope(ref: "1", topic: "flood:a", event: ReservedEvent.join.rawValue))
+
+        try await Task.sleep(for: .milliseconds(250))
+        let socket = try #require(box.socket)
+        // 200 pushed into a queue of 2, against a writer that takes 30ms a
+        // frame: most of them cannot have survived.
+        #expect(socket.droppedEnvelopeCount > 0, "dropped nothing with a queue of 2")
+        #expect(peer.closed.value == nil, "drop-oldest must not close")
+
+        try peer.send(Envelope(ref: "2", topic: "flood:a", event: ReservedEvent.close.rawValue))
+        try await run.value
     }
 
     @Test("an unknown policy keeps the safe default")

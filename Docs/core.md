@@ -30,7 +30,7 @@ struct App {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.23.0")
+    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.24.0")
 ]
 ```
 

@@ -7,6 +7,97 @@ wrong, say so and it changes.
 
 ---
 
+## D30 — The session cookie is `Secure` unless configuration says otherwise
+
+**Context.** `Cookie` defaults `isSecure` to false, with a reason written at
+the declaration: a development server on loopback has no TLS, and a cookie
+that silently never gets set is a worse failure than one that is explicitly
+insecure in development. `SessionSettings` had to choose whether to inherit
+that.
+
+**Chosen.** `sessions.cookie-secure` defaults to `true`.
+
+**Why.** The bare cookie API cannot know its deployment. The session module
+knows exactly what its cookie is — a bearer credential for everything the
+session holds — and sending it over plaintext once is enough to lose it. A
+default that is safe in production and one line in `flight-dev.yaml` in
+development is the right way round for that cookie specifically. Chrome and
+Firefox accept `Secure` cookies from `http://localhost`; Safari does not,
+which is what the dev-overlay line is for.
+
+**Alternatives.** Inherit `Cookie`'s false (safe development, unsafe
+production, the wrong way round). Decide from whether the transport has TLS
+configured (wrong behind a TLS-terminating proxy, which is the common
+deployment). Decide from `FLIGHT_ENV` (an allowlist of development names,
+the way Actuator gates its dashboard — defensible, but a second mechanism
+for a one-line setting, and one that would fail *open* on an unrecognised
+environment name unless it were also an allowlist).
+
+**Cost of reversing.** One default and one test.
+
+---
+
+## D29 — `Session` is a reference type on the context
+
+**Context.** `RequestContext` is a value, copied per middleware layer; a
+handler's writes to its session have to reach the `Sessions` middleware
+that persists them after `next` returns. `Next` deliberately takes no
+`inout`.
+
+**Chosen.** `Session` is a `final class` with a `Mutex`-guarded state, held
+as an optional field on the context. The middleware writes the reference
+into the copy it hands downstream and reads back what the handler did
+through `Session.commit(now:ttl:)`.
+
+**Why.** It is the smallest thing that gives the value-typed context
+mutable per-request state: 8 bytes on the context (120 → 128, still two
+cache lines, and `RequestContextLayoutTests` pins it), no `inout`, no
+ambient lookup. `WebRuntime` is the standing precedent for a reference on
+the context. The `PrincipalHolder` this resembles was removed because it was
+*resolved out of a container scope*, not because it was a reference.
+
+**Alternatives.** A task-local bound around `next` — works now that the
+chain is layered, and is what `Principal.current` is; it is second-class
+there for the same reason it would be here, that a value on the context is
+readable without an ambient lookup. A seam protocol in FlightWeb with the
+concrete type above it, D7's shape — unnecessary, because `FlightSessions`
+sits *below* FlightWeb and can be named directly.
+
+**Cost of reversing.** The field, the accessor, and the commit call in the
+middleware.
+
+---
+
+## D28 — The session store throws, and the middleware fails closed
+
+**Context.** flight-data's `Cache` never throws: a miss is normal, an
+errored get is a miss, an errored set is dropped, because the correct
+answer to any cache failure is the real computation behind it. The obvious
+move was to reuse `any Cache` as the session store, or to copy its rule.
+
+**Chosen.** `SessionStore` is its own three-method seam, every method
+throws, and `Sessions` answers a store failure with a bare 503 — on load
+and on save.
+
+**Why.** There is no real computation behind a session. A store that
+silently read empty would turn "signed in" into "signed out" without a word
+anywhere; a save that silently dropped would lose a login after the handler
+had already reported success. Both are worse than a 503 the operator sees.
+The one failure that is *not* refused is a record under a well-formed id
+that does not decode — that is not the client's doing, and starting fresh
+with a logged warning is the honest answer.
+
+**Alternatives.** Reuse `any Cache` (wrong semantics, above, plus a
+`CacheKey` namespace the session does not need). A fail-open middleware
+over a throwing store (the same wrong semantics one layer up). A retry
+inside the middleware (hides the outage from the operator for exactly as
+long as it lasts).
+
+**Cost of reversing.** Contained: the seam has three methods, and the
+middleware's two `catch` blocks are the whole policy.
+
+---
+
 ## D27 — Two providers of one type: a declared default, `@Inject(from:)` for the rest
 
 **Status: agreed, not yet implemented.** Written before the code so the

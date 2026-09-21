@@ -8,6 +8,11 @@ import HTTPTypes
 @_exported import struct HTTPTypes.HTTPField
 @_exported import struct HTTPTypes.HTTPFields
 
+/// And the session vocabulary: `context.session` hands back a `Session`, and
+/// a handler should be able to call `set`, `flash` and `regenerate` on it
+/// without a second import for a type it never names.
+@_exported import FlightSessions
+
 /// Encodes a handler's return value (§4). A free function rather than a
 /// bare method call in the macro expansion so a non-conforming return type
 /// fails with a diagnostic that names `ResponseEncodable` at the handler.

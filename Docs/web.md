@@ -70,7 +70,7 @@ dependency DAG. A module you write can declare framework modules in its own
 
 | Product | Contents |
 |---|---|
-| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule` |
+| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)) |
 | `FlightTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Flight that knows what it wraps (§5.6) |
 | `FlightWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
 
@@ -444,6 +444,11 @@ Cookie.expiring("session")                                       // deletion
 
 `settingCookie` appends rather than replaces, because several cookies means
 several headers.
+
+A cookie that carries state — a login, a cart, a notice for the next page —
+is a session, and `FlightSessionsModule` does the loading, the persisting and
+the cookie for you: `context.session`, with a store seam and an in-memory
+default. See [sessions.md](sessions.md).
 
 ### Redirects
 

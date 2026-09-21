@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Sessions.** Server-side session state under a cookie-carried id:
+  `FlightSessionsModule` puts a `Sessions` middleware in the default lane,
+  handlers read and write `context.session`, and the record is persisted
+  after the handler returns. `Session.regenerate()` for login, `destroy()`
+  for logout, `flash` for the notice a redirect wants shown once. The store
+  is a seam — `SessionStore`, three methods over opaque bytes, in the new
+  dependency-free `FlightSessions` product — with a bounded in-memory
+  default and a Valkey adapter in flight-data. Nothing is stored until a
+  request writes; the TTL slides, renewed on writes and on reads past the
+  half-life; the cookie is `HttpOnly`, `Secure` and `SameSite=Lax` unless
+  `sessions.*` says otherwise. A store that cannot answer is a 503, not a
+  silently empty session — see DECISIONS.md D28 for why that is the
+  opposite of the cache's rule. `RequestContext` gains a `session` field
+  and stays inside two cache lines. `RequestContext.mock` takes a
+  `session:`. `FlightSessionsTesting` ships `RecordingSessionStore`.
+  Docs/sessions.md is the guide.
+
 ## [0.22.1] - 2026-09-20
 
 A source break in 0.22.0, found by running the starter-template verification

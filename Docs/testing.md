@@ -145,6 +145,14 @@ the wire.
 run it against your own adapter and it will tell you where the behaviour
 diverges.
 
+### Sessions — `FlightSessionsTesting`
+
+`RecordingSessionStore` is a working store that also records every `load`,
+`save` and `delete`, so a test can assert what a request did to its session
+and read the record back. `SessionRuntime` takes a clock, so sliding
+renewal and expiry are tested by moving it rather than by sleeping. A handler
+called directly gets an empty session from `RequestContext.mock(session:)`.
+
 ### Cache — `FlightCacheTesting`
 
 `RecordingCache` is a working in-memory cache that also records what was

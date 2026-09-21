@@ -1,4 +1,5 @@
 import FlightCore
+import FlightSessions
 import Logging
 import ServiceContextModule
 
@@ -23,6 +24,15 @@ public struct RequestContext: Sendable {
     /// otherwise, so a request through a pipeline with no authentication
     /// behaves exactly as it did before.
     public var identity: RequestIdentity
+
+    /// This request's session, when a ``Sessions`` middleware ran ahead of
+    /// the handler — `nil` otherwise, so a pipeline without sessions costs
+    /// one empty optional and a handler can tell "not configured" from
+    /// "empty". One reference: the handler writes through it and the
+    /// middleware persists what it finds there after the handler returns,
+    /// which is what lets a value-typed context carry mutable per-request
+    /// state without an `inout` anywhere.
+    public var session: Session?
 
     /// Structured logging, present from the very first request this framework
     /// ever handles — dispatch stamps request metadata (request ID, method,
@@ -51,6 +61,7 @@ public struct RequestContext: Sendable {
         request: Request,
         pathParameters: [String: String] = [:],
         identity: RequestIdentity = .anonymous,
+        session: Session? = nil,
         logger: Logger,
         tracingContext: ServiceContext = .topLevel,
         web: WebRuntime = .default
@@ -58,6 +69,7 @@ public struct RequestContext: Sendable {
         self.request = request
         self.pathParameters = pathParameters
         self.identity = identity
+        self.session = session
         self.logger = logger
         self.tracingContext = tracingContext
         self.web = web

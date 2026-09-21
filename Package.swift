@@ -48,6 +48,12 @@ let package = Package(
         .library(name: "FlightPresenceProtocol", targets: ["FlightPresenceProtocol"]),
         .library(name: "FlightPresenceClient", targets: ["FlightPresenceClient"]),
 
+        // Sessions: the store seam, the session a handler works with, and the
+        // in-memory default. No HTTP in it — the middleware and the cookie are
+        // FlightWeb's, which depends on this the way Channels depends on PubSub.
+        .library(name: "FlightSessions", targets: ["FlightSessions"]),
+        .library(name: "FlightSessionsTesting", targets: ["FlightSessionsTesting"]),
+
         // Operational endpoints: health probes and a topology dashboard.
         // Not metrics — that is a decision, recorded in Docs/actuator.md.
         .library(name: "FlightActuator", targets: ["FlightActuator"]),
@@ -227,6 +233,7 @@ let package = Package(
             dependencies: [
                 .target(name: "FlightWebMacrosImpl", condition: .when(traits: ["Web"])),
                 "FlightCore",
+                "FlightSessions",
                 .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["Web"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceContextModule", package: "swift-service-context", condition: .when(traits: ["Web"])),
@@ -386,6 +393,22 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: Sessions
+
+        // Dependency-free on purpose: flight-data implements `SessionStore`
+        // over Valkey, and it depends on flight with no traits so that a
+        // cache-only consumer never resolves the HTTP stack. A seam that
+        // needed FlightWeb would need a conditional trait from flight-data —
+        // a pattern nothing here uses. Same shape as FlightPubSub's adapter
+        // seam.
+        .target(name: "FlightSessions", path: "Sources/Sessions/FlightSessions", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
+            name: "FlightSessionsTesting",
+            dependencies: ["FlightSessions"],
+            path: "Sources/Sessions/FlightSessionsTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Actuator
 
         .target(
@@ -460,6 +483,7 @@ let package = Package(
             name: "FlightWebTests",
             dependencies: [
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])), .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
+                "FlightSessions", "FlightSessionsTesting",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 // Inflating what ResponseCompression produced: the only claim
                 // worth testing is that a real decoder reads it back.
@@ -473,6 +497,7 @@ let package = Package(
             name: "FlightTransportTests",
             dependencies: [
                 .target(name: "FlightTransport", condition: .when(traits: ["Web"])), .target(name: "FlightWeb", condition: .when(traits: ["Web"])), .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])),
+                "FlightSessions", "FlightSessionsTesting",
                 .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["Web"])),
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(traits: ["Web"])),
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(traits: ["Web"])),
@@ -558,6 +583,12 @@ let package = Package(
             name: "FlightSchedulerTests",
             dependencies: ["FlightScheduler", "FlightSchedulerTesting"],
             path: "Tests/Scheduler/FlightSchedulerTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "FlightSessionsTests",
+            dependencies: ["FlightSessions", "FlightSessionsTesting"],
+            path: "Tests/Sessions/FlightSessionsTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

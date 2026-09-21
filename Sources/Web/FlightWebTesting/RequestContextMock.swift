@@ -8,18 +8,25 @@ extension RequestContext {
     /// A ready-made context for exercising middleware and handlers without any
     /// transport. Handlers inject their dependencies (constructed for the
     /// test), so a context no longer carries a container to resolve from.
+    ///
+    /// `session:` hands the handler a session the way the `Sessions`
+    /// middleware would — `Session()` for an empty one, or one built from a
+    /// `SessionRecord` to stage a signed-in visitor. Nil, the default, is a
+    /// request no session middleware saw.
     public static func mock(
         method: HTTPRequest.Method = .get,
         path: String = "/",
         headers: HTTPFields = [:],
         body: Data = Data(),
-        pathParameters: [String: String] = [:]
+        pathParameters: [String: String] = [:],
+        session: Session? = nil
     ) -> RequestContext {
         var logger = Logger(label: "flight.web.test")
         logger.logLevel = .critical
         return RequestContext(
             request: Request(method: method, path: path, headers: headers, body: body),
             pathParameters: pathParameters,
+            session: session,
             logger: logger,
             tracingContext: .topLevel
         )

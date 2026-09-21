@@ -161,6 +161,17 @@ whole application without binding a port.
 
 - ``Cookie``
 
+### Sessions
+
+- ``Sessions``
+- ``FlightSessionsModule``
+- ``SessionSettings``
+- ``SessionRuntime``
+- ``RequestContext/requireSession()``
+- ``SessionUnavailableError``
+- ``SessionNotConfiguredError``
+- ``SessionConfigurationError``
+
 ### Cross-origin requests
 
 - ``CORS``

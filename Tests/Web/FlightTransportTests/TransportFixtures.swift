@@ -139,13 +139,18 @@ func wireRoutes() -> [RouteRegistration] {
 
 /// Boots a `FlightTransport` on an ephemeral port with the fixture app,
 /// hands the bound port to `body`, and tears the server down afterwards.
+///
+/// `routes` and `middleware` default to the fixture app with no middleware; a
+/// suite testing a layer over the wire passes its own.
 func withRunningServer(
+    routes: [RouteRegistration]? = nil,
+    middleware: [MiddlewareRegistration] = [],
     maxRequestBodyBytes: Int = 1 << 20,
     idleTimeout: Duration? = .seconds(60),
     tls: FlightTransportConfiguration.TLS? = nil,
     _ body: @escaping @Sendable (_ port: Int) async throws -> Void
 ) async throws {
-    let dispatch = try TestClient(routes: wireRoutes()).dispatch
+    let dispatch = try TestClient(routes: routes ?? wireRoutes(), middleware: middleware).dispatch
 
     let (portStream, portContinuation) = AsyncStream<Int>.makeStream()
     let configuration = FlightTransportConfiguration(

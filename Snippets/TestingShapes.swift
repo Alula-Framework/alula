@@ -10,6 +10,8 @@ import FlightChannelsTesting
 import FlightCore
 import FlightPubSub
 import FlightPubSubTesting
+import FlightSessions
+import FlightSessionsTesting
 import FlightWeb
 import FlightWebTesting
 import Foundation
@@ -40,6 +42,17 @@ func testingShapes() async throws {
     // And the simpler recorder.
     let recorder = RecordingAdapter()
     _ = recorder.broadcasts
+
+    // Sessions: a store that remembers what was done to it, behind the real
+    // middleware, with a clock the test moves.
+    let sessions = RecordingSessionStore()
+    let runtime = SessionRuntime(
+        store: sessions, settings: try SessionSettings(ttl: .seconds(3600)),
+        now: { Date() })
+    _ = try TestClient(
+        routes: [], middleware: MiddlewareRegistration.lane(.default, [Sessions(runtime: runtime)]))
+    _ = sessions.storedIDs
+    _ = RequestContext.mock(session: Session())
 
     // The cache helpers live in flight-data, so they are compiled by that
     // package's snippet rather than this one.

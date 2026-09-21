@@ -20,12 +20,13 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightPubSub` | Topic-based publish/subscribe with a `DistributedPubSubAdapter` seam for cluster fan-out. |
 | `FlightChannels` | Per-connection lifecycle over PubSub and Web: join, leave, push, broadcast. |
 | `FlightPresence` | CRDT-merged "who is here", correct across a cluster without central coordination. |
+| `FlightSessions` | Server-side sessions: the store seam and the bounded in-memory default. The middleware and `context.session` are `FlightWeb`'s. |
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
 | `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `FlightChannelsClient` for joining topics over a socket, `FlightPresenceClient` for applying presence state and diffs. |
-| `*Testing` | Test support for Web, PubSub, Channels, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
+| `*Testing` | Test support for Web, PubSub, Channels, Sessions, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
 
 Per-product documentation lives in [Docs/](Docs/), and
 [Docs/testing.md](Docs/testing.md) covers how to test an application built

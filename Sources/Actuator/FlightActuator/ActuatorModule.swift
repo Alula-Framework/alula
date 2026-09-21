@@ -1,4 +1,5 @@
 import FlightCore
+import Logging
 import Synchronization
 import FlightWeb
 import class Foundation.ProcessInfo
@@ -88,11 +89,12 @@ public struct ActuatorModule: FlightModule {
     public init(
         configuration: Configuration,
         components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry()
+        health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        logger: Logger = Logger(label: "flight.actuator")
     ) throws {
         self.init(
             processEnvironment: ProcessInfo.processInfo.environment,
-            components: components, health: health)
+            components: components, health: health, logger: logger)
         try installController(
             format: configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr)
     }
@@ -104,8 +106,10 @@ public struct ActuatorModule: FlightModule {
     public init(
         processEnvironment: [String: String],
         components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry()
+        health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        logger: Logger = Logger(label: "flight.actuator")
     ) {
+        self.logger = logger
         self.components = components
         self.health = health
         self.environment = .current(from: processEnvironment)
@@ -121,6 +125,7 @@ public struct ActuatorModule: FlightModule {
                 environment: environment, isEnvironmentDeclared: isEnvironmentDeclared),
             controller: controller)
         installController(format: .ssr)
+        announceExposure()
     }
 
     /// Explicit-environment initializer — the test seam (construct the module
@@ -129,8 +134,10 @@ public struct ActuatorModule: FlightModule {
     public init(
         environment: FlightEnvironment,
         components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry()
+        health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        logger: Logger = Logger(label: "flight.actuator")
     ) {
+        self.logger = logger
         self.components = components
         self.health = health
         self.environment = environment
@@ -143,6 +150,7 @@ public struct ActuatorModule: FlightModule {
                 environment: environment, isEnvironmentDeclared: true),
             controller: controller)
         installController(format: .ssr)
+        announceExposure()
     }
 
     /// Explicit exposure, bypassing both the environment allowlist and
@@ -153,8 +161,10 @@ public struct ActuatorModule: FlightModule {
         exposure: ActuatorExposure,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
-        format: ActuatorFormat = .ssr
+        format: ActuatorFormat = .ssr,
+        logger: Logger = Logger(label: "flight.actuator")
     ) {
+        self.logger = logger
         self.components = components
         self.health = health
         self.environment = environment
@@ -162,10 +172,68 @@ public struct ActuatorModule: FlightModule {
         self.isEnvironmentDeclared = true
         self.routes = Self.makeRoutes(exposure: exposure, controller: controller)
         installController(format: format)
+        announceExposure()
     }
 
     private let exposureOverride: ActuatorExposure?
     private let isEnvironmentDeclared: Bool
+    private let logger: Logger
+
+    /// Says, once, which exposure this process resolved to.
+    ///
+    /// The decision is security-relevant and was previously silent: nothing
+    /// anywhere recorded that a deployment had begun publishing an
+    /// unauthenticated description of its topology. Presence announces its
+    /// failure-detection mode at startup for the same reason — so nobody
+    /// discovers the distinction from a bug report.
+    ///
+    /// Called from the *root* initializers only. `init(configuration:)`
+    /// delegates to one of them and then calls `installController` a second
+    /// time to apply the format, so announcing from there would log twice.
+    private func announceExposure() {
+        guard let exposure = try? resolvedExposure.get() else {
+            // A malformed FLIGHT_ACTUATOR_EXPOSURE. Composition surfaces it
+            // and nothing serves, so this is a breadcrumb rather than the
+            // report.
+            logger.error(
+                "actuator exposure could not be resolved; composition will fail",
+                metadata: ["environment": "\(environment.rawValue)"])
+            return
+        }
+        let metadata: Logger.Metadata = [
+            "exposure": "\(exposure.rawValue)",
+            "environment": "\(environment.rawValue)",
+        ]
+        switch exposure {
+        case .disabled:
+            logger.info("actuator disabled; no routes published", metadata: metadata)
+        case .healthOnly:
+            logger.info(
+                "actuator publishing health probes only; no topology is disclosed",
+                metadata: metadata)
+        case .full:
+            let isDevelopment = ActuatorExposure.developmentEnvironments
+                .contains(environment.rawValue.lowercased())
+            if isDevelopment {
+                logger.info(
+                    "actuator dashboard published; environment is a development one",
+                    metadata: metadata)
+            } else {
+                // The line this whole method exists for: `full` outside the
+                // allowlist can only come from an explicit
+                // FLIGHT_ACTUATOR_EXPOSURE, and the dashboard is
+                // unauthenticated wherever it is on.
+                logger.warning(
+                    """
+                    actuator dashboard published OUTSIDE a development environment — it is \
+                    unauthenticated and discloses the module list, every component's type \
+                    name, and failure messages. Put authentication in front of /actuator, or \
+                    unset FLIGHT_ACTUATOR_EXPOSURE to fall back to health probes only.
+                    """,
+                    metadata: metadata)
+            }
+        }
+    }
 
     /// Resolved once, when the module is built, so `routes` can be a stored
     /// value — and kept as a `Result` because `FlightModule` requires a

@@ -94,7 +94,7 @@ struct JSONRenderingTests {
         #expect(module.error?.contains("flux capacitor") == true)
     }
 
-    @Test("a healthy module encodes with a null error")
+    @Test("a healthy module omits 'error' entirely — it is not null-encoded")
     func healthyModuleOnTheWire() throws {
         let app = try Flight.assemble(configuration: Configuration(), modules: [FailingServiceModule()])
         let snapshot = ActuatorSnapshot(health: app.health, components: [], environment: .dev)
@@ -105,6 +105,13 @@ struct JSONRenderingTests {
         let module = try #require(wire.modules.first)
         #expect(module.health == "running")
         #expect(module.error == nil)
+
+        // `error == nil` after decoding is true whether the key was absent
+        // or explicitly null, so it cannot pin the documented contract:
+        // "absent optionals are *omitted*, not null-encoded". A front-end
+        // testing `'error' in module` depends on which one it is.
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(!text.contains("\"error\""), "expected the key to be absent: \(text)")
     }
 
     @Test("JSON output is deterministic across requests")

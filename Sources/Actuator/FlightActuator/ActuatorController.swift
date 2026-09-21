@@ -22,6 +22,18 @@ import Foundation
 /// route values (`RouteRegistration`, the same seam `@GetRoute` sits beside);
 /// nothing outside this package touches it directly.
 struct ActuatorController {
+    /// One encoder, configured once.
+    ///
+    /// Both responses want the same deterministic formatting, and the health
+    /// probe is — as the comment in `respond(to:)` says — the one route an
+    /// orchestrator polls every few seconds. Building a `JSONEncoder` per
+    /// poll bought nothing; the settings never vary.
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return encoder
+    }()
+
     /// Every component, as the *build* scanned them — passed in by the
     /// composition root rather than read from `container.allRegistrations()`.
     ///
@@ -99,9 +111,7 @@ struct ActuatorController {
             let failed: Int
             let notStarted: Int
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let body = try encoder.encode(
+        let body = try Self.encoder.encode(
             Health(
                 status: up ? "UP" : "DOWN",
                 modules: modules.count,
@@ -118,12 +128,11 @@ struct ActuatorController {
         case .ssr:
             return .html(renderActuatorHTML(snapshot))
         case .json:
-            let encoder = JSONEncoder()
             // Deterministic output: the JSON is a public contract for
             // hand-rolled front-ends, so key order should not wobble
-            // between requests or releases.
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            return .data(try encoder.encode(snapshot), contentType: .json)
+            // between requests or releases. `Self.encoder` is configured for
+            // exactly that.
+            return .data(try Self.encoder.encode(snapshot), contentType: .json)
         }
     }
 }

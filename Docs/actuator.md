@@ -104,11 +104,20 @@ fallback (Flight Config).
 
 Three levels, decided at bootstrap and never re-read:
 
-| `actuator.exposure` | Routes registered |
+Set with `FLIGHT_ACTUATOR_EXPOSURE`, or derived from `FLIGHT_ENV` when that
+is unset — **not** a `flight.yaml` key, unlike `actuator.format` above. The
+reason is below; writing `actuator: exposure:` into `flight.yaml` does
+nothing, silently.
+
+| exposure | Routes registered |
 | --- | --- |
 | `disabled` | none |
-| `health_only` | `/actuator/health` — a liveness answer with no topology in it |
-| `full` | health **and** the dashboard: module list, every component's type name, failure messages |
+| `health_only` | all three health probes — `/actuator/health`, `/actuator/health/live`, `/actuator/health/ready`. No topology in any of them. |
+| `full` | the three probes **and** the dashboard: module list, every component's type name, failure messages |
+
+The probes are published wherever the actuator is enabled at all, because an
+orchestrator needs them in production and an all-or-nothing gate is why
+production used to have none. Only the *dashboard* is gated further.
 
 `full` is the default in `dev`, `development`, `test` and `local` — when
 `FLIGHT_ENV` actually *says* so. **An unset `FLIGHT_ENV` is `health_only`**,
@@ -233,11 +242,11 @@ swift test
 
 ## What gets published, and where
 
-| exposure | `/actuator/health` | `/actuator` |
-|---|---|---|
-| `disabled` | — | — |
-| `health_only` | yes | — |
-| `full` | yes | yes |
+| exposure | `/actuator/health` | `…/health/live` | `…/health/ready` | `/actuator` |
+|---|---|---|---|---|
+| `disabled` | — | — | — | — |
+| `health_only` | yes | yes | yes | — |
+| `full` | yes | yes | yes | yes |
 
 The default is `full` in `dev`, `development`, `test`, and `local`, and
 `health_only` everywhere else — **including any environment name this

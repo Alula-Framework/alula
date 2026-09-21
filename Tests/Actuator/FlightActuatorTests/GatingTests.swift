@@ -147,4 +147,26 @@ struct GatingTests {
             ])
     }
 
+    @Test("health_only publishes all three probes, and no dashboard")
+    func healthOnlyPublishesEveryProbe() {
+        // The documentation said this level registered `/actuator/health`
+        // alone, and described it as "a liveness answer". Both were wrong,
+        // and nothing tested it: the only route-count assertion covered
+        // `full`. An operator reading that would not know `/live` and
+        // `/ready` existed outside development.
+        let actuator = ActuatorModule(environment: FlightEnvironment("production"))
+        #expect(
+            Set(actuator.routes.map { "\($0.method.rawValue) \($0.path)" }) == [
+                "GET /actuator/health",
+                "GET /actuator/health/live",
+                "GET /actuator/health/ready",
+            ])
+    }
+
+    @Test("disabled publishes nothing at all")
+    func disabledPublishesNothing() {
+        let actuator = ActuatorModule(environment: .dev, exposure: .disabled)
+        #expect(actuator.routes.isEmpty)
+    }
+
 }

@@ -4,7 +4,10 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.23.0] - 2026-09-21
+
+Sessions, and a fortnight of documentation being made to agree with the
+code. One public type nothing could produce is gone; see **Removed**.
 
 ### Added
 
@@ -23,7 +26,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opposite of the cache's rule. `RequestContext` gains a `session` field
   and stays inside two cache lines. `RequestContext.mock` takes a
   `session:`. `FlightSessionsTesting` ships `RecordingSessionStore`.
-  Docs/sessions.md is the guide.
+  Docs/sessions.md is the guide, and `FlightSessionsValkey` in flight-data
+  0.8.0 is the shared store for more than one replica.
+
+- **A path segment named `:body` or `:query` is a build error.** Those are
+  the reserved handler labels, and they were matched before path segments,
+  so `@GetRoute("/search/:query")` with `query: String` silently bound the
+  query *string* and failed at runtime decoding it into the segment's type.
+  Both readings are defensible, which is why the macro refuses rather than
+  picking one; the diagnostic names the collision and the escape hatch,
+  `context.pathParam("query", as:)`. The interleaved case — path, query and
+  body in any order — is now pinned by a test that checks the values, not
+  only that it compiles.
+
+- **Actuator says which exposure it resolved to, once, at startup.** `full`
+  outside the development allowlist is a warning naming what is disclosed
+  (the module list, every component's type name, failure messages) and how
+  to turn it off; inside one it is ordinary news; `health_only` and
+  `disabled` say so too, because silence is not a report. Same reasoning as
+  Presence announcing its failure-detection mode.
+
+### Fixed
+
+- **Channels carries the close codes the transport synthesizes.** The frame
+  loop matched `.close` without binding, so every close became `1000`. A
+  node draining out of a load balancer told every client "we finished",
+  which is the confusion `4408` was separated from `1000` to avoid.
+  `.goingAway` and `.protocolError` now reach the client; a peer's own code
+  is consumed below the transport and reports `.noStatus`, for which `1000`
+  remains the honest reply.
+
+- **Documentation that disagreed with the code, in the direction that
+  matters.** `Docs/config.md` said custom providers layer in "at any
+  precedence" — they sit above the env-var layer, unconditionally, and both
+  precedence tables omitted them. `Docs/channels.md` had `pushReserved`'s
+  rule backwards (it refuses an event that is *not* `flight:`-namespaced)
+  and still described the outbound buffer as dropping oldest when the
+  default became `close`. `Docs/actuator.md`'s gating tables named one probe
+  route out of three and called `/actuator/health` a liveness answer; it is
+  the strict readiness answer, and wiring it as a `livenessProbe` restarts a
+  slow-starting pod forever. `Docs/security-core.md` pointed readers at the
+  handler-side escape hatch and described `roles:` — shipped in 0.22.0 — as
+  a plan. `Docs/presence.md`'s configuration table had `sweep-interval`
+  without its 100 ms floor and no `max-entries-per-frame` row. The flagship
+  controller in `Docs/web.md` force-unwrapped a path parameter the framework
+  has bound by name since 0.22.0. Every module guide now opens with an
+  "Adding this module" section — trait, products, module entry, imports —
+  and every snippet in them was compiled before it was written down.
+
+- **Promises the docs made are held by tests.** Presence's heartbeat-expiry
+  warning is pinned at `warning` level per failure-detection mode, with the
+  degraded message still naming the consequence and the fix.
+  `droppedEnvelopeCount`, offered as the reason dropping is not silent, has
+  a test for the first time. The adapter-presence guard's subtlest case — a
+  key that fails to *decode* still counts as configured — is covered.
+
+### Removed
+
+- **`BootstrapError`.** Four cases with careful descriptions, and nothing
+  threw any of them: they described failures the runtime container used to
+  have, and composition moved into generated code before `assemble` runs.
+  Confirmed unreferenced across all six repositories. `Flight.assemble`
+  keeps `throws` — it cannot throw, and its doc comment now says so — since
+  dropping it would churn every call site to say what the comment already
+  does. DECISIONS.md D13 is marked superseded rather than deleted.
 
 ## [0.22.1] - 2026-09-20
 

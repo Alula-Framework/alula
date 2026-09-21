@@ -38,7 +38,7 @@ a stub service and call the method.
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.22.1"),
+        from: "0.23.0"),
 ],
 targets: [
     .executableTarget(

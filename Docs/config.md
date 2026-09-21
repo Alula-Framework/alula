@@ -20,7 +20,7 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.22.1")
+    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.23.0")
 ]
 ```
 

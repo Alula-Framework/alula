@@ -17,9 +17,9 @@ import Synchronization
 /// reads an empty session leaves no record and sets no cookie, so anonymous
 /// traffic cannot fill the store.
 ///
-/// Values are encoded with the application's JSON coders as they are set, so
-/// `set("cart", cart)` uses the same key and date conventions the wire does.
-/// A value that fails to decode on the way back throws rather than returning
+/// Values are encoded as JSON as they are set — with the ``Coding`` this
+/// session was given, plain `JSONEncoder`/`JSONDecoder` by default. A value
+/// that fails to decode on the way back throws rather than returning
 /// `nil`: a session holding bytes that no longer decode as the type asked
 /// for is a programming error worth surfacing, not an absent key.
 public final class Session: Sendable {

@@ -3,12 +3,11 @@ import Foundation
 /// What a store holds under one id: the values, the flash written by the
 /// request that saved it, and the two dates that bound its life.
 ///
-/// One JSON blob per session. Values are already `Data` — each was encoded by
-/// the application's own coders when `Session.set` was called — so the record
-/// format is the framework's and never depends on an application's date
-/// strategy or key convention.
+/// One JSON blob per session. Values are already `Data` — each was encoded
+/// when `Session.set` was called — so the record format is the framework's
+/// and never depends on an application's date strategy or key convention.
 public struct SessionRecord: Codable, Sendable, Equatable {
-    /// Each value, encoded by the application's coders.
+    /// Each value, already encoded by `Session.set`.
     public var values: [String: Data]
 
     /// Written during the request that saved this record; readable by the

@@ -4,7 +4,7 @@ import HTTPTypes
 import Logging
 
 /// What the session middleware is composed with: the store, the settings,
-/// the coding, and the clock. One immutable reference shared by every
+/// the value coding, and the clock. One immutable reference shared by every
 /// request, provided by ``FlightSessionsModule``.
 ///
 /// Typed distinctly from `any SessionStore` on purpose: an adapter module
@@ -21,18 +21,19 @@ public final class SessionRuntime: Sendable {
     /// - Parameters:
     ///   - store: Where sessions live.
     ///   - settings: Cookie attributes and the TTL.
-    ///   - coders: The application's coders, so values are encoded the way
-    ///     the wire is.
+    ///   - coding: How values are turned into bytes. Plain JSON by default;
+    ///     it is not the wire's `WebCoders`, and on purpose — see
+    ///     ``FlightSessionsModule/init(configuration:store:)``.
     ///   - now: The clock, injectable so expiry and renewal are testable.
     public init(
         store: any SessionStore,
         settings: SessionSettings,
-        coders: WebCoders = .default,
+        coding: Session.Coding = .json,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
         self.settings = settings
-        self.coding = Session.Coding(encoder: coders.jsonEncoder, decoder: coders.jsonDecoder)
+        self.coding = coding
         self.now = now
     }
 }

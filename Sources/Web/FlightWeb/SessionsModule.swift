@@ -39,17 +39,19 @@ public struct FlightSessionsModule: FlightModule {
     public let middleware: [MiddlewareRegistration]
 
     /// - Parameters:
-    ///   - configuration: `sessions.*` is read from here, and `web.*` for the
-    ///     coders when no module provides them.
+    ///   - configuration: `sessions.*` is read from here.
     ///   - store: A shared store from an adapter module. Nil means the
     ///     in-memory store — one replica, and the default.
-    ///   - coders: The application's coders, when a module provides them —
-    ///     the same value `FlightWebModule` is composed with, so a session
-    ///     value is encoded exactly as a response body would be.
+    ///
+    /// There is deliberately no `coders:` parameter. There was one, so that a
+    /// session value would be encoded the way a response body is — and
+    /// `FlightWebModule` *provides* `WebCoders` while *taking* this module's
+    /// middleware, which made the two modules a composition cycle the build
+    /// refused. Session values are opaque bytes this runtime round-trips
+    /// itself, so nothing is lost by encoding them with plain JSON coders.
     public init(
         configuration: Configuration,
-        store: (any SessionStore)? = nil,
-        coders: WebCoders? = nil
+        store: (any SessionStore)? = nil
     ) throws {
         let settings = try SessionSettings(configuration: configuration)
         if store == nil {
@@ -63,15 +65,14 @@ public struct FlightSessionsModule: FlightModule {
         }
         let runtime = SessionRuntime(
             store: store ?? InMemorySessionStore(maxEntries: settings.memoryMaxEntries),
-            settings: settings,
-            coders: try coders ?? WebCoders(configuration: configuration))
+            settings: settings)
         self.runtime = runtime
         self.middleware = MiddlewareRegistration.lane(.default, [Sessions(runtime: runtime)])
     }
 
     public init() {
         preconditionFailure(
-            "FlightSessionsModule takes its configuration in init(configuration:store:coders:), so "
+            "FlightSessionsModule takes its configuration in init(configuration:store:), so "
                 + "it cannot be instantiated from its type. Pass `composedBy: flightComposeModules` "
                 + "to Flight.run — `flight new` writes that argument — or construct the module "
                 + "yourself and use the entry point taking module instances.")

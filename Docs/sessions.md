@@ -212,9 +212,11 @@ sessions:
 
 `SessionStore` is three methods over opaque bytes — `load`, `save` with a
 TTL, `delete` — and every one of them throws. A record is one JSON blob per
-id; values inside it were encoded by the application's own JSON coders when
-`set` was called, so a `Date` in a session is spelled the way a `Date` on the
-wire is.
+id; values inside it were encoded as JSON when `set` was called. Not with the
+wire's `web.*` coders, and on purpose: the module used to take `WebCoders`,
+and `FlightWebModule` provides that while taking this module's middleware,
+which is a composition cycle the build refuses. Session bytes are read back
+only by this runtime, so nothing is lost.
 
 | Store | Where | For |
 |---|---|---|

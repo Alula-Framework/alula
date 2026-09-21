@@ -208,8 +208,9 @@ Under the usual dotted namespace (all optional):
 | `flight.presence.heartbeat-interval-seconds` | 5 | Re-announce / anti-entropy cadence. |
 | `flight.presence.down-after-seconds` | 15 | Degraded mode: silence ⇒ hidden. Must exceed the heartbeat interval (validated at bootstrap). |
 | `flight.presence.permdown-after-seconds` | 300 | Continuously down ⇒ purged. |
-| `flight.presence.sweep-interval-seconds` | `down-after / 4` | Liveness sweep cadence. |
+| `flight.presence.sweep-interval-seconds` | `max(100ms, down-after / 4)` | Liveness sweep cadence. The floor matters only for the very short `down-after` a test sets. |
 | `flight.presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
+| `flight.presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
 
 ## Wiring
 

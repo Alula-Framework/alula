@@ -332,7 +332,7 @@ is the seam for them — a remote-secrets provider layers in through
 ## Documentation
 
 ```bash
-SWIFT_CONFIG_BUILD_DOCS=1 swift package generate-documentation --target FlightConfig
+FLIGHT_BUILD_DOCS=1 swift package generate-documentation --target FlightConfig
 ```
 
 ## License

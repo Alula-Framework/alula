@@ -38,7 +38,11 @@ public enum Flight {
     /// for service in app.services { /* drive each service's lifecycle */ }
     /// ```
     ///
-    /// - Throws: ``BootstrapError`` if a module's service collection fails.
+    /// - Throws: nothing, today. Assembly is bookkeeping — it tracks module
+    ///   health, collects each module's service and orders them by shutdown
+    ///   phase — because composition already happened in the generated root
+    ///   before this is called. `throws` is kept so that a future failure
+    ///   here is not a source break for every caller.
     public static func assemble(
         configuration: Configuration,
         modules: [any FlightModule]

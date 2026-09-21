@@ -35,6 +35,18 @@ public struct AssembledService: Sendable {
     }
 }
 
+/// Vestigial: **nothing throws any of these cases.**
+///
+/// They describe failures the runtime container used to have — a duplicate
+/// registration, an eager singleton whose initializer threw — and
+/// composition moved into generated code before `assemble` runs, so the
+/// failures they name now happen at *build* time, as diagnostics from the
+/// registration generator, or not at all.
+///
+/// Kept because removing a public error type is a source break for anything
+/// that catches it, and because two of the cases describe composition
+/// failures a future change could plausibly reintroduce. A `catch` for this
+/// type today is dead code.
 public enum BootstrapError: Error, CustomStringConvertible {
     case moduleConfigurationFailed(module: String, underlying: any Error)
     case singletonConstructionFailed(underlying: any Error)

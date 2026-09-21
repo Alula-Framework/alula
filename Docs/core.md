@@ -306,7 +306,7 @@ in, and never reaches for framework wiring to do it.
 ## Documentation
 
 ```bash
-FLIGHT_CORE_BUILD_DOCS=1 swift package generate-documentation --target FlightCore
+FLIGHT_BUILD_DOCS=1 swift package generate-documentation --target FlightCore
 ```
 
 ## License

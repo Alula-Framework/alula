@@ -23,7 +23,7 @@ of hundred lines that the hermetic test seam needs to own anyway.
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.29.0", traits: ["APNS"]),          // add "Web" if it also serves HTTP
+        from: "0.29.1", traits: ["APNS"]),          // add "Web" if it also serves HTTP
 ],
 targets: [
     .executableTarget(

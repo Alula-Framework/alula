@@ -496,7 +496,9 @@ let signedIn = hasher.verify(attempt, against: stored)  // never throws: no matc
 `Argon2idHashing` wraps the actual Argon2 reference implementation — the C
 source the algorithm's own designers publish and that RFC 9106 is built
 from, not a Swift reimplementation — the same posture as delegating JWT
-verification to JWTKit. `needsRehash` says when a stored hash was made under
+verification to JWTKit. Vendored into Flight's own tree rather than an
+external package dependency (`Sources/Security/CArgon2`, six files, copied
+verbatim); `needsRehash` says when a stored hash was made under
 weaker parameters than the app is configured with now, so raising the cost
 over time upgrades each account the next time its owner signs in rather
 than needing a migration that touches every row at once:
@@ -522,9 +524,9 @@ establish one.
 
 "No hand-rolled cryptography" is upheld, not reversed, by `Argon2idHashing`:
 the algorithm is delegated to its own reference implementation, exactly as
-JWT verification is delegated to JWTKit. What changed is the dependency
-policy, not this rule — see `Package.swift`'s note on the second deliberate
-exception.
+JWT verification is delegated to JWTKit. Vendoring that implementation's
+source rather than depending on it externally is a packaging decision, not
+a cryptographic one — see D37 in `DECISIONS.md`.
 
 ## Development
 

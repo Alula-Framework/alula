@@ -112,9 +112,11 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Dependency policy: Apple-adjacent and SSWG-blessed only, with two
-        // deliberate exceptions (jwt-kit, phc-winner-argon2), each noted at
-        // its use site.
+        // Dependency policy: Apple-adjacent and SSWG-blessed only, with one
+        // deliberate exception (jwt-kit), noted at its use site. Password
+        // hashing's C dependency (the Argon2 reference implementation) is
+        // vendored rather than an external package — see the `CArgon2`
+        // target below and D37 in DECISIONS.md.
         .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
@@ -140,22 +142,6 @@ let package = Package(
         // Graduated and SwiftCrypto-backed. Flight owns orchestration only.
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.6.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
-        // The Argon2 reference implementation, from the algorithm's own
-        // designers (winner of the Password Hashing Competition, RFC 9106).
-        // Pinned by revision rather than `from:`, the one other departure
-        // from that convention besides jwt-kit: the upstream repository
-        // carries no semver tags, only date-stamped ones through 2019, and a
-        // crypto primitive is exactly the case where naming an exact commit
-        // is more honest than a floating range would be. The repository
-        // ships its own SwiftPM manifest building only the portable
-        // reference sources (blake2b, argon2, core, encoding, ref, thread —
-        // the SIMD-optimized path and the CLI/benchmark/test tooling are
-        // excluded), so Flight adds no C target of its own here; it depends
-        // on the authors' own package exactly the way it depends on
-        // JWTKit's or swift-certificates'.
-        .package(
-            url: "https://github.com/P-H-C/phc-winner-argon2.git",
-            revision: "f57e61e19229e23c4445b85494dbf7c07de721cb"),
     ],
     targets: [
         // MARK: Configuration
@@ -517,9 +503,7 @@ let package = Package(
                 .product(
                     name: "AsyncHTTPClient", package: "async-http-client",
                     condition: .when(traits: ["Security"])),
-                .product(
-                    name: "argon2", package: "phc-winner-argon2",
-                    condition: .when(traits: ["Security"])),
+                .target(name: "CArgon2", condition: .when(traits: ["Security"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(
@@ -532,6 +516,26 @@ let package = Package(
             ],
             path: "Sources/Security/FlightSecurityCore",
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        // The Argon2 reference implementation (RFC 9106, winner of the
+        // Password Hashing Competition), vendored rather than depended on:
+        // the upstream repository carries no semver tags, and pinning it by
+        // `revision:` made every one of Flight's own tagged releases with
+        // `Security` on unresolvable by a consumer using an ordinary
+        // `from:` requirement — SwiftPM refuses a version-pinned package's
+        // dependency on one that is not. See D37 in DECISIONS.md.
+        //
+        // These are the six files upstream's own `Package.swift` builds as
+        // its `argon2` product — the portable reference path, no SIMD, no
+        // CLI or benchmark tooling — copied verbatim; `NOTICE.md` in this
+        // target's directory names the exact commit. `publicHeadersPath` is
+        // named explicitly though it matches SwiftPM's own default, because
+        // a target with no Swift in it is easy to misread as needing none.
+        .target(
+            name: "CArgon2",
+            path: "Sources/Security/CArgon2",
+            exclude: ["NOTICE.md", "LICENSE"],
+            publicHeadersPath: "include"
         ),
 
         // MARK: Push
@@ -769,9 +773,7 @@ let package = Package(
                 "FlightSessions", "FlightSessionsTesting",
                 .product(
                     name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
-                .product(
-                    name: "argon2", package: "phc-winner-argon2",
-                    condition: .when(traits: ["Security"])),
+                .target(name: "CArgon2", condition: .when(traits: ["Security"])),
                 .product(
                     name: "HTTPTypes", package: "swift-http-types",
                     condition: .when(traits: ["Web"])),

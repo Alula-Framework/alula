@@ -4,6 +4,23 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Password hashing's Argon2 dependency no longer breaks resolution for
+  consumers that enable `Security`.** Depending on Flight 0.28.0 or 0.29.0
+  with `traits: ["Security"]` through an ordinary `from:` requirement —
+  what every consumer of a tagged release does — failed at `swift package
+  resolve`, not at build, with SwiftPM refusing to mix a version-pinned
+  package's dependency on `phc-winner-argon2`, pinned by `revision:`
+  because that repository carries no semver tags. Found wiring the feature
+  into a real downstream consumer, which is exactly what that step exists
+  to catch. The fix: the same six files, vendored into
+  `Sources/Security/CArgon2` instead of depended on externally — see D37 in
+  `DECISIONS.md`. `Argon2idHashing`'s own API is unchanged; nothing that
+  already called it needs to change anything.
+
 ## [0.29.0] - 2026-09-22
 
 ### Added

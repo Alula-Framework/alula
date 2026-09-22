@@ -1,4 +1,4 @@
-import argon2
+import CArgon2
 
 /// ``PasswordHashing`` over Argon2id, the OWASP-recommended default and the
 /// winner of the Password Hashing Competition (RFC 9106).

@@ -14,7 +14,7 @@ if [ ! -f Package.resolved ]; then
   exit 1
 fi
 
-forbidden=(hummingbird jwt-kit async-http-client swift-certificates swift-nio-ssl phc-winner-argon2)
+forbidden=(hummingbird jwt-kit async-http-client swift-certificates swift-nio-ssl)
 status=0
 for pkg in "${forbidden[@]}"; do
   if grep -q "\"identity\" : \"$pkg\"" Package.resolved; then

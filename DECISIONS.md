@@ -7,6 +7,81 @@ wrong, say so and it changes.
 
 ---
 
+## D37 — The Argon2 dependency is vendored, not depended on: a revision pin poisoned resolution
+
+**Context.** Wiring password hashing into a real downstream consumer — the
+`flight-cli` demo template, adding `Security` to its trait list the way any
+application would — failed at `swift package resolve`, not at build:
+
+```
+error: Dependencies could not be resolved because root depends on 'flight' 0.29.0..<1.0.0.
+'flight' >= 0.29.0 cannot be used because no versions of 'flight' match the
+requirement 0.29.1..<1.0.0 and package 'flight' is required using a
+stable-version but 'flight' depends on an unstable-version package
+'phc-winner-argon2'.
+```
+
+Reproduced in isolation, outside the demo's larger dependency graph, with
+nothing but a `.package(url: flight, from: "0.29.0", traits: ["Security"])`
+and one product dependency. SwiftPM's rule: a package resolved by a version
+requirement (`from:`, `exact:`, a range) may not depend, even transitively
+and even behind a trait, on one resolved by `revision:` or `.branch(_:)` —
+"stable" and "unstable" requirements cannot mix in one resolution unless
+the *root* manifest is itself on an unstable requirement. D35's `revision:`
+pin on `phc-winner-argon2` — chosen because that repository carries no
+semver tags — made every one of Flight's own tagged releases with
+`Security` enabled (0.28.0 and 0.29.0, both already public) unresolvable
+by any consumer depending on Flight the ordinary way. `check-lean-consumer.sh`
+never caught it: it proves a *lean* (`traits: []`) consumer stays lean, and
+never resolves a `Security`-trait consumer at all, let alone one using
+`from:` rather than a path dependency.
+
+**Chosen.** Vendor the same six files D35 already identified as the whole
+of what upstream's own `Package.swift` builds — `argon2.c`, `core.c`,
+`encoding.c`, `ref.c`, `thread.c`, `blake2/blake2b.c`, plus the headers
+those need — into `Sources/Security/CArgon2`, as an ordinary SwiftPM
+`.target`, no `systemLibrary` (Argon2 is not preinstalled anywhere the way
+zlib is, which is why D35 rejected this shape originally) and no external
+package dependency at all. `NOTICE.md` in that directory names the exact
+commit (the same one D35 pinned) and the update procedure. This removes
+the non-version requirement from the graph entirely — there is nothing
+left for a consumer's `from:` to conflict with.
+
+**Why this does not reverse "no hand-rolled cryptography."** Same answer
+D35 already gave: the source is copied verbatim, not written or modified.
+Vendoring changes where the bytes live, not who wrote them or what they
+compile to.
+
+**Why D35's stated reason to reject vendoring no longer holds.** D35's
+objection was owning "the update cadence of someone else's cryptographic
+C source" — true in the abstract, but the actual cost turned out to be
+fixed and small: six files that have not needed a change since 2021 (the
+RFC they implement finalized then), a `revision:` line to bump in one
+place (`NOTICE.md`) if that ever changes, and no exposure to upstream
+publishing a bad tag or moving a branch out from under a pinned commit —
+a risk a `revision:` pin does not actually carry but a looser reference
+would. Weighed against a dependency shape that breaks resolution for every
+downstream consumer, on every tagged release, indefinitely, the update
+burden is the smaller cost by a wide margin.
+
+**Alternatives.** Leaving the `revision:` pin and telling consumers to
+depend on Flight with `revision:` too (rejected: forces every application
+using `Security` into an unversioned dependency on Flight itself, visible
+only after a resolution failure with no obvious cause — precisely what
+broke the demo). A `.branch(_:)` reference instead of `.revision(_:)`
+(rejected: SwiftPM classifies both as non-version requirements identically;
+verified, not assumed, before ruling it out). Asking upstream to cut a
+semver tag (no channel to request it, and this needed fixing now, not
+contingent on a third party's release cadence). Switching to a different
+Argon2 package with real semver tags (searched again at this decision; the
+landscape D35 already surveyed had not changed).
+
+**Cost of reversing.** `Sources/Security/CArgon2` and the two `.target`
+references to it in `Package.swift`; `Argon2idHashing.swift`'s `import
+CArgon2` is the only source file that would need to change.
+
+---
+
 ## D36 — CSRF checks a header only, and a request with no session is not an error
 
 **Context.** Sessions' own doc has said since 0.23.0 that CSRF is "the next
@@ -61,6 +136,15 @@ for).
 ---
 
 ## D35 — Password hashing depends on the Argon2 reference implementation directly, pinned by revision
+
+**Corrected by D37.** The `revision:`-pinned dependency below turned out to
+break SwiftPM resolution for any consumer enabling `Security` through an
+ordinary `from:` requirement — a real, concrete problem this entry did not
+anticipate, found only once a downstream consumer actually tried it. D37
+replaces the external dependency with a vendored copy of the same six
+files, for that reason specifically; the reasoning below is kept as the
+record of what was tried first and why, not as the current state of
+`Package.swift`.
 
 **Context.** A first-party credential story needs a hashing primitive, and
 "no hand-rolled cryptography" means it has to be delegated, the way JWT

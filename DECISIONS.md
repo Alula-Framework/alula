@@ -7,6 +7,59 @@ wrong, say so and it changes.
 
 ---
 
+## D33 — The limiter is its own target, its store decides and records in one call, and it fails open
+
+**Context.** Rate limiting was pinned in the 2026-09-19 web audit, stalled on
+a prerequisite: there is no client IP anywhere in flight, and keying a
+limiter on a spoofable identifier is worse than not having one. Meanwhile a
+first-party password story needs login throttling, which is the same
+mechanism.
+
+**Chosen.** Four things.
+
+1. **`FlightRateLimit` is a dependency-free target**, below both `FlightWeb`
+   and anything in Security. The `RateLimiting` middleware is one consumer;
+   a login throttle and a worker pacing an outbound API are others, and none
+   of them should need an HTTP server for a limiter to exist. Same shape as
+   `FlightSessions` sitting below `FlightWeb` and `FlightSecurityCore`.
+2. **`RateLimitStore` has one method.** `consume(key:cost:quota:)` decides
+   and records together. A split API has no correct concurrent use: two
+   callers read the same under-quota state before either writes, and both
+   are admitted.
+3. **GCRA**, not a fixed or sliding window. A fixed window admits twice the
+   quota across a boundary; a sliding-window log is unbounded memory per key
+   and an O(n) prune per call. GCRA is one timestamp per key, which is also
+   why the distributed store is one `EVAL` with no lock.
+4. **The middleware fails open** when the store cannot answer, loudly, per
+   request, with `.deny` available per lane.
+
+**Why (4) reverses D28's rule rather than following it.** Sessions fails
+closed because a store that reads empty signs users out and there is nothing
+behind it. A limiter exists to keep a service up under load; one that
+refuses every request when *it* is unwell has inverted its own purpose, and
+turns a dependency blip into a full outage. The warning is per request
+because a limiter silently not enforcing is precisely the failure nobody
+notices, and a single startup line would not say it is still true an hour
+later.
+
+**And the IP question is answered by scoping, not by waiting.** The key is a
+required closure with no default, so an application keys on whatever it
+already has: a subject, an API key, a login identifier, a path. Address
+keying becomes one more available key when the transport work lands, with
+nothing built here changing shape. The prerequisite was never the limiter.
+
+**Alternatives.** Put the limiter in `FlightWeb` (would have forced an HTTP
+dependency on the login throttle that motivated it). Default the key to the
+client address (the identifier that does not exist, and would be spoofable
+if it did). Fail closed for consistency with Sessions (rejected above).
+Delay refused requests until a permit frees instead of refusing (turns a
+limiter into a latency source and a memory exhaustion surface).
+
+**Cost of reversing.** The seam is one method and the algorithm is one
+file; the middleware is the only thing an application touches directly.
+
+---
+
 ## D32 — APNs is hand-rolled on AsyncHTTPClient and JWTKit, sends one push per call, and uses token auth only
 
 **Context.** A push client is a provider JWT, an HTTP/2 POST, and a table

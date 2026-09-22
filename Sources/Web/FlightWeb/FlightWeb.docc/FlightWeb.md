@@ -174,6 +174,11 @@ whole application without binding a port.
 - ``SessionNotConfiguredError``
 - ``SessionConfigurationError``
 
+### Rate limiting
+
+- ``RateLimiting``
+- ``RateLimitFailurePolicy``
+
 ### Cross-origin requests
 
 - ``CORS``

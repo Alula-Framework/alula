@@ -113,7 +113,8 @@ jobs:
                         FlightActuator FlightSecurityCore FlightWebTesting \
                         FlightTransport FlightScheduler \
                         FlightSessions FlightSessionsTesting \
-                        FlightAPNS FlightAPNSTesting; do
+                        FlightAPNS FlightAPNSTesting \
+                        FlightRateLimit FlightRateLimitTesting; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

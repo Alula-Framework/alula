@@ -4,6 +4,41 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Rate limiting**, as its own thing rather than an HTTP feature.
+  `FlightRateLimit` is a dependency-free target holding the algorithm and
+  the seam: `RateLimitStore.consume(key:cost:quota:)`, one call that decides
+  and records, because splitting that into a check and an increment is the
+  race every limiter gets wrong once. `FlightRateLimitModule` provides a
+  `RateLimiter` over a bounded `InMemoryRateLimitStore`, or over a shared
+  store an adapter module supplies. `FlightWeb` gains a `RateLimiting`
+  middleware with a **required** key closure, per-request `cost:` and
+  `quota:` closures, `X-RateLimit-*` headers on success and a `429` with
+  `Retry-After` on refusal, rendered in the application's own error format.
+
+  The algorithm is GCRA, not a fixed window: a window admits twice the quota
+  across a boundary, and a sliding-window log costs unbounded memory per
+  key. GCRA holds one timestamp, refills continuously, never admits more
+  than the burst, and ports to a single Valkey `EVAL` unchanged. A refused
+  call spends nothing, so a client in a retry loop does not push its own
+  recovery further away.
+
+  An unreachable store **fails open** by default, logging a warning per
+  request while it does, with `onStoreFailure: .deny` available per lane.
+  That is the opposite of what `Sessions` does, for the reason recorded in
+  DECISIONS.md D33: a limiter that fails closed takes the service down when
+  the limiter is the thing that is unwell.
+
+  Limiting by client address still needs a peer address flight does not
+  capture. Everything here works today keyed on anything the application
+  already has, which is what unblocked it: the gap was always about the key,
+  never the limiter. `FlightRateLimitTesting` ships
+  `RecordingRateLimitStore`, which runs the real algorithm over a clock the
+  test moves. Docs/rate-limiting.md is the guide.
+
 ## [0.25.0] - 2026-09-22
 
 ### Added

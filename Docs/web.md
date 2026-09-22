@@ -70,7 +70,7 @@ dependency DAG. A module you write can declare framework modules in its own
 
 | Product | Contents |
 |---|---|
-| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)) |
+| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)) |
 | `FlightTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Flight that knows what it wraps (§5.6) |
 | `FlightWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
 
@@ -373,6 +373,24 @@ run for a route that names `pipelines: [.authenticated]`. The preflight still
 works — `OPTIONS` matches no route, and the no-match path runs the default
 lane — which makes the failure a confusing one: preflight passes, the real
 request comes back without `Access-Control-Allow-Origin`.
+
+### Rate limiting
+
+```swift
+MiddlewareRegistration.lane(.default, [
+    RateLimiting(store: limiter.store, quota: .perMinute(120)) { context in
+        context.principal?.subject ?? "anonymous"
+    }
+])
+```
+
+The key closure is required: there is no safe universal key, and a limiter
+that picks one for you is one whose key you discover during an incident.
+Refusals are a `429` in the application's own error format with
+`Retry-After`; successes carry `X-RateLimit-*` so a client can pace itself.
+List it after `Authentication` if the key reads identity. The whole story,
+including why the algorithm is GCRA and why an unreachable store fails open,
+is in [rate-limiting.md](rate-limiting.md).
 
 ### Compression
 

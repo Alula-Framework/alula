@@ -47,27 +47,77 @@ public struct Principal: Sendable {
     }
 }
 
-/// The stable identity, persistable: `subject`, `issuer`, `roles`, `scopes`.
+/// The claims every sign-in path agrees on.
 ///
-/// `claims` is deliberately not encoded. It is `[String: any Sendable]`
+/// A principal can come from a validated bearer token, from an OIDC sign-in,
+/// or from a password checked against the application's own store — and an
+/// application should not be able to tell which. These four names are OpenID
+/// Connect Core §5.1's standard claims, so an external identity provider
+/// already emits them, and every sign-in provider in this package emits the
+/// same names with the same types. Code reading `principal.email` keeps
+/// working when the application switches from its own passwords to Keycloak,
+/// or back.
+extension Principal {
+    public enum StandardClaim {
+        public static let email = "email"
+        public static let emailVerified = "email_verified"
+        public static let name = "name"
+        public static let preferredUsername = "preferred_username"
+
+        /// The claims a session keeps. See `Codable` below.
+        static let persisted = [email, emailVerified, name, preferredUsername]
+    }
+
+    public var email: String? { claim(StandardClaim.email) }
+
+    /// False when absent: an address nobody asserted was verified is not.
+    public var emailVerified: Bool { claim(StandardClaim.emailVerified) ?? false }
+
+    public var name: String? { claim(StandardClaim.name) }
+
+    public var preferredUsername: String? { claim(StandardClaim.preferredUsername) }
+}
+
+/// The stable identity, persistable: `subject`, `issuer`, `roles`, `scopes`,
+/// and the four ``StandardClaim``s.
+///
+/// Other claims are deliberately not encoded. They are `[String: any Sendable]`
 /// straight off a token — arbitrary JSON the IdP chose to include — and a
 /// session is the wrong place to keep a copy of it: the token it came from
 /// expires, the session does not, and a claim read from the session a week
-/// later is a fact about a token nobody has any more. What a session-backed
-/// principal needs to be — someone, from somewhere, with roles and scopes —
-/// is exactly the four fields kept. A decoded principal has empty `claims`.
+/// later is a fact about a token nobody has any more.
+///
+/// The standard profile claims are the exception, because they are what makes
+/// sign-in paths interchangeable: a browser signed in by session would
+/// otherwise have no `email` while the same user arriving by bearer token
+/// did, and every screen that shows who is signed in would have to know
+/// which path produced the principal. They describe the person rather than
+/// the token, and they are exactly what the principal was built with at
+/// sign-in. Sessions written before these were kept decode without them.
 extension Principal: Codable {
     private enum CodingKeys: String, CodingKey {
         case subject, issuer, roles, scopes
+        case email
+        case emailVerified = "email_verified"
+        case name
+        case preferredUsername = "preferred_username"
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        var claims: [String: any Sendable] = [:]
+        claims[StandardClaim.email] = try container.decodeIfPresent(String.self, forKey: .email)
+        claims[StandardClaim.emailVerified] = try container.decodeIfPresent(
+            Bool.self, forKey: .emailVerified)
+        claims[StandardClaim.name] = try container.decodeIfPresent(String.self, forKey: .name)
+        claims[StandardClaim.preferredUsername] = try container.decodeIfPresent(
+            String.self, forKey: .preferredUsername)
         self.init(
             subject: try container.decode(String.self, forKey: .subject),
             issuer: try container.decode(String.self, forKey: .issuer),
             roles: try container.decode(Set<String>.self, forKey: .roles),
-            scopes: try container.decode(Set<String>.self, forKey: .scopes))
+            scopes: try container.decode(Set<String>.self, forKey: .scopes),
+            claims: claims)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -76,6 +126,14 @@ extension Principal: Codable {
         try container.encode(issuer, forKey: .issuer)
         try container.encode(roles, forKey: .roles)
         try container.encode(scopes, forKey: .scopes)
+        try container.encodeIfPresent(email, forKey: .email)
+        // Only when asserted: absent and false read the same, and writing
+        // `false` for every principal would claim an assertion nobody made.
+        if let verified: Bool = claim(StandardClaim.emailVerified) {
+            try container.encode(verified, forKey: .emailVerified)
+        }
+        try container.encodeIfPresent(name, forKey: .name)
+        try container.encodeIfPresent(preferredUsername, forKey: .preferredUsername)
     }
 }
 

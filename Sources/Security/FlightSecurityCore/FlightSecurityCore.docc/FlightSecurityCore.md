@@ -137,6 +137,32 @@ WebSocket's HTTP upgrade is what the channel's join sees.
 - ``Argon2idHashing``
 - ``PasswordHashingError``
 
+### Signing in
+
+One seam, two providers: the application's own accounts, or any OpenID
+Connect provider. Both produce a ``Principal`` with the same standard
+claims, so switching is a change to the module list. Docs/sign-in.md has
+the whole story.
+
+- ``SignInProvider``
+- ``SignInStep``
+- ``SignInForm``
+- ``SignInResult``
+- ``SignOutStep``
+- ``SignInReturnPath``
+- ``PasswordSignIn``
+- ``OIDCSignIn``
+- ``OIDCSignInConfiguration``
+- ``OIDCSignInError``
+
+### Accounts and passwords
+
+- ``CredentialStore``
+- ``StoredCredential``
+- ``InMemoryCredentialStore``
+- ``PasswordAuthenticator``
+- ``PasswordAuthenticationError``
+
 ### Where keys come from
 
 - ``JWKSSource``
@@ -164,3 +190,5 @@ extensions on `FlightSessions.Session`; Docs/security-core.md has the flow.
 
 - ``FlightSecurityModule``
 - ``FlightOIDCModule``
+- ``FlightPasswordSignInModule``
+- ``FlightOIDCSignInModule``

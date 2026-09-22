@@ -126,12 +126,14 @@ public struct OIDCSecurityConfiguration: Sendable {
     ) throws {
         guard !issuer.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ConfigError.decodingFailed(
-                key: "security.oidc.issuer", rawValue: issuer, targetType: String(describing: OIDCSecurityConfiguration.self)
+                key: "security.oidc.issuer", rawValue: issuer,
+                targetType: String(describing: OIDCSecurityConfiguration.self)
             )
         }
         guard !audience.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ConfigError.decodingFailed(
-                key: "security.oidc.audience", rawValue: audience, targetType: String(describing: OIDCSecurityConfiguration.self)
+                key: "security.oidc.audience", rawValue: audience,
+                targetType: String(describing: OIDCSecurityConfiguration.self)
             )
         }
         self.issuer = issuer
@@ -181,7 +183,7 @@ public struct OIDCSecurityConfiguration: Sendable {
     ///
     /// So both work. Kebab-case is canonical and wins if both are set;
     /// snake_case is what shipped and keeps working.
-    private static func setting<T: ConfigDecodable>(
+    static func setting<T: ConfigDecodable>(
         _ configuration: Configuration, _ name: String, as type: T.Type
     ) throws -> T? {
         if let value = try configuration.getIfPresent("security.oidc.\(name)", as: type) {
@@ -205,8 +207,9 @@ public struct OIDCSecurityConfiguration: Sendable {
             clockSkewLeeway: try Self.setting(configuration, "clock-skew-leeway", as: Int.self)
                 .map(TimeInterval.init) ?? Defaults.clockSkewLeeway,
             jwksRefreshCooldown: try Self.setting(
-                configuration, "jwks-refresh-cooldown", as: Int.self)
-                .map(TimeInterval.init) ?? Defaults.jwksRefreshCooldown,
+                configuration, "jwks-refresh-cooldown", as: Int.self
+            )
+            .map(TimeInterval.init) ?? Defaults.jwksRefreshCooldown,
             jwksMaxStaleAge: try Self.setting(configuration, "jwks-max-stale", as: Int.self)
                 .map(TimeInterval.init) ?? Defaults.jwksMaxStaleAge,
             jwksTransport: try Self.transportPolicy(

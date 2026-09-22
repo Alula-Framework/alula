@@ -9,6 +9,14 @@ public protocol HTTPErrorRepresentable: Error {
     var httpStatus: HTTPResponse.Status { get }
     /// Client-visible message. Keep it safe for the wire.
     var httpMessage: String { get }
+    /// Headers the answer needs to be usable: `Retry-After` on a 429 or a
+    /// 503, `WWW-Authenticate` on a 401. Empty unless a conformance says
+    /// otherwise.
+    var httpHeaders: HTTPFields { get }
+}
+
+extension HTTPErrorRepresentable {
+    public var httpHeaders: HTTPFields { [:] }
 }
 
 /// The general-purpose throwable HTTP error.

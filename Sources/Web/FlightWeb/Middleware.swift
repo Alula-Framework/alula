@@ -115,7 +115,11 @@ public func errorResponse(for error: any Error, context: RequestContext) -> Resp
         if http.httpStatus.kind == .serverError {
             context.logger.error("request failed: \(String(describing: error))")
         }
-        return render(http.httpStatus, http.httpMessage)
+        var response = render(http.httpStatus, http.httpMessage)
+        for field in http.httpHeaders where response.headers[field.name] == nil {
+            response = response.settingHeader(field.name, field.value)
+        }
+        return response
     default:
         context.logger.error("unhandled error: \(String(describing: error))")
         return render(.internalServerError, "Internal Server Error")

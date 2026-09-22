@@ -24,11 +24,14 @@ struct SessionIdentityTests {
 
     // MARK: Principal on a session
 
-    @Test("a principal round-trips through a session without its claims")
+    @Test("a principal round-trips through a session with its standard claims and no others")
     func principalCoding() throws {
         let principal = Principal(
             subject: "ada", issuer: "https://idp.example.com", roles: ["admin"], scopes: ["read"],
-            claims: ["email": "ada@example.com"])
+            claims: [
+                "email": "ada@example.com", "email_verified": true, "name": "Ada Lovelace",
+                "preferred_username": "ada", "tenant": "analytical-engines",
+            ])
         let session = Session()
         try session.signIn(principal)
         let stored = try #require(try session.principal())
@@ -36,7 +39,29 @@ struct SessionIdentityTests {
         #expect(stored.issuer == "https://idp.example.com")
         #expect(stored.roles == ["admin"])
         #expect(stored.scopes == ["read"])
-        #expect(stored.claims.isEmpty, "claims are a fact about a token, not a session")
+        // The person survives; the token's other contents do not.
+        #expect(stored.email == "ada@example.com")
+        #expect(stored.emailVerified)
+        #expect(stored.name == "Ada Lovelace")
+        #expect(stored.preferredUsername == "ada")
+        #expect(stored.claims["tenant"] == nil, "other claims are a fact about a token")
+    }
+
+    @Test("a session written before standard claims were kept still decodes")
+    func legacySessionDecodes() throws {
+        let legacy = Data(
+            #"{"subject":"ada","issuer":"https://idp","roles":["admin"],"scopes":[]}"#.utf8)
+        let principal = try JSONDecoder().decode(Principal.self, from: legacy)
+        #expect(principal.subject == "ada")
+        #expect(principal.email == nil)
+        #expect(!principal.emailVerified)
+        #expect(principal.claims.isEmpty)
+    }
+
+    @Test("email_verified is written only when asserted, not as a default false")
+    func unassertedVerificationIsNotWritten() throws {
+        let data = try JSONEncoder().encode(Principal(subject: "ada", issuer: "local"))
+        #expect(!String(decoding: data, as: UTF8.self).contains("email_verified"))
     }
 
     @Test(

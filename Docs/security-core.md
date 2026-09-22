@@ -6,9 +6,9 @@ Flight Web.
 Flight Security Core turns an externally issued identity token into a
 `Principal`, makes that principal available on the request, and provides the
 enforcement point for authentication — plus the *seam* (not the engine) for
-authorization. Authentication itself — credentials, passwords, sessions,
-recovery — is federated to external identity providers (Descope, Keycloak,
-Auth0, Okta, Entra); that code deliberately does not exist here.
+authorization. Signing people in — against the application's own accounts
+or through an external provider, behind one seam — is `Docs/sign-in.md`.
+Account lifecycle (registration, recovery) is not built yet.
 
 What this package owns is narrow and standard: **validate a token**. Even
 that delegates its cryptographic core to [JWTKit](https://github.com/vapor/jwt-kit)
@@ -509,18 +509,22 @@ if hasher.needsRehash(stored) {
 }
 ```
 
-This is deliberately narrow. There is no `CredentialStore` here, no
-registration flow, no rate-limited login route — those are a larger,
-separate piece, and this is only the one primitive they would all sit on.
+Password sign-in built on it — a `CredentialStore` over the application's
+own accounts, a throttled `PasswordAuthenticator`, and the `SignInProvider`
+seam that makes it interchangeable with an external provider — is
+`Docs/sign-in.md`.
 
 ## Non-goals
 
-Per design: no first-party credential *checking* — no `CredentialStore`, no
-login route, no account model (`PasswordHashing` above is the primitive, not
-the system) — no authorization engine in v1, no per-vendor packages for
-OIDC-compliant providers, no token issuance, no TLS opinions. Sessions carry
-a principal the application established some other way; they do not
-establish one.
+No account model — the application's users stay its own, reached through
+`CredentialStore` — no authorization engine in v1, no per-vendor packages
+for OIDC-compliant providers (each is configuration of the one generic
+validator and the one generic sign-in), no token issuance, no TLS opinions.
+
+"No first-party credential checking" was a non-goal until 0.31.0 reversed
+it on purpose: an application should be able to start on its own accounts
+without running an identity provider, and move to one later without
+rewriting its sign-in. D39 records why, and what keeps the switch cheap.
 
 "No hand-rolled cryptography" is upheld, not reversed, by `Argon2idHashing`:
 the algorithm is delegated to its own reference implementation, exactly as

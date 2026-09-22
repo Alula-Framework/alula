@@ -141,6 +141,11 @@ let package = Package(
         // The one security-critical primitive is delegated: JWTKit is SSWG
         // Graduated and SwiftCrypto-backed. Flight owns orchestration only.
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.6.0"),
+        // SHA-256 for OIDC sign-in's PKCE challenge. Already resolved through
+        // jwt-kit for every Security consumer, at the same floor, so naming it
+        // adds nothing to resolve; FlightWeb's own SHA256 is a content
+        // checksum, deliberately not used for anything security-relevant.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.1.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
     ],
     targets: [
@@ -496,7 +501,7 @@ let package = Package(
         .target(
             name: "FlightSecurityCore",
             dependencies: [
-                "FlightCore", "FlightSessions",
+                "FlightCore", "FlightSessions", "FlightRateLimit",
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .product(
                     name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
@@ -504,6 +509,7 @@ let package = Package(
                     name: "AsyncHTTPClient", package: "async-http-client",
                     condition: .when(traits: ["Security"])),
                 .target(name: "CArgon2", condition: .when(traits: ["Security"])),
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(traits: ["Security"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(
@@ -631,7 +637,13 @@ let package = Package(
                 .target(name: "FlightTransport", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])),
-                "FlightSessions", "FlightSessionsTesting",
+                "FlightSessions", "FlightSessionsTesting", "FlightRateLimit", "FlightRateLimitTesting",
+                // The Keycloak integration suite plays the browser itself.
+                .product(
+                    name: "AsyncHTTPClient", package: "async-http-client",
+                    condition: .when(traits: ["Security"])),
+                .product(
+                    name: "NIOFoundationCompat", package: "swift-nio", condition: .when(traits: ["Web"])),
                 .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["Web"])),
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(traits: ["Web"])),
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(traits: ["Web"])),

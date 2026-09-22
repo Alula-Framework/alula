@@ -58,6 +58,26 @@ jobs:
       - name: Generated file compiles
         run: ./CI/check-generated-compiles.sh
 
+  # OIDC sign-in against a real Keycloak. The unit suite proves the protocol
+  # against fakes; this proves the seam holds against what it exists to plug
+  # into. Its own job because the test job runs inside a Swift container,
+  # which has no Docker to start Keycloak with: Keycloak runs on the runner,
+  # and the suite runs in a Swift container sharing the runner's network.
+  keycloak:
+    name: OIDC sign-in against Keycloak
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Keycloak with the flight-test realm
+        run: ./CI/keycloak/start.sh
+      - name: Sign-in suites against it
+        run: |
+          docker run --rm --network host -v "$PWD:/src" -w /src \
+            -e FLIGHT_TEST_KEYCLOAK_URL=http://localhost:8089 \
+            swift:6.3.3 \
+            swift test --enable-all-traits --scratch-path /tmp/build \
+              --filter "KeycloakSignIn|OIDCSignIn|SignInContract"
+
   # flight-data is this framework's largest consumer and nothing built it: a
   # source-breaking change shipped in 0.19.0 (a third associated value on
   # `ConfigError.missingKey`, which pattern matching does not default) and

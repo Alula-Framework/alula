@@ -21,9 +21,12 @@ import ServiceLifecycle
 /// - any module of your own that provides `(any TokenValidator)`, for
 ///   session cookies, API keys, mTLS, HMAC, or anything else.
 ///
-/// With neither, there is no `(any TokenValidator)` to supply, and
-/// `FlightSecurityModule` cannot be built — its initializer requires one, so
-/// composition fails loudly at startup rather than at the first request.
+/// A validator is optional when sessions are present: an application that
+/// signs browsers in (``FlightPasswordSignInModule``,
+/// ``FlightOIDCSignInModule``) and has no bearer API needs none. With
+/// neither a validator nor sessions, nobody could ever be authenticated, and
+/// composition stops at startup saying so rather than serving a site where
+/// every protected route answers 401.
 ///
 /// ``RequireAuthentication`` is deliberately *not* in the **default** lane —
 /// unlike authentication itself, enforcement is not something every route
@@ -63,10 +66,13 @@ public struct FlightSecurityModule: FlightModule {
     public let middleware: [MiddlewareRegistration]
 
     /// - Parameters:
-    ///   - validator: How tokens are validated — from `FlightOIDCModule`, or
-    ///     from a module of your own. It used to be resolved per request by
-    ///     `Authentication`'s `@Inject`; the middleware is a value now, so it
-    ///     is handed the validator once.
+    ///   - validator: How bearer tokens are validated — from `FlightOIDCModule`,
+    ///     or from a module of your own. Nil for an application that signs
+    ///     people in and has no bearer API: a password or OIDC sign-in
+    ///     module puts the principal in the session, and a bearer token
+    ///     presented anyway is an invalid credential, since nothing here can
+    ///     check it. One of `validator` and `sessions` is required — with
+    ///     neither, nobody could ever be authenticated.
     ///   - sessions: The session runtime, when `FlightSessionsModule` is
     ///     listed — matched by type in composition. With it, every lane this
     ///     module declares runs `Sessions` ahead of `Authentication`, so a
@@ -76,8 +82,15 @@ public struct FlightSecurityModule: FlightModule {
     ///     `Sessions` is idempotent, so the default lane carrying it twice —
     ///     once from each module — costs one load. Without it, nothing
     ///     changes: tokens only.
-    public init(validator: any TokenValidator, sessions: SessionRuntime? = nil) {
-        let authentication = Authentication(validator: validator)
+    public init(validator: (any TokenValidator)?, sessions: SessionRuntime? = nil) {
+        precondition(
+            validator != nil || sessions != nil,
+            """
+            FlightSecurityModule has neither a token validator nor sessions, so no request could \
+            ever be authenticated. List FlightOIDCModule (or provide `any TokenValidator`) for \
+            bearer tokens, and/or FlightSessionsModule with a sign-in module for browsers.
+            """)
+        let authentication = Authentication(validator: validator ?? RejectingTokenValidator())
         let require = RequireAuthentication()
         let session: [any Middleware] = sessions.map { [Sessions(runtime: $0)] } ?? []
         self.middleware =
@@ -88,7 +101,7 @@ public struct FlightSecurityModule: FlightModule {
 
     public init() {
         preconditionFailure(
-            "FlightSecurityModule takes a token validator in init(validator:sessions:), so it cannot be "
+            "FlightSecurityModule takes a token validator and/or sessions in init(validator:sessions:), so it cannot be "
                 + "instantiated from its type. List FlightOIDCModule, or a module of your own that "
                 + "provides `(any TokenValidator)`, and let the composition root wire it.")
     }
@@ -108,6 +121,18 @@ public struct FlightSecurityModule: FlightModule {
 ///
 /// List this module to get OIDC. Omit it and provide your own
 /// `(any TokenValidator)` to authenticate any other way.
+/// Stands in when an application has no bearer-token validator: every token
+/// presented fails, so the request is an invalid credential rather than
+/// silently anonymous — a caller sending a token should learn it was not
+/// accepted.
+struct RejectingTokenValidator: TokenValidator {
+    func validate(_ token: String) async throws -> Principal {
+        throw TokenValidationError(
+            kind: .keySourceUnavailable,
+            reason: "no token validator is configured; this application accepts sessions only")
+    }
+}
+
 public final class FlightOIDCModule: FlightModule {
     public static var dependencies: [any FlightModule.Type] {
         [FlightSecurityModule.self]

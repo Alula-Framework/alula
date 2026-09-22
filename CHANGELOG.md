@@ -4,6 +4,55 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Sign-in, against the application's own accounts or any OpenID Connect
+  provider, behind one seam.** `SignInProvider` answers "how does starting
+  look?" with a form to show or a redirect to follow, and "how does finishing
+  look?" with a `Principal`. `PasswordSignIn` and `OIDCSignIn` implement it,
+  shipped as `FlightPasswordSignInModule` and `FlightOIDCSignInModule`, which
+  both provide `any SignInProvider`. Switching from one to the other is a
+  change to the module list. Routes, controllers and a front end written
+  against the seam don't change. `Docs/sign-in.md` covers it, including
+  what migrating users takes. D39.
+- **`CredentialStore` and `PasswordAuthenticator`.** The application keeps its
+  own users table and maps it onto a `StoredCredential`. The authenticator:
+  - throttles per identifier and per address before any hashing, with a 429
+    and `Retry-After`;
+  - verifies against a dummy hash for unknown accounts;
+  - gives one answer for every wrong guess;
+  - NFKC-normalizes passwords;
+  - rehashes at sign-in;
+  - fails closed (503) when its store or throttle is down.
+  `InMemoryCredentialStore` is for tests and prototypes.
+- **`OIDCSignIn`**: the authorization code with PKCE (S256, verified against
+  RFC 7636's own test vector). It keeps `state`, `nonce` and the verifier in
+  the session: single-use, expiring, and at most five open. Every discovered
+  endpoint is held to the key-fetch transport policy. The ID token is
+  validated like a bearer token, plus its nonce. Sign-out is RP-initiated. No
+  tokens are kept.
+- **`Principal`'s standard claims**: `email`, `emailVerified`, `name`,
+  `preferredUsername`. Every sign-in path emits the same four.
+- **`HTTPErrorRepresentable.httpHeaders`**, defaulting to empty, so an error
+  can carry `Retry-After` or `WWW-Authenticate`.
+- **CI runs OIDC sign-in against a real Keycloak.** `CI/keycloak/` holds the
+  realm and a start script.
+
+### Changed
+
+- **A principal stored in a session keeps its four standard claims.** It used
+  to keep none, so a principal from a cookie had no `email` while the same
+  user arriving by token did. Other claims are still dropped. Sessions written
+  before this decode unchanged, without them.
+- **`FlightSecurityModule(validator:sessions:)` takes an optional
+  validator.** An application that signs browsers in and has no bearer API
+  lists no `FlightOIDCModule`. A bearer token presented to it is an invalid
+  credential. Passing a validator compiles as before. With neither a
+  validator nor sessions, composition stops.
+- **"No first-party credential checking" is no longer a non-goal.** See D39.
+
 ## [0.30.0] - 2026-09-22
 
 ### Added

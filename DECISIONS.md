@@ -7,6 +7,76 @@ wrong, say so and it changes.
 
 ---
 
+## D39 — First-party sign-in, behind a seam an external provider also fits
+
+**Context.** "No first-party credential checking" was a stated non-goal:
+authentication was federated to an identity provider, and Flight validated
+the tokens it issued. The user reversed it on purpose. An application should
+be able to start on its own accounts without running Keycloak, and switch to
+one later without rewriting its sign-in. Neither Vapor nor Hummingbird ships
+more than building blocks here (bcrypt, authenticator protocols, session
+login), so this goes past parity rather than catching up.
+
+**Chosen.** A `SignInProvider` protocol answering two questions every
+provider can answer. Starting: `.form(fields)` or `.redirect(URL)`.
+Finishing: a `Principal`. It has two implementations, built together:
+`PasswordSignIn` over an application-implemented `CredentialStore`, and
+`OIDCSignIn` using the authorization code with PKCE against any provider.
+Each ships as a module providing `signInProvider: any SignInProvider`, so the
+switch is one line in `modules:` and listing both is a build error. Several
+calls inside that:
+
+1. **Four standard claims are the vocabulary** (`email`, `email_verified`,
+   `name`, `preferred_username`: OIDC Core §5.1). The password provider emits
+   them under the same names, and `Principal`'s session encoding now keeps
+   them where it used to drop every claim. Without that, a principal from a
+   cookie had no `email` while the same person arriving by token did, and
+   every screen showing who is signed in would have to know which path
+   produced it.
+2. **The credential store is not a user model.** It asks for two operations:
+   find by identifier, and save a stronger hash. The application's table
+   stays its own, which is the storage-agnostic shape Hummingbird chose, not
+   Vapor's, which is tied to its ORM.
+3. **The authenticator owns the invariants.** It throttles per identifier and
+   per address before hashing, runs a dummy verification for unknown accounts,
+   gives one answer for every wrong guess, reports a disabled account only
+   after its password verifies, NFKC-normalizes passwords (SP 800-63B) and
+   rehashes at sign-in.
+4. **The sign-in throttle fails closed**, the reverse of the `RateLimiting`
+   middleware's D33. That middleware protects capacity, where an outage
+   letting traffic through is the lesser harm. This one is the brute-force
+   defence, and a limiter outage is exactly when nothing else would notice a
+   flood.
+5. **`FlightSecurityModule`'s validator became optional** when sessions are
+   present, with a stand-in that turns any presented bearer token into an
+   invalid credential. Otherwise a sessions-only application had to invent a
+   validator it never used. With neither a validator nor sessions,
+   composition still stops.
+6. **OIDC keeps no tokens.** The ID token establishes who signed in, once.
+   An access token for calling APIs as the user is a different feature. Sign-out
+   is RP-initiated by `client_id`, since no `id_token_hint` is kept.
+7. **Proven against the real thing.** A contract test runs one controller
+   through both providers and requires identical `/me` answers. A CI job runs
+   the OIDC provider against a real Keycloak, driving its actual login form,
+   because a seam with one implementation is a guess about its interface.
+
+**Alternatives.** Protocols first with implementations later (rejected: an
+interface nobody has implemented twice is speculation). Tying the store to
+flight-data's persistence (rejected: most applications already have a users
+table). A generic `claims: [String: Any]` pass-through in the session
+(rejected: it was dropped on purpose, and the standard four are the ones
+that describe a person rather than a token). The password grant (ROPC) to
+talk to an external provider with the same form (rejected: OAuth 2.1 removes
+it, and it would teach applications to handle passwords a provider should).
+Failing the sign-in throttle open like the middleware (rejected above).
+
+**Cost of reversing.** The seam and both providers are additive. Reverting
+the session encoding would drop the standard claims from session principals
+again. Reverting the optional validator is source-compatible for every
+caller that passes one.
+
+---
+
 ## D38 — Security headers are a dispatch policy with three defaults on, not a middleware
 
 **Context.** The September gap audit listed security headers and left them

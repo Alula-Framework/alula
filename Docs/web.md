@@ -22,7 +22,7 @@ Core's `FlightModule` composition — through exactly one channel,
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.26.1", traits: ["Web"]),
+        from: "0.27.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

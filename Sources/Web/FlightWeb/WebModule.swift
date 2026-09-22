@@ -71,16 +71,23 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
     ///   - errorMapper: The application's error mapper, when a module provided
     ///     one — matched by type in composition. Nil becomes `.none`, which
     ///     declines everything.
+    ///   - trustedProxies: Which reverse proxies, if any, may set
+    ///     `X-Forwarded-For` for `RequestContext.clientAddress`. Nil reads
+    ///     `web.trusted-proxies`, which is empty — trust nothing — unless
+    ///     configured.
     public init(
         configuration: Configuration,
         routes: [RouteRegistration] = [],
         middleware: [MiddlewareRegistration] = [],
         assetMounts: [AssetMountRegistration] = [],
         coders: WebCoders? = nil,
-        errorMapper: ErrorMapper? = nil
+        errorMapper: ErrorMapper? = nil,
+        trustedProxies: TrustedProxies? = nil
     ) throws {
         let resolvedCoders = try coders ?? WebCoders(configuration: configuration)
         let resolvedMapper = errorMapper ?? .none
+        let resolvedTrustedProxies =
+            try trustedProxies ?? TrustedProxies(configuration: configuration)
         self.configuration = configuration
         self.coders = resolvedCoders
         self.errorMapper = resolvedMapper
@@ -94,7 +101,9 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
             routes: routes,
             middleware: middleware,
             assetMounts: assetMounts,
-            web: WebRuntime(coders: resolvedCoders, errorMapper: resolvedMapper),
+            web: WebRuntime(
+                coders: resolvedCoders, errorMapper: resolvedMapper,
+                trustedProxies: resolvedTrustedProxies),
             logger: Logger(label: "flight.web"))
     }
 

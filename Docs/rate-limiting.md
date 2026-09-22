@@ -227,14 +227,26 @@ A real store with only time faked, rather than a stub that agrees with the
 production limiter until the day it does not. `misbehave()` throws on every
 call, which is the outage the fail-open policy exists for.
 
+## Limiting by client address
+
+`RequestContext.clientAddress` is the real client's address, accounting for
+a reverse proxy when one is configured — see
+[client-address.md](client-address.md) for the whole story, including why
+trusting it needs a policy at all:
+
+```swift
+RateLimiting(store: limiter.store, quota: .perMinute(60)) { context in
+    context.clientAddress?.host ?? "unknown"
+}
+```
+
+`clientAddress` is `nil` when it cannot be determined — no real socket
+behind the request, or a forwarded chain that never resolves to a confident
+answer — so a key closure keying on it needs a fallback, the same way one
+keying on `context.principal` needs one for anonymous traffic.
+
 ## Deliberately not here
 
-- **Limiting by client address.** `Request` carries no peer address, and the
-  transport never takes one off the channel. Plumbing it is its own job, and
-  the hard part is the trusted-proxy policy for `X-Forwarded-For`: without
-  one you ship a spoofable identifier that looks authoritative. Everything
-  else here works today keyed on something the application already has. That
-  gap is about the key, never about the limiter.
 - **Distributed coordination beyond one key.** Each key is independent. A
   global "requests per second across the whole service" budget is a
   different problem.

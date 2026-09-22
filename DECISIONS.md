@@ -7,6 +7,74 @@ wrong, say so and it changes.
 
 ---
 
+## D34 — Client address: raw peer always available, trusted-proxy resolution defaults to trusting nothing
+
+**Context.** `Request` had no peer address at all — flagged repeatedly
+(the September rate-limiting audit, then D33's own scoping decision) as
+the prerequisite nothing had built. Two separable problems hide inside "add
+the client's IP": capturing the socket peer at all, and deciding how much
+of `X-Forwarded-For` to believe once a reverse proxy is in the picture. The
+second is the one with a wrong answer that looks like a right one — trusting
+the header from an unconfigured peer lets any caller claim to be any
+address, silently, with no error anywhere.
+
+**Chosen.** Four things.
+
+1. **`Request.remoteAddress`**, populated by `FlightTransport` from
+   `channel.remoteAddress`, is the kernel's answer and nothing else. It is
+   never `X-Forwarded-For`, and reading it never involves that header.
+2. **`RequestContext.clientAddress`** is the policy-resolved value:
+   `remoteAddress` unless `TrustedProxies` says otherwise. `WebRuntime`
+   carries it as a third citizen alongside `coders`/`errorMapper` — composed
+   once, applied per request.
+3. **The default is `.none`**, no permissive spelling exists, and none was
+   added. Every other safe default in Flight (`Cookie`, `Sessions`,
+   `RateLimiting`'s required key) at least has a documented narrow escape
+   hatch for a legitimate case. This one does not get one, because there is
+   no legitimate use for trusting an unconfigured forwarded header — unlike,
+   say, `JWKSTransportPolicy.allowInsecureLoopback`, which exists for a real
+   local-development case.
+4. **Resolution walks `X-Forwarded-For` from the hop closest to this
+   process backward, stopping at the first entry that is not itself a
+   trusted proxy.** That entry is the client. Nothing left of it is ever
+   used, because that is exactly the part of the header an untrusted caller
+   could write by hand before its request ever reached the first real proxy.
+   A chain with no untrusted boundary anywhere, or an entry that does not
+   parse, resolves to `nil` rather than guessing — the same "say so rather
+   than guess" instinct `RateLimitDecision.isUnsatisfiable` and GCRA's
+   exact-microsecond fix both follow.
+
+**Why `PeerAddress` is boxed on `Request`, not inline.** Measured: inline,
+`RequestContext` grew to 152 bytes, breaking the two-cache-line bound
+`RequestContextLayoutTests` pins with zero headroom left after Sessions.
+Boxed behind a `final class`, it costs the one pointer `Session` already
+costs. The public API is unchanged either way; this is storage, not shape.
+
+**Why `inet_pton`/`inet_ntop` rather than a hand-rolled parser.** IPv6's
+compressed forms have enough edge cases that betting on the platform's own
+libc, which every other piece of server software on the machine already
+trusts for this, is the safer bet than a parser written for this one
+purpose — the same reasoning that keeps JWT verification in JWTKit rather
+than in this package.
+
+**Alternatives.** A numeric "trust N hops back" instead of named CIDR
+ranges (weaker: a request that happens to cross exactly N untrusted hops
+before reaching a trusted one would be misread, and it says nothing about
+*which* infrastructure is trusted, only how much of it). Supporting RFC
+7239 `Forwarded` in addition to `X-Forwarded-For` (real proxies and load
+balancers overwhelmingly set the latter; the escape hatch —
+`context.request.headers[.forwarded]` — costs nothing and the parser costs
+a more intricate grammar for a header almost nothing sets). Trusting the
+header whenever *any* proxy config exists, without per-range checking
+(exactly the mistake this decision exists to avoid).
+
+**Cost of reversing.** `Request.remoteAddress` and `WebRuntime.trustedProxies`
+are additive fields; nothing consumes `X-Forwarded-For` unless
+`TrustedProxies` is configured, so removing the feature costs exactly the
+files that implement it.
+
+---
+
 ## D33 — The limiter is its own target, its store decides and records in one call, and it fails open
 
 **Context.** Rate limiting was pinned in the 2026-09-19 web audit, stalled on

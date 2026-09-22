@@ -65,7 +65,8 @@ struct WireController {
     /// Reads one chunk and returns — the transport must still keep the
     /// connection serviceable for the next request.
     @PostRoute("/upload-impatient", maxBodyBytes: 100_000)
-    func uploadImpatient(_ context: RequestContext, body: RequestBodyStream) async throws -> String {
+    func uploadImpatient(_ context: RequestContext, body: RequestBodyStream) async throws -> String
+    {
         var iterator = body.chunks.makeAsyncIterator()
         _ = try await iterator.next()
         return "impatient"
@@ -145,12 +146,14 @@ func wireRoutes() -> [RouteRegistration] {
 func withRunningServer(
     routes: [RouteRegistration]? = nil,
     middleware: [MiddlewareRegistration] = [],
+    web: WebRuntime = .default,
     maxRequestBodyBytes: Int = 1 << 20,
     idleTimeout: Duration? = .seconds(60),
     tls: FlightTransportConfiguration.TLS? = nil,
     _ body: @escaping @Sendable (_ port: Int) async throws -> Void
 ) async throws {
-    let dispatch = try TestClient(routes: routes ?? wireRoutes(), middleware: middleware).dispatch
+    let dispatch = try TestClient(routes: routes ?? wireRoutes(), middleware: middleware, web: web)
+        .dispatch
 
     let (portStream, portContinuation) = AsyncStream<Int>.makeStream()
     let configuration = FlightTransportConfiguration(
@@ -181,7 +184,6 @@ func withRunningServer(
     server.cancel()
     _ = try? await server.value
 }
-
 
 /// Echoes, slowly. One message at a time with a pause, which is exactly the
 /// shape that used to let an unbounded inbound buffer grow.

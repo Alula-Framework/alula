@@ -174,6 +174,15 @@ whole application without binding a port.
 - ``SessionNotConfiguredError``
 - ``SessionConfigurationError``
 
+### Client address
+
+- ``PeerAddress``
+- ``TrustedProxies``
+- ``RequestContext/clientAddress``
+- ``Request/remoteAddress``
+- ``TrustedProxiesError``
+- ``TrustedProxiesConfigKey``
+
 ### Rate limiting
 
 - ``RateLimiting``

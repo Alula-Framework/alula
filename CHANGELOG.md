@@ -4,6 +4,32 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The client address**, and a policy for trusting it. `Request` gains
+  `remoteAddress`, the raw TCP peer as NIO reports it — never spoofable,
+  and never `nil` for a request that arrived over a real socket.
+  `RequestContext.clientAddress` accounts for a reverse proxy: with nothing
+  configured it is always `remoteAddress`, unconditionally, and
+  `X-Forwarded-For` is never even read. `TrustedProxies` (`web.trusted-proxies`,
+  comma-separated CIDR blocks) is the policy that changes that, walking a
+  forwarded chain from the hop closest to this process back to the first
+  entry that is not itself a trusted proxy — the client — and never past
+  it, because everything further left is exactly the part of the header an
+  untrusted caller could have written by hand. There is no permissive
+  spelling of the setting: the default trusts nothing, on the same footing
+  as `Cookie`'s `httpOnly`/`sameSite` and `Sessions`' `cookie-secure`, because
+  trusting an unconfigured header has no legitimate use at all. IPv4-mapped
+  IPv6 peers (`::ffff:10.0.0.4`) are normalized during parsing, so a
+  trusted-proxy list written the way an operator's cloud provider actually
+  publishes it matches regardless of which form the kernel reports. Parsing
+  goes through the platform's `inet_pton` rather than a hand-rolled parser.
+  `RequestContext.mock` and `RateLimiting`'s key closure can both use it now
+  — the gap flagged when rate limiting shipped was always about the key, not
+  the limiter, and this is that key. Docs/client-address.md is the guide.
+
 ## [0.26.1] - 2026-09-22
 
 ### Fixed

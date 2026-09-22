@@ -57,62 +57,67 @@ public struct FlightTransport: ServerTransport {
         let shouldUpgrade:
             @Sendable (HTTPRequest, any Channel, Logger) async throws ->
                 ShouldUpgradeResult<WebSocketDataHandler<HTTP1WebSocketUpgradeChannel.Context>> = {
-                    (head: HTTPRequest, _: any Channel, _: Logger) async throws
+                    (head: HTTPRequest, channel: any Channel, _: Logger) async throws
                         -> ShouldUpgradeResult<
                             WebSocketDataHandler<HTTP1WebSocketUpgradeChannel.Context>
                         > in
-                // Upgrade requests carry no body by construction (RFC 6455 §4.1).
-                let request = Request(head: head, body: Data())
+                    // Upgrade requests carry no body by construction (RFC 6455 §4.1).
+                    let request = Request(
+                        head: head, body: Data(), remoteAddress: Self.peerAddress(of: channel))
 
-                // Ask the route table first. Dispatching every upgrade-shaped
-                // request would run ordinary HTTP handlers — their writes,
-                // their side effects — and then discard the response, since no
-                // upgrade can be performed at a route that never offered one.
-                // That made any GET route reachable by an unauthenticated
-                // client willing to attach upgrade headers.
-                guard dispatch.acceptsUpgrade(request) else {
-                    logger.debug("websocket upgrade refused: not an upgrade route", metadata: [
-                        "path": "\(head.path ?? "/")"
-                    ])
-                    return .dontUpgrade
-                }
+                    // Ask the route table first. Dispatching every upgrade-shaped
+                    // request would run ordinary HTTP handlers — their writes,
+                    // their side effects — and then discard the response, since no
+                    // upgrade can be performed at a route that never offered one.
+                    // That made any GET route reachable by an unauthenticated
+                    // client willing to attach upgrade headers.
+                    guard dispatch.acceptsUpgrade(request) else {
+                        logger.debug(
+                            "websocket upgrade refused: not an upgrade route",
+                            metadata: [
+                                "path": "\(head.path ?? "/")"
+                            ])
+                        return .dontUpgrade
+                    }
 
-                // The upgrade decision needs the *routed* answer, middleware
-                // included, so the pipeline runs for genuine upgrade routes.
-                let routed = await dispatch(request)
-                guard case .upgrade(let upgrade) = routed else {
-                    // HummingbirdCore answers every refused upgrade with its
-                    // own 400 + connection close; the routed status is the
-                    // in-process truth (TestClient surfaces it) but is not
-                    // writable through this seam — see design delta 8.
-                    logger.debug("websocket upgrade refused", metadata: [
-                        "path": "\(head.path ?? "/")",
-                        "status": "\(routed.status.code)",
-                    ])
-                    return .dontUpgrade
-                }
-                // Switched over `UpgradeResponse` itself, with no catch-all.
-                // `UpgradeResponse`'s own doc promises "every transport fails
-                // to compile" when a kind is added — and the one transport
-                // that exists defeated it: a `case let refused` after
-                // `.upgrade(.webSocket)` swallowed a future
-                // `.upgrade(.webTransport)` and logged it as refused with
-                // status 101. Now a new kind really does break this build,
-                // which is the seam working.
-                switch upgrade {
-                case .webSocket(let webSocketUpgrade):
-                    return .upgrade([:]) { inbound, outbound, _ in
-                        try await Self.runUpgradedConnection(
-                            webSocketUpgrade,
-                            inbound: inbound,
-                            outbound: outbound,
-                            maxMessageBytes: configuration.maxWebSocketFrameBytes,
-                            readAhead: configuration.webSocketReadAhead,
-                            logger: logger
-                        )
+                    // The upgrade decision needs the *routed* answer, middleware
+                    // included, so the pipeline runs for genuine upgrade routes.
+                    let routed = await dispatch(request)
+                    guard case .upgrade(let upgrade) = routed else {
+                        // HummingbirdCore answers every refused upgrade with its
+                        // own 400 + connection close; the routed status is the
+                        // in-process truth (TestClient surfaces it) but is not
+                        // writable through this seam — see design delta 8.
+                        logger.debug(
+                            "websocket upgrade refused",
+                            metadata: [
+                                "path": "\(head.path ?? "/")",
+                                "status": "\(routed.status.code)",
+                            ])
+                        return .dontUpgrade
+                    }
+                    // Switched over `UpgradeResponse` itself, with no catch-all.
+                    // `UpgradeResponse`'s own doc promises "every transport fails
+                    // to compile" when a kind is added — and the one transport
+                    // that exists defeated it: a `case let refused` after
+                    // `.upgrade(.webSocket)` swallowed a future
+                    // `.upgrade(.webTransport)` and logged it as refused with
+                    // status 101. Now a new kind really does break this build,
+                    // which is the seam working.
+                    switch upgrade {
+                    case .webSocket(let webSocketUpgrade):
+                        return .upgrade([:]) { inbound, outbound, _ in
+                            try await Self.runUpgradedConnection(
+                                webSocketUpgrade,
+                                inbound: inbound,
+                                outbound: outbound,
+                                maxMessageBytes: configuration.maxWebSocketFrameBytes,
+                                readAhead: configuration.webSocketReadAhead,
+                                logger: logger
+                            )
+                        }
                     }
                 }
-            }
 
         // Built by hand rather than through `HTTPServerBuilder
         // .http1WebSocketUpgrade`, so the header-read timeout can be added
@@ -144,28 +149,31 @@ public struct FlightTransport: ServerTransport {
                 try HTTPServerBuilder.tls(plain, tlsConfiguration: $0.nioConfiguration())
             } ?? plain
 
-        let server = try builder
+        let server =
+            try builder
             .buildServer(
-            configuration: ServerConfiguration(
-                address: .hostname(configuration.host, port: configuration.port),
-                serverName: "FlightWeb",
-                backlog: configuration.backlog,
-                reuseAddress: true
-            ),
-            eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
-            logger: logger,
-            responder: { request, responseWriter, _ in
-                try await respond(to: request, writer: responseWriter)
-            },
-            onServerRunning: { channel in
-                let port = channel.localAddress?.port ?? configuration.port
-                logger.info("flight transport listening", metadata: [
-                    "host": "\(configuration.host)",
-                    "port": "\(port)",
-                ])
-                configuration.onBound?(port)
-            }
-        )
+                configuration: ServerConfiguration(
+                    address: .hostname(configuration.host, port: configuration.port),
+                    serverName: "FlightWeb",
+                    backlog: configuration.backlog,
+                    reuseAddress: true
+                ),
+                eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
+                logger: logger,
+                responder: { request, responseWriter, channel in
+                    try await respond(to: request, writer: responseWriter, channel: channel)
+                },
+                onServerRunning: { channel in
+                    let port = channel.localAddress?.port ?? configuration.port
+                    logger.info(
+                        "flight transport listening",
+                        metadata: [
+                            "host": "\(configuration.host)",
+                            "port": "\(port)",
+                        ])
+                    configuration.onBound?(port)
+                }
+            )
 
         try await server.run()
         logger.info("flight transport stopped")
@@ -177,9 +185,11 @@ public struct FlightTransport: ServerTransport {
     /// `dispatch` in the middle, HummingbirdCore's response writer out.
     private func respond(
         to request: HummingbirdCore.Request,
-        writer: consuming ResponseWriter
+        writer: consuming ResponseWriter,
+        channel: any Channel
     ) async throws {
         let isHeadRequest = request.head.method == .head
+        let remoteAddress = Self.peerAddress(of: channel)
 
         // Expect: 100-continue — answer the interim response before the
         // client will send the body.
@@ -195,13 +205,15 @@ public struct FlightTransport: ServerTransport {
             response = await Self.dispatchStreaming(
                 request: request,
                 dispatch: dispatch,
-                byteCap: routeCap ?? configuration.maxRequestBodyBytes)
+                byteCap: routeCap ?? configuration.maxRequestBodyBytes,
+                remoteAddress: remoteAddress)
         case .buffered(let routeCap):
             do {
                 var collected = try await request.body.collect(
                     upTo: routeCap ?? configuration.maxRequestBodyBytes)
                 let body = collected.readData(length: collected.readableBytes) ?? Data()
-                response = await dispatch(Request(head: request.head, body: body))
+                response = await dispatch(
+                    Request(head: request.head, body: body, remoteAddress: remoteAddress))
             } catch is NIOTooManyBytesError {
                 // Bounded before dispatch ever runs. HummingbirdCore drains
                 // the remainder; `connection: close` hints the client to stop.
@@ -310,6 +322,18 @@ public struct FlightTransport: ServerTransport {
         }
     }
 
+    /// The TCP peer NIO reports for this connection, as `FlightWeb` sees
+    /// it. `nil` for anything that is not `.v4`/`.v6` — a Unix domain
+    /// socket has no IP to report, and this is the one place in Flight
+    /// that touches `NIOCore.SocketAddress` (§5.6): everything above this
+    /// target works with ``FlightWeb/PeerAddress`` instead.
+    private static func peerAddress(of channel: any Channel) -> FlightWeb.PeerAddress? {
+        guard let socketAddress = channel.remoteAddress, let host = socketAddress.ipAddress else {
+            return nil
+        }
+        return FlightWeb.PeerAddress(host: host, port: socketAddress.port)
+    }
+
     // MARK: - WebSocket bridge (§6.1)
 
     /// Bridges WSCore's (inbound, outbound) pair to FlightWeb's
@@ -330,11 +354,12 @@ public struct FlightTransport: ServerTransport {
     static func dispatchStreaming(
         request: HummingbirdCore.Request,
         dispatch: Dispatch,
-        byteCap: Int
+        byteCap: Int,
+        remoteAddress: FlightWeb.PeerAddress? = nil
     ) async -> FlightWeb.Response {
         let contentLength = request.headers[.contentLength].flatMap { Int64($0) }
         let puller = BodyPuller(request.body, byteCap: byteCap)
-        var streamed = FlightWeb.Request(head: request.head)
+        var streamed = FlightWeb.Request(head: request.head, remoteAddress: remoteAddress)
         streamed.bodyStream = RequestBodyStream(
             expectedBytes: contentLength,
             chunks: AsyncThrowingStream { try await puller.next() })
@@ -393,7 +418,8 @@ public struct FlightTransport: ServerTransport {
                             .custom(.init(fin: true, opcode: .pong, data: ByteBuffer(bytes: data)))
                         )
                     case .close(let code, let reason):
-                        try await outbound.close(.init(codeNumber: Int(code.rawValue)), reason: reason)
+                        try await outbound.close(
+                            .init(codeNumber: Int(code.rawValue)), reason: reason)
                     }
                 } catch is CancellationError {
                     throw WebSocketError.connectionClosed
@@ -516,7 +542,6 @@ final class InboundFrameHandoff: @unchecked Sendable {
         return frame
     }
 }
-
 
 /// One chunk of the request body per consumer demand, with the route's
 /// cumulative cap enforced as bytes pass. Holds the transport's body

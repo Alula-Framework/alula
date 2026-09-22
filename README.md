@@ -22,6 +22,7 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightPresence` | CRDT-merged "who is here", correct across a cluster without central coordination. |
 | `FlightSessions` | Server-side sessions: the store seam and the bounded in-memory default. The middleware and `context.session` are `FlightWeb`'s. |
 | `FlightRateLimit` | A GCRA rate limiter and its store seam. Not an HTTP concern: `FlightWeb`'s `RateLimiting` middleware is one consumer, a login throttle is another. |
+| `FlightWeb`'s `TrustedProxies` | The real client address behind a reverse proxy, resolved from `X-Forwarded-For` only as far as a configured trusted range reaches. |
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
 | `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. |
 | `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |

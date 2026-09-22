@@ -70,7 +70,7 @@ dependency DAG. A module you write can declare framework modules in its own
 
 | Product | Contents |
 |---|---|
-| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)) |
+| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)), `TrustedProxies`/`clientAddress` (see [client-address.md](client-address.md)) |
 | `FlightTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Flight that knows what it wraps (§5.6) |
 | `FlightWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
 
@@ -373,6 +373,20 @@ run for a route that names `pipelines: [.authenticated]`. The preflight still
 works — `OPTIONS` matches no route, and the no-match path runs the default
 lane — which makes the failure a confusing one: preflight passes, the real
 request comes back without `Access-Control-Allow-Origin`.
+
+### Client address
+
+```swift
+context.request.remoteAddress   // the raw TCP peer — never spoofable
+context.clientAddress           // the real caller, once a proxy is trusted
+```
+
+`clientAddress` is `remoteAddress` unless `web.trusted-proxies` names the
+peer as a trusted reverse proxy, in which case it is resolved from
+`X-Forwarded-For` instead — walked from the hop closest to this process
+back to the first untrusted entry, never further. Nothing is trusted by
+default. The whole story, including the algorithm and why the default has
+to be this strict, is in [client-address.md](client-address.md).
 
 ### Rate limiting
 

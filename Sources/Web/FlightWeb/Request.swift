@@ -17,9 +17,35 @@ public struct Request: Sendable {
     public var body: Data
     var _bodyStream: BodyStreamBox?
 
-    public init(head: HTTPRequest, body: Data = Data()) {
+    /// Who actually opened the TCP connection this request arrived on —
+    /// the kernel's answer, not a header's. `nil` for a request with no
+    /// real socket behind it: `TestClient`, a hand-built `Request` in a
+    /// snippet, `.mock()`.
+    ///
+    /// This is **not** "the client's address" when a reverse proxy sits in
+    /// front of this process — it is the proxy's address, which is
+    /// correct and exactly the point: nothing here can be spoofed by a
+    /// header. ``RequestContext/clientAddress`` is the one that accounts
+    /// for a configured proxy; reach for this only when the raw peer is
+    /// genuinely what you want, such as deciding whether to trust the
+    /// header in the first place.
+    ///
+    /// Boxed behind a reference: `Request` is copied per middleware layer
+    /// through `RequestContext`, and `PeerAddress`'s `String` would have
+    /// pushed that struct back over the two-cache-line bound
+    /// `RequestContextLayoutTests` pins — the same reasoning `Session`
+    /// already applies to itself. The public shape is unaffected; this is
+    /// storage, not API.
+    public var remoteAddress: PeerAddress? {
+        get { _remoteAddress?.value }
+        set { _remoteAddress = newValue.map(RemoteAddressBox.init) }
+    }
+    private var _remoteAddress: RemoteAddressBox?
+
+    public init(head: HTTPRequest, body: Data = Data(), remoteAddress: PeerAddress? = nil) {
         self.head = head
         self.body = body
+        self._remoteAddress = remoteAddress.map(RemoteAddressBox.init)
     }
 
     /// Convenience initializer used by tests and in-process clients.
@@ -27,7 +53,8 @@ public struct Request: Sendable {
         method: HTTPRequest.Method = .get,
         path: String,
         headers: HTTPFields = [:],
-        body: Data = Data()
+        body: Data = Data(),
+        remoteAddress: PeerAddress? = nil
     ) {
         self.head = HTTPRequest(
             method: method,
@@ -37,6 +64,7 @@ public struct Request: Sendable {
             headerFields: headers
         )
         self.body = body
+        self._remoteAddress = remoteAddress.map(RemoteAddressBox.init)
     }
 
     // MARK: - Head accessors

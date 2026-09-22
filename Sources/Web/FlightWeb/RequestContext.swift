@@ -57,6 +57,17 @@ public struct RequestContext: Sendable {
     /// This application's error mapper. `.none` declines everything.
     public var errorMapper: ErrorMapper { web.errorMapper }
 
+    /// The real client address, accounting for a configured reverse proxy.
+    ///
+    /// `request.remoteAddress` when nothing is configured — the raw TCP
+    /// peer, unconditionally. Behind a trusted proxy, `X-Forwarded-For` is
+    /// walked back only as far as the chain stays inside the configured
+    /// range; see `TrustedProxies` for exactly what that means and why a
+    /// caller cannot spoof it by setting the header itself. `nil` when the
+    /// request has no real socket behind it, or when the header cannot be
+    /// resolved to a confident answer.
+    public var clientAddress: PeerAddress? { web.trustedProxies.clientAddress(for: request) }
+
     public init(
         request: Request,
         pathParameters: [String: String] = [:],
@@ -86,10 +97,16 @@ public struct RequestContext: Sendable {
 public final class WebRuntime: Sendable {
     public let coders: WebCoders
     public let errorMapper: ErrorMapper
+    public let trustedProxies: TrustedProxies
 
-    public init(coders: WebCoders = .default, errorMapper: ErrorMapper = .none) {
+    public init(
+        coders: WebCoders = .default,
+        errorMapper: ErrorMapper = .none,
+        trustedProxies: TrustedProxies = .none
+    ) {
         self.coders = coders
         self.errorMapper = errorMapper
+        self.trustedProxies = trustedProxies
     }
 
     /// Package defaults — what a hand-built context uses.

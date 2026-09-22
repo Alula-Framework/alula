@@ -4,6 +4,36 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.1] - 2026-09-22
+
+### Fixed
+
+- **The limiter's arithmetic is exact.** GCRA ran in fractional seconds,
+  which is wrong for any store keyed on wall time: subtracting two
+  timestamps near 1.8e15 leaves about half a microsecond of floating-point
+  error, and that is enough to report one permit fewer than are actually
+  free. A caller reading `X-RateLimit-Remaining` and pacing against it would
+  have been told nine when ten were available, on the first call against
+  every fresh key.
+
+  Everything now runs in whole microseconds, which are exact in an `Int64`
+  and exact in a `Double` too, since microseconds since the epoch stay
+  inside the 53-bit integer range until 2255. The epsilon that used to
+  absorb the rounding is gone, because there is no rounding left.
+
+  Found by the differential test in flight-data 0.9.0, which runs the same
+  scenarios against the Valkey store and the in-memory one and compares the
+  decisions. Nothing in this package's own suite could have caught it: its
+  clock starts near zero, where the error is far too small to change an
+  answer. A test pins the wall-clock magnitude now.
+
+  **Source-breaking**, for API added in 0.26.0 the same day:
+  `RateLimitQuota.emissionInterval` and `.burstOffset`, both `Double`
+  seconds, are replaced by `emissionIntervalMicroseconds` and
+  `burstOffsetMicroseconds`, both `Int64`. They exist for store
+  implementors; nothing else should be reading them. A store of your own
+  should move to the integer forms and delete any epsilon it carried.
+
 ## [0.26.0] - 2026-09-22
 
 ### Added

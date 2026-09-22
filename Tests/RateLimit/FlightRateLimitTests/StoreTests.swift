@@ -5,16 +5,16 @@ import Testing
 
 @testable import FlightRateLimit
 
-/// A clock the test moves, in the seconds the stores read.
+/// A clock the test moves, in the microseconds the stores read.
 private final class TestClock: Sendable {
-    private let seconds = Mutex(0.0)
+    private let microseconds = Mutex<Int64>(0)
 
-    var now: @Sendable () -> Double {
-        { self.seconds.withLock { $0 } }
+    var now: @Sendable () -> Int64 {
+        { self.microseconds.withLock { $0 } }
     }
 
     func advance(by duration: Duration) {
-        seconds.withLock { $0 += duration.rateLimitSeconds }
+        microseconds.withLock { $0 += duration.rateLimitMicroseconds }
     }
 }
 
@@ -165,7 +165,8 @@ struct QuotaAndModuleTests {
         #expect(RateLimitQuota.perDay(10).period == .seconds(86_400))
         #expect(RateLimitQuota.perMinute(10).burst == 10, "the whole quota, by default")
         #expect(RateLimitQuota.perMinute(10, burst: 2).burst == 2)
-        #expect(RateLimitQuota.perSecond(10).emissionInterval == 0.1)
+        #expect(RateLimitQuota.perSecond(10).emissionIntervalMicroseconds == 100_000)
+        #expect(RateLimitQuota.perSecond(10).burstOffsetMicroseconds == 1_000_000)
     }
 
     @Test("with no adapter the store is in-memory, bounded by configuration")

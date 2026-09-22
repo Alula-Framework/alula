@@ -68,25 +68,35 @@ public struct RateLimitQuota: Sendable, Equatable {
         RateLimitQuota(permits: permits, per: .seconds(24 * 60 * 60), burst: burst)
     }
 
-    /// The gap between permits, in seconds: GCRA's emission interval.
+    /// The gap between permits, in **whole microseconds**: GCRA's emission
+    /// interval.
     ///
     /// Public because implementing ``RateLimitStore`` requires it. A store
-    /// that keeps its state somewhere this package cannot reach — a Lua
-    /// script on a Valkey server, a row in Postgres — needs the algorithm's
-    /// two parameters to run the same arithmetic the in-memory store does.
+    /// keeping its state somewhere this package cannot reach — a Lua script
+    /// on a Valkey server, a row in Postgres — needs the algorithm's two
+    /// parameters to run the same arithmetic the in-memory store does.
     ///
-    /// Seconds rather than a `Duration` because that is what the arithmetic
-    /// needs: the algorithm divides one interval by another, and a store
-    /// implementing it elsewhere is working in whatever its own clock
-    /// reports, which is seconds everywhere it matters.
-    public var emissionInterval: Double {
-        period.rateLimitSeconds / Double(permits)
+    /// Integer microseconds rather than fractional seconds, and that is not
+    /// a detail. The algorithm subtracts two timestamps and divides the
+    /// result by this, and a store keyed on Unix time is subtracting numbers
+    /// near 1.8e15: in a `Double` those carry about half a microsecond of
+    /// error, which is enough to report one permit fewer than are actually
+    /// free. Microseconds since the epoch fit exactly in a `Double`'s 53-bit
+    /// integer range until the year 2255, and exactly in an `Int64` for far
+    /// longer, so every implementation can do this arithmetic exactly and
+    /// none of them needs a fudge factor.
+    ///
+    /// At least 1: a rate finer than one permit per microsecond is beyond
+    /// anything this is for, and a zero interval would divide by zero.
+    public var emissionIntervalMicroseconds: Int64 {
+        max(1, (period.rateLimitMicroseconds + Int64(permits) / 2) / Int64(permits))
     }
 
-    /// How far ahead of the sustained rate a key may run, in seconds. GCRA's
-    /// delay variation tolerance, and the other half of what a store needs.
-    public var burstOffset: Double {
-        emissionInterval * Double(burst)
+    /// How far ahead of the sustained rate a key may run, in microseconds.
+    /// GCRA's delay variation tolerance, and the other half of what a store
+    /// needs.
+    public var burstOffsetMicroseconds: Int64 {
+        emissionIntervalMicroseconds * Int64(burst)
     }
 }
 
@@ -97,20 +107,14 @@ extension RateLimitQuota: CustomStringConvertible {
 }
 
 extension Duration {
-    /// Seconds, for the one place this package does arithmetic that
-    /// `Duration` cannot express: dividing one duration by another.
-    ///
-    /// The GCRA math runs in `Double` seconds deliberately. It is the same
-    /// arithmetic the Valkey store performs in Lua, where seconds are what
-    /// `TIME` returns, and keeping both in one representation is what makes
-    /// "the distributed store and the in-memory one agree" checkable rather
-    /// than asserted.
-    var rateLimitSeconds: Double {
-        Double(components.seconds) + Double(components.attoseconds) / 1e18
+    /// Whole microseconds, the unit the algorithm works in.
+    var rateLimitMicroseconds: Int64 {
+        let parts = components
+        return parts.seconds * 1_000_000 + Int64(parts.attoseconds / 1_000_000_000_000)
     }
 
     /// The inverse, for building a `Duration` back out of the math.
-    static func rateLimitSeconds(_ value: Double) -> Duration {
-        .nanoseconds(Int64((value * 1e9).rounded()))
+    static func rateLimitMicroseconds(_ value: Int64) -> Duration {
+        .microseconds(value)
     }
 }

@@ -11,7 +11,7 @@ struct GCRATests {
 
     /// Runs `count` calls at `now` from `tat`, returning the final outcome.
     private func spend(
-        _ count: Int, at now: Double, from tat: Double?, quota: RateLimitQuota
+        _ count: Int, at now: Int64, from tat: Int64?, quota: RateLimitQuota
     ) -> GCRA.Outcome {
         var outcome = GCRA.decide(now: now, tat: tat, cost: 0, quota: quota)
         for _ in 0..<count {
@@ -25,19 +25,17 @@ struct GCRATests {
         let tenth = spend(10, at: 0, from: nil, quota: tenPerSecond)
         #expect(tenth.isAllowed)
         #expect(tenth.remaining == 0)
-        #expect(tenth.resetAfter.isClose(to: 1.0), "the whole period, having spent the whole quota")
+        #expect(tenth.resetAfter == 1_000_000, "the whole period, having spent the whole quota")
 
         let eleventh = GCRA.decide(now: 0, tat: tenth.tat, cost: 1, quota: tenPerSecond)
         #expect(!eleventh.isAllowed)
-        #expect(
-            eleventh.retryAfter?.isClose(to: 0.1) == true,
-            "one emission interval, not the whole period")
+        #expect(eleventh.retryAfter == 100_000, "one emission interval, not the whole period")
         #expect(!eleventh.isUnsatisfiableOutcome)
     }
 
     @Test("remaining counts down one per permit")
     func remainingCountsDown() {
-        var tat: Double? = nil
+        var tat: Int64? = nil
         for expected in stride(from: 9, through: 0, by: -1) {
             let outcome = GCRA.decide(now: 0, tat: tat, cost: 1, quota: tenPerSecond)
             #expect(outcome.isAllowed)
@@ -58,9 +56,9 @@ struct GCRATests {
         }
         // One emission interval later exactly one permit is back, as though
         // the fifty refusals had never happened.
-        let recovered = GCRA.decide(now: 0.1, tat: tat, cost: 1, quota: tenPerSecond)
+        let recovered = GCRA.decide(now: 100_000, tat: tat, cost: 1, quota: tenPerSecond)
         #expect(recovered.isAllowed)
-        let next = GCRA.decide(now: 0.1, tat: recovered.tat, cost: 1, quota: tenPerSecond)
+        let next = GCRA.decide(now: 100_000, tat: recovered.tat, cost: 1, quota: tenPerSecond)
         #expect(!next.isAllowed, "exactly one, not two")
     }
 
@@ -69,10 +67,10 @@ struct GCRATests {
         // The fixed-window failure this algorithm exists to avoid: a window
         // would admit the full quota again the instant the boundary passed.
         let spent = spend(10, at: 0, from: nil, quota: tenPerSecond)
-        let halfway = GCRA.decide(now: 0.5, tat: spent.tat, cost: 0, quota: tenPerSecond)
+        let halfway = GCRA.decide(now: 500_000, tat: spent.tat, cost: 0, quota: tenPerSecond)
         #expect(halfway.remaining == 5, "half a period back means half the quota back")
 
-        let full = GCRA.decide(now: 1.0, tat: spent.tat, cost: 0, quota: tenPerSecond)
+        let full = GCRA.decide(now: 1_000_000, tat: spent.tat, cost: 0, quota: tenPerSecond)
         #expect(full.remaining == 10)
     }
 
@@ -80,10 +78,12 @@ struct GCRATests {
     func idleDoesNotBank() {
         let spent = spend(10, at: 0, from: nil, quota: tenPerSecond)
         // An hour later the key is at full, not at an hour's worth.
-        let after = spend(10, at: 3600, from: spent.tat, quota: tenPerSecond)
+        let after = spend(10, at: 3_600_000_000, from: spent.tat, quota: tenPerSecond)
         #expect(after.isAllowed)
         #expect(after.remaining == 0)
-        #expect(!GCRA.decide(now: 3600, tat: after.tat, cost: 1, quota: tenPerSecond).isAllowed)
+        #expect(
+            !GCRA.decide(now: 3_600_000_000, tat: after.tat, cost: 1, quota: tenPerSecond).isAllowed
+        )
     }
 
     @Test("burst is separable from rate")
@@ -94,8 +94,8 @@ struct GCRATests {
         #expect(first.isAllowed)
         let second = GCRA.decide(now: 0, tat: first.tat, cost: 1, quota: quota)
         #expect(!second.isAllowed)
-        #expect(second.retryAfter?.isClose(to: 1.0) == true)
-        #expect(GCRA.decide(now: 1, tat: first.tat, cost: 1, quota: quota).isAllowed)
+        #expect(second.retryAfter == 1_000_000)
+        #expect(GCRA.decide(now: 1_000_000, tat: first.tat, cost: 1, quota: quota).isAllowed)
     }
 
     @Test("cost is charged in whole permits")
@@ -116,7 +116,25 @@ struct GCRATests {
         #expect(outcome.isUnsatisfiableOutcome)
         // And waiting really does not help, which is why saying "retry in
         // 100ms" would have been a lie.
-        #expect(!GCRA.decide(now: 60, tat: outcome.tat, cost: 11, quota: tenPerSecond).isAllowed)
+        #expect(
+            !GCRA.decide(now: 60_000_000, tat: outcome.tat, cost: 11, quota: tenPerSecond).isAllowed
+        )
+    }
+
+    @Test("the arithmetic is exact at wall-clock magnitudes")
+    func exactAtWallClockMagnitudes() {
+        // The bug the differential test against the Valkey store caught. In
+        // fractional seconds, subtracting timestamps near 1.8e15 leaves
+        // enough error to report nine permits free where ten are. In whole
+        // microseconds it is exact, at any magnitude a clock will produce.
+        let now: Int64 = 1_790_000_000_123_456
+        let first = GCRA.decide(now: now, tat: nil, cost: 1, quota: tenPerSecond)
+        #expect(first.isAllowed)
+        #expect(first.remaining == 9, "nine free, not eight")
+
+        let tenth = spend(9, at: now, from: first.tat, quota: tenPerSecond)
+        #expect(tenth.remaining == 0)
+        #expect(!GCRA.decide(now: now, tat: tenth.tat, cost: 1, quota: tenPerSecond).isAllowed)
     }
 
     @Test("a zero cost reports the state and changes nothing")
@@ -126,16 +144,6 @@ struct GCRATests {
         #expect(probe.isAllowed)
         #expect(probe.remaining == 7)
         #expect(probe.tat == spent.tat, "probing spends nothing")
-    }
-}
-
-extension Double {
-    /// Sums of `Double` emission intervals do not land on round numbers:
-    /// ten tenths is 0.9999999999999999. The permit *counts* are floored
-    /// with an epsilon for exactly this reason; the durations are compared
-    /// with one.
-    fileprivate func isClose(to other: Double, within tolerance: Double = 1e-9) -> Bool {
-        abs(self - other) < tolerance
     }
 }
 

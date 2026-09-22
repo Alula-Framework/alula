@@ -41,16 +41,16 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
     /// A reference box, because `Mutex` is noncopyable and the backing store
     /// captures this in an escaping closure.
     private final class Clock: Sendable {
-        private let seconds: Mutex<Double>
+        private let microseconds: Mutex<Int64>
 
-        init(_ seconds: Double) {
-            self.seconds = Mutex(seconds)
+        init(_ microseconds: Int64) {
+            self.microseconds = Mutex(microseconds)
         }
 
-        var now: Double { seconds.withLock { $0 } }
+        var now: Int64 { microseconds.withLock { $0 } }
 
-        func advance(by delta: Double) {
-            seconds.withLock { $0 += delta }
+        func advance(by delta: Int64) {
+            microseconds.withLock { $0 += delta }
         }
     }
 
@@ -58,11 +58,11 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
     private let clock: Clock
     private let backing: InMemoryRateLimitStore
 
-    public init(startingAt seconds: Double = 0) {
+    public init(startingAt microseconds: Int64 = 0) {
         // A real store and the real algorithm, with only time faked. The
         // alternative is a stub that agrees with the production limiter
         // until the day it does not.
-        let clock = Clock(seconds)
+        let clock = Clock(microseconds)
         self.clock = clock
         self.backing = InMemoryRateLimitStore(now: { clock.now })
     }
@@ -88,7 +88,7 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
     /// Moves the clock the backing store reads, so quotas replenish without
     /// the suite sleeping.
     public func advance(by duration: Duration) {
-        clock.advance(by: duration.recordingSeconds)
+        clock.advance(by: duration.recordingMicroseconds)
     }
 
     /// From now on, every call throws.
@@ -120,7 +120,8 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
 }
 
 extension Duration {
-    fileprivate var recordingSeconds: Double {
-        Double(components.seconds) + Double(components.attoseconds) / 1e18
+    fileprivate var recordingMicroseconds: Int64 {
+        let parts = components
+        return parts.seconds * 1_000_000 + Int64(parts.attoseconds / 1_000_000_000_000)
     }
 }

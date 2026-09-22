@@ -21,42 +21,51 @@
 /// comparison and a write of one value, which a Valkey `EVAL` does in one
 /// round trip with no lock and no read-modify-write race.
 ///
-/// ## Why the math is `Double` seconds
+/// ## Why the math is integer microseconds
 ///
-/// Because the Valkey store does the same arithmetic in Lua, where seconds
-/// are what `TIME` returns. Two implementations of one algorithm are only
-/// trustworthy if they can be read side by side, and a Swift version in
-/// `Duration` next to a Lua version in seconds cannot be.
+/// Because it has to be exact, and because the Valkey store does the same
+/// arithmetic in Lua, where numbers are doubles.
+///
+/// In fractional seconds this is subtly wrong for any store keyed on wall
+/// time. Subtracting two timestamps near 1.8e15 leaves about half a
+/// microsecond of floating-point error, which is enough to report one permit
+/// fewer than are actually free — caught by the differential test that runs
+/// these scenarios against both stores, and not by anything else. In whole
+/// microseconds every value here is an exact integer: exact in an `Int64`,
+/// and exact in a `Double` too, since microseconds since the epoch stay
+/// inside the 53-bit integer range until the year 2255. Two implementations
+/// of one algorithm can then be compared line by line, and neither needs an
+/// epsilon.
 enum GCRA {
     struct Outcome: Equatable {
         /// Whether the call is admitted.
         var isAllowed: Bool
-        /// The theoretical arrival time to store. On a denial this is the
-        /// value that was already there: a refused call consumes nothing,
-        /// which is what keeps a client hammering a closed door from pushing
-        /// its own recovery further away.
-        var tat: Double
+        /// The theoretical arrival time to store, in microseconds. On a
+        /// denial this is the value that was already there: a refused call
+        /// consumes nothing, which is what keeps a client hammering a closed
+        /// door from pushing its own recovery further away.
+        var tat: Int64
         var remaining: Int
-        /// Seconds until this call would be admitted; `nil` when it is, and
-        /// `nil` when no wait would help.
-        var retryAfter: Double?
-        /// Seconds until the key is back to a full burst.
-        var resetAfter: Double
+        /// Microseconds until this call would be admitted; `nil` when it is,
+        /// and `nil` when no wait would help.
+        var retryAfter: Int64?
+        /// Microseconds until the key is back to a full burst.
+        var resetAfter: Int64
     }
 
     /// - Parameters:
-    ///   - now: The current time in seconds, on whatever clock the store
-    ///     keeps its stored values on.
+    ///   - now: The current time in microseconds, on whatever clock the
+    ///     store keeps its stored values on.
     ///   - tat: The stored theoretical arrival time, or `nil` for a key this
     ///     store has not seen.
     ///   - cost: Permits this call spends. Zero reports the current state
     ///     and changes nothing.
-    static func decide(now: Double, tat storedTAT: Double?, cost: Int, quota: RateLimitQuota)
+    static func decide(now: Int64, tat storedTAT: Int64?, cost: Int, quota: RateLimitQuota)
         -> Outcome
     {
         precondition(cost >= 0, "A rate limit cost cannot be negative; got \(cost).")
-        let emission = quota.emissionInterval
-        let burstOffset = quota.burstOffset
+        let emission = quota.emissionIntervalMicroseconds
+        let burstOffset = quota.burstOffsetMicroseconds
 
         // A key whose theoretical arrival time is in the past is a key that
         // has been idle long enough to be back at full: start from now, not
@@ -81,7 +90,7 @@ enum GCRA {
                 retryAfter: nil, resetAfter: tat - now)
         }
 
-        let newTAT = tat + Double(cost) * emission
+        let newTAT = tat + Int64(cost) * emission
         let admitAt = newTAT - burstOffset
         guard admitAt <= now else {
             return Outcome(
@@ -96,15 +105,12 @@ enum GCRA {
     }
 
     /// How many whole permits are still free, given how far ahead of now the
-    /// theoretical arrival time sits.
-    private static func permits(level: Double, burstOffset: Double, emission: Double) -> Int {
+    /// theoretical arrival time sits. Exact integer division; no epsilon,
+    /// because there is no rounding error left to absorb.
+    private static func permits(level: Int64, burstOffset: Int64, emission: Int64) -> Int {
         guard emission > 0 else { return 0 }
         let free = burstOffset - level
         guard free > 0 else { return 0 }
-        // The epsilon is not superstition: the level is a sum of
-        // `Double`-multiplied emission intervals, so after spending exactly
-        // one permit of a hundred the free capacity computes to 98.99999…
-        // and floors to 98. Clients read that number and pace against it.
-        return Int(free / emission + 1e-9)
+        return Int(free / emission)
     }
 }

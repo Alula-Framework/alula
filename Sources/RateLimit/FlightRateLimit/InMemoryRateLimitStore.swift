@@ -21,29 +21,29 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
     public static let defaultMaxEntries = 100_000
 
     private struct State {
-        /// Theoretical arrival time per key, in seconds on `clock`.
-        var arrivals: [String: Double] = [:]
+        /// Theoretical arrival time per key, in microseconds on `clock`.
+        var arrivals: [String: Int64] = [:]
     }
 
     private let state = Mutex(State())
-    private let now: @Sendable () -> Double
+    private let now: @Sendable () -> Int64
     public let maxEntries: Int
 
     /// - Parameters:
     ///   - maxEntries: The bound. Positive, or a programming error.
-    ///   - now: The clock, in seconds, injectable so a test asserts an exact
-    ///     sequence of decisions without sleeping. Defaults to a monotonic
-    ///     clock rather than a wall clock: a rate limiter that can be
-    ///     rewound by an NTP correction is a rate limiter with a bypass.
+    ///   - now: The clock, in microseconds, injectable so a test asserts an
+    ///     exact sequence of decisions without sleeping. Defaults to a
+    ///     monotonic clock rather than a wall clock: a rate limiter that can
+    ///     be rewound by an NTP correction is a rate limiter with a bypass.
     public init(
         maxEntries: Int = InMemoryRateLimitStore.defaultMaxEntries,
-        now: (@Sendable () -> Double)? = nil
+        now: (@Sendable () -> Int64)? = nil
     ) {
         precondition(
             maxEntries > 0,
             "InMemoryRateLimitStore is bounded by design — maxEntries must be positive.")
         self.maxEntries = maxEntries
-        self.now = now ?? InMemoryRateLimitStore.monotonicSeconds
+        self.now = now ?? InMemoryRateLimitStore.monotonicMicroseconds
     }
 
     public func consume(key: String, cost: Int, quota: RateLimitQuota) async throws
@@ -59,8 +59,8 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
             return RateLimitDecision(
                 isAllowed: outcome.isAllowed,
                 remaining: outcome.remaining,
-                retryAfter: outcome.retryAfter.map(Duration.rateLimitSeconds),
-                resetAfter: .rateLimitSeconds(outcome.resetAfter))
+                retryAfter: outcome.retryAfter.map(Duration.rateLimitMicroseconds),
+                resetAfter: .rateLimitMicroseconds(outcome.resetAfter))
         }
     }
 
@@ -73,7 +73,7 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
     /// full allowance and carry no information, so they go first; if that is
     /// not enough, the keys closest to expiring go in a batch, so the sort is
     /// paid once per batch rather than once per call.
-    private func enforceBound(_ state: inout State, now: Double) {
+    private func enforceBound(_ state: inout State, now: Int64) {
         guard state.arrivals.count > maxEntries else { return }
         state.arrivals = state.arrivals.filter { $0.value > now }
         guard state.arrivals.count > maxEntries else { return }
@@ -85,7 +85,7 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
 
     private static let started = ContinuousClock.now
 
-    private static let monotonicSeconds: @Sendable () -> Double = {
-        started.duration(to: ContinuousClock.now).rateLimitSeconds
+    private static let monotonicMicroseconds: @Sendable () -> Int64 = {
+        started.duration(to: ContinuousClock.now).rateLimitMicroseconds
     }
 }

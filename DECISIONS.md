@@ -7,6 +7,79 @@ wrong, say so and it changes.
 
 ---
 
+## D35 — Password hashing depends on the Argon2 reference implementation directly, pinned by revision
+
+**Context.** A first-party credential story needs a hashing primitive, and
+"no hand-rolled cryptography" means it has to be delegated, the way JWT
+verification is delegated to JWTKit. Nothing plays JWTKit's role for
+password hashing. Checked before choosing anything: `swift-crypto` itself
+(a PR adding Argon2id, #427, was declined by Apple's own maintainers, who
+cited the lack of a BoringSSL backend and suggested a standalone package
+instead); the standalone-package ecosystem that suggestion points at
+(several small, individually maintained Swift wrappers around the
+reference C implementation, none with the release cadence, contributor
+count, or audit trail the rest of this package's dependencies have).
+
+**Chosen.** Depend on `P-H-C/phc-winner-argon2` directly — the actual
+reference C implementation, from the algorithm's own designers, winner of
+the Password Hashing Competition, the source RFC 9106 is built from and
+that essentially every other language's Argon2 binding wraps. It ships its
+own SwiftPM manifest, building only the portable reference sources
+(`blake2b`, `argon2`, `core`, `encoding`, `ref`, `thread` — the
+SIMD-optimized path and the CLI/benchmark/test tooling excluded), dual
+CC0-1.0/Apache-2.0 licensed. `Argon2idHashing` in `FlightSecurityCore` is
+orchestration around it: UTF-8 encoding, salt generation via
+`SystemRandomNumberGenerator` (the same source `SessionID.generate()`
+uses), and parsing its own parameters back out of the PHC string it
+produces for `needsRehash`. No hand-rolled cryptography anywhere in this —
+the C source is untouched, and the parsing is of Flight's own output, not
+of arbitrary input.
+
+**Pinned by `revision:`, not `from:`.** The repository carries no semver
+tags — only date-stamped ones through 2019 — so `.package(url:, from:)`
+cannot express this dependency at all. The last real commit is from 2021,
+which reads less like abandonment than like a reference implementation of
+a now-finalized RFC that has been correct and stable since. A `revision:`
+pin names an exact, auditable commit, which for a cryptographic primitive
+is arguably a more honest spelling of "here is precisely what we depend
+on" than a semver range ever is — the same reasoning, differently applied,
+that already justified pinning JWTKit as the first deliberate exception to
+the Apple-adjacent/SSWG dependency policy.
+
+**Why this does not reverse "no hand-rolled cryptography."** It cannot,
+because nothing here is hand-rolled: the primitive is exactly as delegated
+as JWT verification or TLS chain validation already are. What moves is the
+dependency-sourcing policy, one exception further from "Apple-adjacent or
+SSWG" toward "the most authoritative available source," which is the
+policy JWTKit already established the shape of.
+
+**Why this does not (yet) reverse "no first-party credential checking."**
+`PasswordHashing` is a primitive, not a system. There is no
+`CredentialStore`, no login route, no account model, and none of those are
+built by this decision. They are a separate, larger piece that would sit on
+top of this one, deliberately sequenced after it rather than alongside it.
+
+**Alternatives.** Any of the small third-party Swift Argon2 wrappers
+(inherits their own, thinner trust profile on top of the same C code, for
+no benefit over depending on the C code's own package directly). Vendoring
+the reference C source into Flight's own tree, as `CFlightZlib` vendors a
+systemLibrary shim for zlib (rejected: zlib is preinstalled everywhere and
+`CFlightZlib` only wraps the system's own copy; Argon2 is not preinstalled
+anywhere, so vendoring it would mean Flight owning the update cadence of
+someone else's cryptographic C source, which is strictly worse than
+depending on the authors' own repository at a pinned commit). Waiting for
+swift-crypto (Apple's own maintainers already declined the addition; there
+is nothing to wait for). Bcrypt or scrypt instead of Argon2id (OWASP's
+unqualified recommendation is Argon2id when there is no library
+constraint forcing a fallback, and this decision exists to remove that
+constraint, not accept it).
+
+**Cost of reversing.** The dependency and the two files that use it
+(`PasswordHashing.swift`, `Argon2idHashing.swift`); nothing else in the
+package references either.
+
+---
+
 ## D34 — Client address: raw peer always available, trusted-proxy resolution defaults to trusting nothing
 
 **Context.** `Request` had no peer address at all — flagged repeatedly

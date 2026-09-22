@@ -131,6 +131,12 @@ WebSocket's HTTP upgrade is what the channel's join sees.
 - ``OIDCSecurityConfiguration``
 - ``TokenValidationError``
 
+### Hashing a password
+
+- ``PasswordHashing``
+- ``Argon2idHashing``
+- ``PasswordHashingError``
+
 ### Where keys come from
 
 - ``JWKSSource``

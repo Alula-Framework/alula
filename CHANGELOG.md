@@ -4,6 +4,36 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`PasswordHashing` and `Argon2idHashing`.** Not a credential system — no
+  store, no login route, no account model — the one primitive underneath
+  where any of those would sit: `hash(_:)`, `verify(_:against:)` (never
+  throws; a mismatch is `false`, not an error), and `needsRehash(_:)`, which
+  says when a stored hash was made under weaker cost parameters than the
+  app runs now, so raising them over time upgrades each account on its next
+  sign-in rather than needing a migration that touches every row.
+
+  `Argon2idHashing` wraps the Argon2 reference implementation directly — a
+  second deliberate departure from the Apple-adjacent/SSWG dependency
+  policy, alongside JWTKit, and recorded the same way. Apple's own
+  swift-crypto maintainers declined an Argon2id addition and pointed
+  contributors at a standalone package instead; nothing in the resulting
+  small-package ecosystem carries the maintenance signal the rest of this
+  package's dependencies do. The reference implementation itself does: it
+  is the algorithm designers' own code, dual CC0/Apache-2.0, already
+  packaged for SwiftPM, building only the portable reference sources. It
+  carries no semver tags, so the dependency is pinned by exact revision
+  rather than `from:`, which for a cryptographic primitive is arguably more
+  honest than a floating range would be. DECISIONS.md D35 has the rest.
+
+  "No hand-rolled cryptography" is unchanged by any of this — delegating to
+  the reference implementation is exactly what that rule always meant.
+  "No first-party credential checking" is also unchanged: this release adds
+  a primitive a credential system would use, not the system itself.
+
 ## [0.27.0] - 2026-09-22
 
 ### Added

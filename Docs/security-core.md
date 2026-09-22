@@ -480,13 +480,51 @@ the coders, the error mapper and the logger, and never touches it. The
 composition migration replaced the holder with the typed `RequestContext.identity`
 value described above.
 
+## Hashing a password
+
+`PasswordHashing` is the one piece of a first-party credential story that
+exists here so far — not a `CredentialStore`, not a login route, just the
+primitive underneath either: turning a password into something safe to
+store, and checking one against it later.
+
+```swift
+let hasher = Argon2idHashing()                     // OWASP's default cost parameters
+let stored = try hasher.hash(newPassword)            // save the whole string
+let signedIn = hasher.verify(attempt, against: stored)  // never throws: no match is "false", not an error
+```
+
+`Argon2idHashing` wraps the actual Argon2 reference implementation — the C
+source the algorithm's own designers publish and that RFC 9106 is built
+from, not a Swift reimplementation — the same posture as delegating JWT
+verification to JWTKit. `needsRehash` says when a stored hash was made under
+weaker parameters than the app is configured with now, so raising the cost
+over time upgrades each account the next time its owner signs in rather
+than needing a migration that touches every row at once:
+
+```swift
+if hasher.needsRehash(stored) {
+    account.passwordHash = try hasher.hash(attempt)   // only possible here: the plaintext is in hand
+}
+```
+
+This is deliberately narrow. There is no `CredentialStore` here, no
+registration flow, no rate-limited login route — those are a larger,
+separate piece, and this is only the one primitive they would all sit on.
+
 ## Non-goals
 
-Per design: no first-party credential checking (no passwords, no credential
-storage), no authorization engine in v1, no hand-rolled cryptography, no
-per-vendor packages for OIDC-compliant providers, no token issuance, no TLS
-opinions. Sessions carry a principal the application established some other
-way; they do not establish one.
+Per design: no first-party credential *checking* — no `CredentialStore`, no
+login route, no account model (`PasswordHashing` above is the primitive, not
+the system) — no authorization engine in v1, no per-vendor packages for
+OIDC-compliant providers, no token issuance, no TLS opinions. Sessions carry
+a principal the application established some other way; they do not
+establish one.
+
+"No hand-rolled cryptography" is upheld, not reversed, by `Argon2idHashing`:
+the algorithm is delegated to its own reference implementation, exactly as
+JWT verification is delegated to JWTKit. What changed is the dependency
+policy, not this rule — see `Package.swift`'s note on the second deliberate
+exception.
 
 ## Development
 

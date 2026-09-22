@@ -24,7 +24,7 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightRateLimit` | A GCRA rate limiter and its store seam. Not an HTTP concern: `FlightWeb`'s `RateLimiting` middleware is one consumer, a login throttle is another. |
 | `FlightWeb`'s `TrustedProxies` | The real client address behind a reverse proxy, resolved from `X-Forwarded-For` only as far as a configured trusted range reaches. |
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
-| `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. |
+| `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. Also `PasswordHashing`/`Argon2idHashing`, the one primitive a first-party credential story would sit on. |
 | `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
@@ -57,7 +57,7 @@ enabled trait reaches.
 | Trait | Brings |
 | --- | --- |
 | `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack |
-| `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient. Implies `Web`. |
+| `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
 | `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient. Implies nothing; a push-sending worker needs no HTTP server. |
 
 All three are opt-in. Name what you want:

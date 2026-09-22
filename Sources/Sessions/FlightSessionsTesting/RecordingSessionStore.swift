@@ -8,15 +8,17 @@ import Synchronization
 ///
 /// `misbehave()` makes every subsequent call throw, which is what a downed
 /// store looks like and is the path the middleware's 503 exists for.
-public final class RecordingSessionStore: SessionStore, Sendable {
+public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
     public enum Operation: Sendable, Equatable {
         case load(SessionID)
         case save(SessionID, ttl: Duration)
         case delete(SessionID)
+        case deleteOwned(String, keeping: SessionID?)
     }
 
     private struct State {
         var entries: [SessionID: (data: Data, ttl: Duration?)] = [:]
+        var owners: [SessionID: String] = [:]
         var operations: [Operation] = []
         var misbehaving = false
     }
@@ -36,13 +38,39 @@ public final class RecordingSessionStore: SessionStore, Sendable {
     }
 
     public func save(_ id: SessionID, _ record: Data, ttl: Duration) async throws {
+        try await save(id, record, ttl: ttl, owner: nil)
+    }
+
+    public func save(_ id: SessionID, _ record: Data, ttl: Duration, owner: String?) async throws {
         try state.withLock { state in
             state.operations.append(.save(id, ttl: ttl))
             guard !state.misbehaving else {
                 throw SessionStoreError(operation: .save, reason: "store is misbehaving")
             }
             state.entries[id] = (record, ttl)
+            state.owners[id] = owner
         }
+    }
+
+    @discardableResult
+    public func deleteSessions(ownedBy owner: String, keeping: SessionID?) async throws -> Int {
+        try state.withLock { state in
+            state.operations.append(.deleteOwned(owner, keeping: keeping))
+            guard !state.misbehaving else {
+                throw SessionStoreError(operation: .delete, reason: "store is misbehaving")
+            }
+            let doomed = state.owners.filter { $0.value == owner && $0.key != keeping }.map(\.key)
+            for id in doomed {
+                state.entries.removeValue(forKey: id)
+                state.owners.removeValue(forKey: id)
+            }
+            return doomed.count
+        }
+    }
+
+    /// The owner the last save for `id` recorded.
+    public func owner(for id: SessionID) -> String? {
+        state.withLock { $0.owners[id] }
     }
 
     public func delete(_ id: SessionID) async throws {
@@ -52,6 +80,7 @@ public final class RecordingSessionStore: SessionStore, Sendable {
                 throw SessionStoreError(operation: .delete, reason: "store is misbehaving")
             }
             state.entries.removeValue(forKey: id)
+            state.owners.removeValue(forKey: id)
         }
     }
 

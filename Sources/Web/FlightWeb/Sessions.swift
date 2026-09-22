@@ -13,6 +13,21 @@ import Logging
 /// and stop (D27). Same reason `FlightCacheModule` provides a `CacheRuntime`
 /// rather than the `Cache` it wraps.
 public final class SessionRuntime: Sendable {
+    /// Ends every session `owner` has except `keeping` — "sign out
+    /// everywhere else" after a password change, or everywhere when an
+    /// account is disabled. Returns how many ended.
+    ///
+    /// Throws `SessionRevocationUnsupported` when the store does not index
+    /// by owner. The in-memory store does; flight-data's Valkey store does
+    /// from the release that follows this one.
+    @discardableResult
+    public func revokeSessions(ownedBy owner: String, keeping: SessionID? = nil) async throws -> Int {
+        guard let indexed = store as? any OwnerIndexedSessionStore else {
+            throw SessionRevocationUnsupported(storeType: String(describing: type(of: store)))
+        }
+        return try await indexed.deleteSessions(ownedBy: owner, keeping: keeping)
+    }
+
     public let store: any SessionStore
     public let settings: SessionSettings
     let coding: Session.Coding
@@ -94,7 +109,12 @@ public struct Sessions: Middleware {
 
         case .save(let id, let record, let replacing):
             do {
-                try await runtime.store.save(id, try record.encoded(), ttl: settings.ttl)
+                let data = try record.encoded()
+                if let indexed = runtime.store as? any OwnerIndexedSessionStore {
+                    try await indexed.save(id, data, ttl: settings.ttl, owner: record.owner)
+                } else {
+                    try await runtime.store.save(id, data, ttl: settings.ttl)
+                }
                 if let replacing {
                     try await runtime.store.delete(replacing)
                 }

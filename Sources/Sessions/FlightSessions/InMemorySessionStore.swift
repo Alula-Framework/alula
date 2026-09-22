@@ -14,13 +14,14 @@ import Synchronization
 /// entry is dropped when loaded, and swept when the bound is reached. Past
 /// the bound the least recently loaded entries go, in batches, so the cost
 /// of bounding is paid once per batch rather than once per save.
-public final class InMemorySessionStore: SessionStore, Sendable {
+public final class InMemorySessionStore: OwnerIndexedSessionStore, Sendable {
     public static let defaultMaxEntries = 100_000
 
     private struct Entry {
         var data: Data
         var expiresAt: Date
         var lastAccess: Date
+        var owner: String?
     }
 
     private let entries = Mutex<[SessionID: Entry]>([:])
@@ -55,11 +56,28 @@ public final class InMemorySessionStore: SessionStore, Sendable {
     }
 
     public func save(_ id: SessionID, _ record: Data, ttl: Duration) async throws {
+        try await save(id, record, ttl: ttl, owner: nil)
+    }
+
+    public func save(_ id: SessionID, _ record: Data, ttl: Duration, owner: String?) async throws {
         let now = now()
         entries.withLock { entries in
             entries[id] = Entry(
-                data: record, expiresAt: now.addingTimeInterval(ttl.timeInterval), lastAccess: now)
+                data: record, expiresAt: now.addingTimeInterval(ttl.timeInterval), lastAccess: now,
+                owner: owner)
             enforceBound(&entries, now: now)
+        }
+    }
+
+    /// A scan, not an index: in one process, bounded, and run rarely — at a
+    /// password change or an account being disabled — it is cheaper than
+    /// keeping a second map consistent on every save.
+    @discardableResult
+    public func deleteSessions(ownedBy owner: String, keeping: SessionID?) async throws -> Int {
+        entries.withLock { entries in
+            let doomed = entries.filter { $0.value.owner == owner && $0.key != keeping }.map(\.key)
+            for id in doomed { entries.removeValue(forKey: id) }
+            return doomed.count
         }
     }
 

@@ -227,4 +227,101 @@ struct SessionIdentityTests {
         #expect(
             await client.get("/whoami", headers: [.cookie: String(after)]).status == .unauthorized)
     }
+
+    // MARK: Signing out everywhere
+
+    /// A login route that signs in whoever `?as=` names, the logout-others
+    /// route a password change would call, and who-am-I.
+    private func revocationClient(_ store: any SessionStore) throws -> TestClient {
+        let sessionsModule = try FlightSessionsModule(
+            configuration: Configuration(values: ["sessions.cookie-secure": "false"]), store: store)
+        let runtime = sessionsModule.runtime
+        let routes = [
+            RouteRegistration(method: .post, path: "/login", source: "test") { context in
+                let subject = context.request.queryParam("as") ?? "ada"
+                try context.requireSession().signIn(testPrincipal(subject: subject))
+                return .status(.noContent)
+            },
+            RouteRegistration(
+                method: .post, path: "/sign-out-others", source: "test", pipelines: [.authenticated]
+            ) { context in
+                let session = try context.requireSession()
+                let ended = try await runtime.revokeSessions(
+                    ownedBy: try context.requirePrincipal().subject, keeping: session.id)
+                return .text("\(ended)")
+            },
+            RouteRegistration(
+                method: .get, path: "/whoami", source: "test", pipelines: [.authenticated]
+            ) { context in
+                .text(try context.requirePrincipal().subject)
+            },
+        ]
+        return try TestClient(
+            routes: routes,
+            middleware: sessionsModule.middleware
+                + FlightSecurityModule(validator: validator, sessions: runtime).middleware)
+    }
+
+    private func signIn(_ client: TestClient, as subject: String) async throws -> String {
+        let response = await client.post("/login?as=\(subject)")
+        return try #require(
+            response.headerValues("Set-Cookie").compactMap { $0.split(separator: ";").first }
+                .first { $0.hasPrefix("session=") }
+                .map(String.init))
+    }
+
+    @Test("signing in records the subject as the session's owner; signing out clears it")
+    func ownerFollowsSignIn() throws {
+        let session = Session()
+        try session.signIn(testPrincipal(subject: "ada"))
+        #expect(session.owner == "ada")
+        session.signOut()
+        #expect(session.owner == nil)
+    }
+
+    @Test("sign out everywhere else: other sessions of the same person end, this one and others' do not")
+    func revokeOthers() async throws {
+        let client = try revocationClient(store)
+        let laptop = try await signIn(client, as: "ada")
+        let phone = try await signIn(client, as: "ada")
+        let grace = try await signIn(client, as: "grace")
+        for cookie in [laptop, phone, grace] {
+            #expect(await client.get("/whoami", headers: [.cookie: cookie]).status == .ok)
+        }
+
+        let ended = await client.post("/sign-out-others", headers: [.cookie: laptop])
+        #expect(ended.bodyText == "1")
+        #expect(await client.get("/whoami", headers: [.cookie: laptop]).status == .ok)
+        #expect(await client.get("/whoami", headers: [.cookie: phone]).status == .unauthorized)
+        #expect(await client.get("/whoami", headers: [.cookie: grace]).bodyText == "grace")
+    }
+
+    @Test("the in-memory store indexes by owner too")
+    func inMemoryRevokes() async throws {
+        let client = try revocationClient(InMemorySessionStore())
+        let first = try await signIn(client, as: "ada")
+        let second = try await signIn(client, as: "ada")
+        _ = await client.post("/sign-out-others", headers: [.cookie: first])
+        #expect(await client.get("/whoami", headers: [.cookie: second]).status == .unauthorized)
+        #expect(await client.get("/whoami", headers: [.cookie: first]).status == .ok)
+    }
+
+    /// A store that does not index by owner.
+    private final class PlainStore: SessionStore, @unchecked Sendable {
+        private let inner = InMemorySessionStore()
+        func load(_ id: SessionID) async throws -> Data? { try await inner.load(id) }
+        func save(_ id: SessionID, _ record: Data, ttl: Duration) async throws {
+            try await inner.save(id, record, ttl: ttl)
+        }
+        func delete(_ id: SessionID) async throws { try await inner.delete(id) }
+    }
+
+    @Test("a store that cannot index by owner says so rather than ending nothing")
+    func unsupportedStore() async throws {
+        let runtime = SessionRuntime(
+            store: PlainStore(), settings: try SessionSettings(ttl: .seconds(60), cookieSecure: false))
+        await #expect(throws: SessionRevocationUnsupported.self) {
+            try await runtime.revokeSessions(ownedBy: "ada")
+        }
+    }
 }

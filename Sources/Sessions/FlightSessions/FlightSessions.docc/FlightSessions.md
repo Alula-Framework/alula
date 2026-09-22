@@ -48,3 +48,13 @@ target the way `FlightChannels` depends on `FlightPubSub`.
 ### The default store
 
 - ``InMemorySessionStore``
+
+### Signing out everywhere
+
+- ``OwnerIndexedSessionStore``
+- ``SessionRevocationUnsupported``
+
+### One-time links
+
+- ``OneTimeTokenStore``
+- ``InMemoryOneTimeTokenStore``

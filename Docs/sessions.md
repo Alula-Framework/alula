@@ -324,6 +324,46 @@ Ordering is `FlightSecurityModule`'s: given the session runtime, it runs
 of your own that gets that backwards is refused at startup. The details are
 in `Docs/security-core.md` under *Signing in with a session*.
 
+## Signing out everywhere
+
+Every session knows its owner, which is the subject `signIn` stored. A
+store that indexes sessions by owner can end all of one person's sessions
+at once. You want that after a password change, and when an account is
+disabled:
+
+```swift
+// After a password change: every other browser signs in again.
+try await sessions.revokeSessions(
+    ownedBy: principal.subject, keeping: context.requireSession().id)
+
+// An account disabled by an administrator: everywhere.
+try await sessions.revokeSessions(ownedBy: subject)
+```
+
+`sessions` is the `SessionRuntime` that `FlightSessionsModule` provides.
+Inject it where you need it.
+
+Indexing is a capability, `OwnerIndexedSessionStore`, rather than a
+requirement of `SessionStore`. A store is handed opaque bytes, and indexing
+them is extra work it opts into. The in-memory store does it, and so does
+flight-data's Valkey store from 0.10.0. A store that doesn't index keeps
+working. Asking it to revoke throws `SessionRevocationUnsupported` rather
+than ending nothing, because a "sign out everywhere" that signs nobody out
+is the failure this exists to prevent.
+
+A session with no owner encodes exactly as it did before owners existed,
+so records already in a store read unchanged.
+
+## One-time links
+
+`OneTimeTokenStore` lives here too. It's the short-lived, single-use
+storage behind a password-reset or email-verification link, the same kind
+of thing as a session: server-side state with a lifetime that must be
+shared across replicas. The token logic is `FlightSecurityCore`'s
+`OneTimeTokens`, which covers hashing, purposes, binding, and redeeming
+once. See `Docs/sign-in.md`. A store needs only `put` and an atomic
+`take`.
+
 ## CSRF
 
 A signed-in session is exactly what CSRF protection exists to defend —

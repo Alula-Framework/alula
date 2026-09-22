@@ -50,3 +50,39 @@ public struct SessionStoreError: Error, Sendable, CustomStringConvertible {
         "session store \(operation.rawValue) failed: \(reason)"
     }
 }
+
+/// A store that also knows whose session each one is, and so can end every
+/// session one person has — "sign out everywhere", after a password change
+/// or when an account is disabled.
+///
+/// A capability rather than a requirement of ``SessionStore``: a store is
+/// handed opaque bytes, and indexing them by owner is extra work a store
+/// opts into. The middleware hands an indexing store the owner on every
+/// save; a store that does not index keeps working unchanged, and asking it
+/// to revoke says so (``SessionRevocationUnsupported``) rather than quietly
+/// ending nothing.
+public protocol OwnerIndexedSessionStore: SessionStore {
+    /// ``SessionStore/save(_:_:ttl:)``, recording that `id` belongs to
+    /// `owner` — replacing whatever owner it had, and forgetting it when
+    /// `owner` is nil.
+    func save(_ id: SessionID, _ record: Data, ttl: Duration, owner: String?) async throws
+
+    /// Deletes every live session belonging to `owner` except `keeping`,
+    /// and says how many went. Absent or expired ones are not an error.
+    @discardableResult
+    func deleteSessions(ownedBy owner: String, keeping: SessionID?) async throws -> Int
+}
+
+/// Asked to end someone's sessions, a store that does not index them by
+/// owner. Surfaced, never swallowed: a "sign out everywhere" that silently
+/// signed nobody out is the failure this exists to prevent.
+public struct SessionRevocationUnsupported: Error, Sendable, CustomStringConvertible {
+    public let storeType: String
+
+    public init(storeType: String) { self.storeType = storeType }
+
+    public var description: String {
+        "\(storeType) does not index sessions by owner, so it cannot end every session one "
+            + "person has. Use a store that conforms to OwnerIndexedSessionStore."
+    }
+}

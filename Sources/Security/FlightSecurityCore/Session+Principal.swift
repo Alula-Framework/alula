@@ -24,6 +24,8 @@ extension Session {
     /// still there after.
     public func signIn(_ principal: Principal) throws {
         try set(Self.principalKey, principal)
+        // The owner is what "sign out everywhere" finds this session by.
+        setOwner(principal.subject)
         regenerate()
     }
 
@@ -32,6 +34,7 @@ extension Session {
     /// nothing behind.
     public func signOut() {
         remove(Self.principalKey)
+        setOwner(nil)
         regenerate()
     }
 

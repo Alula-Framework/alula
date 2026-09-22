@@ -238,6 +238,36 @@ struct SessionTests {
         let decoded = try SessionRecord(decoding: try record.encoded())
         #expect(decoded == record)
     }
+
+    // MARK: Owner
+
+    @Test("a record without an owner encodes exactly as before owners existed")
+    func ownerlessEncodingUnchanged() throws {
+        let record = SessionRecord(
+            values: ["k": Data("1".utf8)], createdAt: Date(timeIntervalSince1970: 1),
+            expiresAt: Date(timeIntervalSince1970: 2))
+        let text = String(decoding: try record.encoded(), as: UTF8.self)
+        #expect(!text.contains("owner"))
+        // And an old record decodes with no owner.
+        #expect(try SessionRecord(decoding: record.encoded()).owner == nil)
+    }
+
+    @Test("the owner round-trips through the record, and setting it again costs no write")
+    func ownerRoundTrip() throws {
+        let fresh = Session()
+        try fresh.set("k", 1)
+        fresh.setOwner("ada")
+        guard case .save(let id, let record, _) = fresh.commit(now: Date(), ttl: .seconds(60)) else {
+            Issue.record("expected a save")
+            return
+        }
+        #expect(record.owner == "ada")
+        let loaded = Session(id: id, record: record)
+        #expect(loaded.owner == "ada")
+        loaded.setOwner("ada")
+        #expect(loaded.commit(now: Date(), ttl: .seconds(60)) == .nothing)
+    }
+
 }
 
 extension Duration {

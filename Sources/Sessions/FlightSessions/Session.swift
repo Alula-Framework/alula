@@ -51,6 +51,7 @@ public final class Session: Sendable {
     private struct State {
         var loaded: Loaded?
         var values: [String: Data]
+        var owner: String?
         /// Flash written by the previous request, readable during this one.
         var flash: [String: Data]
         /// Flash written during this request, for the next one.
@@ -64,7 +65,7 @@ public final class Session: Sendable {
         func record(createdAt: Date, now: Date, ttl: Duration) -> SessionRecord {
             SessionRecord(
                 values: values, flash: nextFlash, createdAt: createdAt,
-                expiresAt: now.addingTimeInterval(ttl.timeInterval))
+                expiresAt: now.addingTimeInterval(ttl.timeInterval), owner: owner)
         }
     }
 
@@ -87,6 +88,7 @@ public final class Session: Sendable {
                     id: id, createdAt: record.createdAt, expiresAt: record.expiresAt,
                     hadFlash: !record.flash.isEmpty),
                 values: record.values,
+                owner: record.owner,
                 flash: record.flash))
     }
 
@@ -108,6 +110,26 @@ public final class Session: Sendable {
 
     public var isDestroyed: Bool {
         state.withLock { $0.isDestroyed }
+    }
+
+    // MARK: - Owner
+
+    /// Whose session this is: an opaque id, usually the signed-in subject.
+    /// `Session.signIn(_:)` in FlightSecurityCore sets it and `signOut()`
+    /// clears it, so an application using that never touches this.
+    public var owner: String? {
+        state.withLock { $0.owner }
+    }
+
+    /// Records whose session this is, so a store that indexes by owner
+    /// (``OwnerIndexedSessionStore``) can end every one of them at once.
+    /// Setting what is already there does not mark the session modified.
+    public func setOwner(_ owner: String?) {
+        state.withLock { state in
+            guard state.owner != owner else { return }
+            state.owner = owner
+            state.isModified = true
+        }
     }
 
     // MARK: - Values

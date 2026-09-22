@@ -224,12 +224,53 @@ one:
 - **Front end.** Nothing changes, if it asks `beginSignIn` first and handles
   both answers.
 
+## One-time links
+
+The primitive under password reset, email verification and magic sign-in
+links:
+
+```swift
+let tokens = OneTimeTokens(store: tokenStore)
+
+// Issue — the raw token goes in the email and nowhere else.
+let token = try await tokens.issue(
+    for: account.subject, purpose: .passwordReset, lifetime: .seconds(3600),
+    binding: account.passwordHash)
+
+// Redeem — once.
+let subject = try await tokens.redeem(token, purpose: .passwordReset) { subject in
+    try await accounts.find(subject: subject)?.passwordHash
+}
+```
+
+A token is 256 random bits, and the store keeps only its SHA-256, so a
+leaked store or backup redeems nothing. Redeeming takes the record out of
+the store in one atomic step, so two requests racing with one link get one
+success. A token issued for one purpose is refused for any other.
+
+`binding` is optional. It's any value the token should stop working once
+that value changes. Bind a reset token to the current password hash, and
+any password change, by this link or another way, voids every reset link
+already sent. Every failure is the same `400`: unknown, used, expired,
+wrong purpose, or stale binding.
+
+`InMemoryOneTimeTokenStore` is for one replica. flight-data's Valkey store
+shares tokens across replicas from 0.10.0.
+
+## Signing out everywhere
+
+A session knows whose it is. `signIn` records the subject as its owner,
+so `SessionRuntime.revokeSessions(ownedBy:keeping:)` can end every other
+session one person has after a password change, or all of them when an
+account is disabled. `Docs/sessions.md` has the details, including which
+stores support it.
+
 ## Not yet here
 
-Registration, password reset, email verification, a user directory, and MFA.
-These are the next pieces, built on the same seams, and they'll follow the
-same rule: a local implementation, and an external one where the provider
-hosts the flow.
+Registration, password-reset and email-verification *flows*, a user
+directory, and MFA. The primitives above are what those flows are built
+from. The flows themselves come next, following the same rule: a local
+implementation, and an external one where the provider hosts the flow.
 
 Issuing tokens for other applications is deliberately not planned. The moment
 other services need to trust your tokens, you're running an identity

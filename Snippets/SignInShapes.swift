@@ -4,6 +4,7 @@
 import FlightCore
 import FlightRateLimit
 import FlightSecurityCore
+import FlightSessions
 import FlightWeb
 import Foundation
 
@@ -84,4 +85,19 @@ func signInShapes(configuration: Configuration, store: any CredentialStore, limi
         postLogoutRedirectURI: URL(string: "https://app.example.com/")!)
     let _: any SignInProvider = OIDCSignIn(configuration: oidc)
     _ = SignInReturnPath.validated("/rooms")
+}
+
+// One-time links and signing out everywhere.
+func oneTimeShapes(
+    tokenStore: any OneTimeTokenStore, sessions: SessionRuntime, context: RequestContext,
+    subject: String, passwordHash: String
+) async throws {
+    let tokens = OneTimeTokens(store: tokenStore)
+    let token = try await tokens.issue(
+        for: subject, purpose: .passwordReset, lifetime: .seconds(3600), binding: passwordHash)
+    _ = try await tokens.redeem(token, purpose: .passwordReset) { _ in passwordHash }
+    _ = InMemoryOneTimeTokenStore()
+
+    try await sessions.revokeSessions(ownedBy: subject, keeping: context.requireSession().id)
+    try await sessions.revokeSessions(ownedBy: subject)
 }

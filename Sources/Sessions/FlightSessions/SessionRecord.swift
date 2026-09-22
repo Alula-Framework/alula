@@ -21,16 +21,26 @@ public struct SessionRecord: Codable, Sendable, Equatable {
     /// sliding renewal is due.
     public var expiresAt: Date
 
+    /// Whose session this is — an opaque id the application gave it, the
+    /// signed-in principal's subject when FlightSecurityCore signs someone
+    /// in. What lets every session of one person be found and ended at once
+    /// (``OwnerIndexedSessionStore``). Nil for an anonymous session, and
+    /// omitted from the encoding then, so a record without an owner encodes
+    /// exactly as it did before owners existed.
+    public var owner: String?
+
     public init(
         values: [String: Data] = [:],
         flash: [String: Data] = [:],
         createdAt: Date,
-        expiresAt: Date
+        expiresAt: Date,
+        owner: String? = nil
     ) {
         self.values = values
         self.flash = flash
         self.createdAt = createdAt
         self.expiresAt = expiresAt
+        self.owner = owner
     }
 
     /// The bytes a store is handed.

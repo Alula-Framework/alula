@@ -162,6 +162,8 @@ the whole story.
 - ``InMemoryCredentialStore``
 - ``PasswordAuthenticator``
 - ``PasswordAuthenticationError``
+- ``OneTimeTokens``
+- ``OneTimeTokenError``
 
 ### Where keys come from
 

@@ -100,6 +100,19 @@ struct InMemorySessionStoreTests {
         #expect(try await store.load(ids[1]) == nil, "the least recently loaded went")
         #expect(store.count <= 4)
     }
+
+    @Test("deleting by owner ends only that owner's sessions, keeping the one asked")
+    func deleteByOwner() async throws {
+        let store = InMemorySessionStore()
+        let (a1, a2, b) = (SessionID.generate(), SessionID.generate(), SessionID.generate())
+        try await store.save(a1, Data("1".utf8), ttl: .seconds(60), owner: "ada")
+        try await store.save(a2, Data("2".utf8), ttl: .seconds(60), owner: "ada")
+        try await store.save(b, Data("3".utf8), ttl: .seconds(60), owner: "grace")
+        #expect(try await store.deleteSessions(ownedBy: "ada", keeping: a1) == 1)
+        #expect(try await store.load(a1) != nil)
+        #expect(try await store.load(a2) == nil)
+        #expect(try await store.load(b) != nil)
+    }
 }
 
 @Suite("RecordingSessionStore")

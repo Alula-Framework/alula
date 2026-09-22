@@ -7,6 +7,52 @@ wrong, say so and it changes.
 
 ---
 
+## D40 — Sign-out-everywhere is a store capability; one-time tokens store digests beside sessions
+
+**Context.** Flows the sign-in work leads to need two primitives. A password
+change should end a person's other sessions. A reset or verification link
+must work exactly once. Neither existed.
+
+**Chosen, revocation.** A session gets an `owner`, which `Session.signIn`
+sets to the subject. The middleware hands the owner to a store that adopts
+a new `OwnerIndexedSessionStore` protocol, and
+`SessionRuntime.revokeSessions(ownedBy:keeping:)` deletes by owner.
+Adopting it is a *capability*, not a new requirement on `SessionStore`:
+stores receive opaque bytes, and adding a requirement would break every
+third-party store for a feature many applications never use. A store that
+doesn't adopt it throws `SessionRevocationUnsupported` when asked, rather
+than ending nothing. An owner-less record encodes byte-identically to
+before, so existing sessions and the "same bytes, no write" optimisation
+are untouched.
+
+**Chosen, one-time tokens.** `OneTimeTokens` in FlightSecurityCore: 256
+random bits, SHA-256 digest as the store key, purpose-bound, redeemed by an
+atomic `take`, optionally bound to a value (a password hash) whose change
+voids the token. The store seam, `OneTimeTokenStore`, lives in
+dependency-free `FlightSessions` rather than beside the tokens. The reason
+is packaging, not taste. flight-data depends on flight with no traits, so a
+seam inside Security-gated `FlightSecurityCore` would force the Security
+trait's dependencies on every flight-data user just to ship a Valkey
+implementation.
+
+**Why binding rather than an index.** "Void all outstanding reset links"
+could be an index by subject, like sessions. Binding to the password hash
+gets the same result with no index, catches password changes made any other
+way, and needs nothing from the store beyond `put` and `take`.
+
+**Alternatives.** A per-subject "sessions valid after" timestamp checked on
+every request (works with any store, but costs a store read per
+authenticated request forever, to serve a rare operation). Storing tokens
+raw (a leaked store would be a pile of working reset links). Get-then-delete
+redemption (a race redeems one link twice; the test has twenty requests
+race). A token-store seam in FlightSecurityCore (the packaging problem
+above).
+
+**Cost of reversing.** Everything is additive. `SessionRecord.owner` is
+optional and omitted when nil.
+
+---
+
 ## D39 — First-party sign-in, behind a seam an external provider also fits
 
 **Context.** "No first-party credential checking" was a stated non-goal:

@@ -4,6 +4,33 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Signing out everywhere.** A session knows its owner: `Session.signIn`
+  records the subject. `SessionRuntime.revokeSessions(ownedBy:keeping:)`
+  ends every other session one person has, after a password change, or all
+  of them when an account is disabled. Stores opt in through
+  `OwnerIndexedSessionStore`. The in-memory store and the recording test
+  store both adopt it, and flight-data's Valkey store follows. A store that
+  doesn't adopt it throws `SessionRevocationUnsupported` rather than
+  silently ending nothing. D40.
+- **One-time links: `OneTimeTokens`.** Covers password reset, email
+  verification, and magic sign-in:
+  - 256-bit tokens, with only their SHA-256 stored;
+  - purpose-bound;
+  - redeemed once, atomically (twenty racing requests get one success);
+  - optionally bound to a value such as the password hash, whose change
+    voids every token already sent.
+
+  Every failure is one generic 400. The store seam, `OneTimeTokenStore`,
+  with `InMemoryOneTimeTokenStore`, lives in dependency-free
+  `FlightSessions`, so flight-data can implement it without the Security
+  trait.
+- `Session.owner` / `setOwner(_:)`, and `SessionRecord.owner`. It's omitted
+  from the encoding when nil, so existing records are byte-identical.
+
 ## [0.31.0] - 2026-09-22
 
 ### Added

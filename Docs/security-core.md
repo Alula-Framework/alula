@@ -29,7 +29,7 @@ JWKS fetching/rotation, claim policy, and error hygiene.
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.30.0", traits: ["Security"]),
+        from: "0.31.0", traits: ["Security"]),
 ],
 targets: [
     .executableTarget(

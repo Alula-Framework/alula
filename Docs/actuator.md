@@ -18,7 +18,7 @@ implementation had to make.
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.25.0", traits: ["Web"]),
+        from: "0.26.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

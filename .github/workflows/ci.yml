@@ -43,6 +43,14 @@ jobs:
       - name: Lean consumer resolves no gated dependency
         run: ./CI/check-lean-consumer.sh
 
+      # The lean check takes Flight by path, which SwiftPM exempts from the
+      # rule that a version-resolved package may not depend on a revision- or
+      # branch-pinned one. 0.28.0 and 0.29.0 broke exactly that way for every
+      # consumer enabling Security, with this whole job green (D37). This one
+      # tags a copy of the tree and resolves it by version, every trait on.
+      - name: Versioned consumer resolves with every trait
+        run: ./CI/check-versioned-consumer.sh
+
       # The generator tests assert on emitted text and exit codes, so a
       # generated file can satisfy all of them and still not compile. This
       # builds a consumer whose component reads configuration — the shape

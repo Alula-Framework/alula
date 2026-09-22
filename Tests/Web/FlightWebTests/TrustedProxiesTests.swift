@@ -160,6 +160,7 @@ struct TrustedProxiesTests {
     func headerNamesAreValid() {
         #expect(HTTPField.Name("x-forwarded-for") != nil)
         #expect(HTTPField.Name("forwarded") != nil)
+        #expect(HTTPField.Name("x-csrf-token") != nil)
     }
 }
 

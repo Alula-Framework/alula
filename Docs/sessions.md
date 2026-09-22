@@ -324,6 +324,15 @@ Ordering is `FlightSecurityModule`'s: given the session runtime, it runs
 of your own that gets that backwards is refused at startup. The details are
 in `Docs/security-core.md` under *Signing in with a session*.
 
+## CSRF
+
+A signed-in session is exactly what CSRF protection exists to defend —
+ambient, cookie-carried authority a browser attaches automatically, to a
+request an attacker's page triggers without the visitor's knowledge.
+`CSRFProtection` is `FlightWeb`'s, keyed off the same session's own token,
+with the same `SessionReading` ordering rule `Authentication` follows. See
+`Docs/web.md` under *CSRF*.
+
 ## Testing
 
 `RecordingSessionStore` from `FlightSessionsTesting` serves from a dictionary
@@ -347,9 +356,6 @@ hands it an empty session to write to.
 
 ## Deliberately not here
 
-- **CSRF protection.** A session is the place a CSRF token lives, and that
-  is the next thing to build on this. `SameSite=Lax` — the default —
-  already stops the cross-site form post that CSRF classically means.
 - **Client-side (signed cookie) sessions.** A 4 KB ceiling, no revocation,
   and a signing key to rotate. The server-side design needs none of those.
 - **Per-key merging of concurrent writes.** See *Concurrency*.

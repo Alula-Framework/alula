@@ -4,6 +4,36 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`CSRFProtection`**, closing the gap Sessions' own doc had left open
+  since 0.23.0: "a session is the place a CSRF token lives, and that is
+  the next thing to build on this." A middleware that refuses a POST, PUT,
+  PATCH or DELETE without the session's own token on `X-CSRF-Token`;
+  GET/HEAD/OPTIONS/TRACE are exempt, per RFC 9110's own definition of safe.
+  `Session.csrfToken()` is the value to hand whatever will submit the next
+  request — a hidden form field, a `<meta>` tag, a JSON field — generated
+  once per session and stable across every request until the session ends.
+  The comparison is constant-time, so a mismatch and a match take
+  indistinguishable time regardless of where the first differing byte is.
+
+  A request with no session at all is left alone rather than refused: CSRF
+  protects ambient, cookie-carried authority, and a bearer-token-only route
+  has none of that to protect in the first place, the same property that
+  already makes header-authenticated APIs immune to CSRF. `CSRFProtection`
+  conforms to `SessionReading`, so a lane listing it ahead of `Sessions` by
+  mistake fails composition by name, the same check `Authentication`
+  already gets.
+
+  Deliberately reads only the header, never a submitted form field: the
+  defense this provides is that an attacker's page cannot read the token
+  off your page to attach it, which the header already proves on its own —
+  parsing a form body for the same value would be more code for no more
+  security. An application still doing classic multipart posts moves the
+  value into the header itself, in its own middleware, ahead of this one.
+
 ## [0.28.0] - 2026-09-22
 
 ### Added

@@ -7,6 +7,59 @@ wrong, say so and it changes.
 
 ---
 
+## D36 — CSRF checks a header only, and a request with no session is not an error
+
+**Context.** Sessions' own doc has said since 0.23.0 that CSRF is "the next
+thing to build on this," deliberately left open because it needed the
+session abstraction that did not exist yet. It does now.
+
+**Chosen.** The synchronizer pattern: one token per session, generated on
+first access and stored in `Session` itself rather than a second cookie —
+no double-submit cookie, and none of the subdomain-cookie-injection
+surface that pattern carries. `CSRFProtection` compares
+`X-CSRF-Token` against it, constant-time, on every method RFC 9110 does
+not call safe. Two narrower calls inside that:
+
+1. **Only the header is read, never a submitted form field.** The defense
+   CSRF protection provides is that a script on an attacker's origin
+   cannot read a value off the defender's page to attach it — the Same-
+   Origin Policy is the whole mechanism, and requiring a header a script
+   would have to deliberately set already proves that, whichever channel
+   handed the token to the legitimate client in the first place. Parsing a
+   form body for the same value is more code checking the identical
+   property a second way.
+2. **A request with no session is left alone, not refused.** CSRF exists to
+   protect ambient authority a cookie carries automatically; a route with
+   no `Sessions` in its lane — a bearer-token API, most commonly — has none
+   of that to protect, the same reason such routes are already immune in
+   the literature this defends against. Refusing them would force every
+   non-cookie route in an application to carry `Sessions` just to compose.
+
+**Why `SessionReading` still matters given (2).** A lane that lists
+`CSRFProtection` ahead of `Sessions` by mistake would see `nil` on every
+request under the graceful-pass-through rule and silently protect nothing
+— exactly the class of failure the conformance and
+`DispatchBuilder`'s ordering check exist to turn into a startup error
+instead. Composing correctly costs an application nothing extra: a lane
+with `CSRFProtection` and no `Sessions` at all never triggers the check,
+because there is no `Sessions` entry for the reader to be listed before.
+
+**Alternatives.** Double-submit cookie (a second, non-`httpOnly` cookie the
+client echoes back; weaker under any subdomain that can set cookies, and
+this package already has the session to build the stronger pattern on).
+Per-request rotating tokens (OWASP's own guidance calls per-session
+sufficient and per-request unnecessary complexity with a real multi-tab,
+back-button UX cost). Reading the token from a form field in addition to
+the header (rejected above). Refusing a session-less request outright
+(would make every bearer-token route carry session machinery it has no use
+for).
+
+**Cost of reversing.** `Session.csrfToken()`, `CSRFToken`, and
+`CSRFProtection` are additive; nothing else in the package reads
+`X-CSRF-Token` or the reserved session key.
+
+---
+
 ## D35 — Password hashing depends on the Argon2 reference implementation directly, pinned by revision
 
 **Context.** A first-party credential story needs a hashing primitive, and

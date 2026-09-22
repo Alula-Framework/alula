@@ -482,6 +482,24 @@ is a session, and `FlightSessionsModule` does the loading, the persisting and
 the cookie for you: `context.session`, with a store seam and an in-memory
 default. See [sessions.md](sessions.md).
 
+### CSRF
+
+```swift
+MiddlewareRegistration.lane(.default, [
+    Sessions(runtime: sessions.runtime),
+    CSRFProtection(),
+])
+```
+
+`CSRFProtection` refuses a POST, PUT, PATCH or DELETE that does not carry
+the session's own token on `X-CSRF-Token`; GET, HEAD, OPTIONS and TRACE are
+exempt, per RFC 9110's own definition of safe. `context.requireSession().csrfToken()`
+is the value to hand whatever will submit the next request — a hidden form
+field, a `<meta>` tag, a JSON response field. A request with no session at
+all is left alone: there is no ambient, cookie-carried authority on it to
+protect. List it after `Sessions`, the same `SessionReading` ordering rule
+`Authentication` follows.
+
 ### Redirects
 
 ```swift

@@ -112,7 +112,8 @@ jobs:
                         FlightPresenceProtocol FlightPresenceClient \
                         FlightActuator FlightSecurityCore FlightWebTesting \
                         FlightTransport FlightScheduler \
-                        FlightSessions FlightSessionsTesting; do
+                        FlightSessions FlightSessionsTesting \
+                        FlightAPNS FlightAPNSTesting; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

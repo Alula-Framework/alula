@@ -2032,8 +2032,13 @@ func emitFlightGraph(into out: inout String) {
     // collapse onto a single graph property and one pool serves both.
     var supplied: [(type: String, from: String?)] = []
     var seenSupplied: Set<String> = []
+    // Keyed on the normalized type, not its spelling: `(any TokenValidator)`
+    // and `any TokenValidator` are one root, and keying on the text emitted
+    // `flightRoutes` with two parameters of the same name — found by a
+    // starter template whose two controllers spelled the same injection
+    // differently.
     func rootKey(_ type: String, _ from: String?) -> String {
-        "\(type)|\(from.map(moduleIdentity) ?? "")"
+        "\(providedTypeKey(type))|\(from.map(moduleIdentity) ?? "")"
     }
     for node in ordered {
         for edge in node.dependencyOrder where provider(of: edge.type) == nil {

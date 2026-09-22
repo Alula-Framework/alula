@@ -864,6 +864,40 @@ struct GeneratorTests {
             result.generated.contains("SocketController(validator: tokenValidator)"))
     }
 
+    @Test("two spellings of one terminal-only root are one parameter")
+    func terminalRootSpellingsCollapse() throws {
+        // `(any TokenValidator)` and `any TokenValidator` are the same type.
+        // Keyed on the text, the demo template's two controllers produced
+        // `flightRoutes(_:tokenValidator:tokenValidator:)`, which does not
+        // compile — and nothing in this suite had two controllers spelling
+        // one injection two ways.
+        let result = try generate([
+            "Sources.swift": """
+            import FlightWeb
+            @Controller("/socket")
+            struct SocketController {
+            // flight:hand-registered
+            @Inject var validator: any TokenValidator
+            @GetRoute("/")
+            func open(_ context: RequestContext) -> String { "x" }
+            }
+            @Controller("/session")
+            struct SessionController {
+            // flight:hand-registered
+            @Inject var validator: (any TokenValidator)
+            @PostRoute("/")
+            func signIn(_ context: RequestContext) -> String { "y" }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        let signature = try #require(
+            result.generated.split(separator: "\n").first { $0.hasPrefix("func flightRoutes(") })
+        #expect(signature.components(separatedBy: "tokenValidator:").count == 2, "\(signature)")
+        #expect(result.generated.contains("SocketController(validator: tokenValidator)"))
+        #expect(result.generated.contains("SessionController(validator: tokenValidator)"))
+    }
+
     @Test("the graph constructs; the container projects onto it")
     func graphProjectsRatherThanRebuilds() throws {
         // One construction, in one place. Both mechanisms building would

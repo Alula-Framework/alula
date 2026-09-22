@@ -23,10 +23,11 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightSessions` | Server-side sessions: the store seam and the bounded in-memory default. The middleware and `context.session` are `FlightWeb`'s. |
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
 | `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. |
+| `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `FlightChannelsClient` for joining topics over a socket, `FlightPresenceClient` for applying presence state and diffs. |
-| `*Testing` | Test support for Web, PubSub, Channels, Sessions, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
+| `*Testing` | Test support for Web, PubSub, Channels, Sessions, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
 
 Per-product documentation lives in [Docs/](Docs/), and
 [Docs/testing.md](Docs/testing.md) covers how to test an application built
@@ -55,8 +56,9 @@ enabled trait reaches.
 | --- | --- |
 | `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack |
 | `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient. Implies `Web`. |
+| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient. Implies nothing; a push-sending worker needs no HTTP server. |
 
-Both are opt-in. Name what you want:
+All three are opt-in. Name what you want:
 
 ```swift
 // An HTTP service.

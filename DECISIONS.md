@@ -7,6 +7,37 @@ wrong, say so and it changes.
 
 ---
 
+## D32 — APNs is hand-rolled on AsyncHTTPClient and JWTKit, sends one push per call, and uses token auth only
+
+**Context.** A push client is a provider JWT, an HTTP/2 POST, and a table
+of Apple's reason strings. APNSwift exists and does all three.
+
+**Chosen.** Write it: `ProviderTokenSource` over JWTKit's key collection,
+`AsyncHTTPAPNSTransport` over the shared `HTTPClient`, `APNSError.Reason`
+as the table. One `send` is one delivery attempt; the client retries only
+on `ExpiredProviderToken`, once. `.p8` token authentication only.
+
+**Why.** The same reasoning as the JWKS fetch in Security Core: Flight owns
+orchestration, the cryptography is delegated, and the HTTP is small enough
+that owning it is cheaper than depending on it — and the hermetic seam
+(`APNSTransport`) has to be this package's whichever way. APNSwift would
+bring the same two dependencies and a payload model larger than this whole
+target. One push per call because the right queueing and backoff depend on
+what the pushes are, and a client that guesses surprises; the application
+already has a scheduler and task groups. Token auth because Apple recommends
+it, one key serves every app on the team, and it needs no client-certificate
+plumbing in the transport.
+
+**Alternatives.** Depend on APNSwift (rejected above). A `sendAll` with a
+concurrency limit (an invitation to build the queue here after all). A
+dedicated `HTTPClient` with tuned idle timeouts (would give the module a
+`service`; nothing has needed it — the shared client pools the connection).
+
+**Cost of reversing.** The transport seam makes swapping the HTTP layer a
+local change; the notification model would survive a move to any library.
+
+---
+
 ## D31 — `Sessions` before `Authentication`: owned by the security module, idempotent, and checked
 
 **Context.** Session-backed identity needs `Sessions` to have run before

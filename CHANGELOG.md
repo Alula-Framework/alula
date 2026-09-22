@@ -4,6 +4,36 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`FlightAPNS`**, behind a new `APNS` trait. An Apple Push Notification
+  service client: `APNSClient.send(_:to:)` is one delivery attempt with a
+  typed answer — an `APNSReceipt` with the `apns-id`, or an `APNSError`
+  whose `deviceTokenIsInvalid` says to delete the token and whose
+  `isRetryable` says the same request may succeed later. The ES256 provider
+  token is minted from the `.p8` and reused for fifty minutes; a `403
+  ExpiredProviderToken` mints afresh and retries once, which is the only
+  retry the client performs. `APNSNotification` carries `aps`, custom keys
+  beside it (an object, or refused before any request), the push type with
+  its topic suffix, priority, expiration and collapse id. `FlightAPNSModule`
+  reads `apns.*` and provides the client; a missing or unparseable key fails
+  composition. Not gated on `Web`. `FlightAPNSTesting` ships
+  `RecordingAPNSTransport`. Hand-rolled over AsyncHTTPClient and JWTKit, the
+  `Security` trait's two packages, so a `Security` consumer resolves
+  nothing new — DECISIONS.md D32 for why not a push library. Docs/apns.md is
+  the guide.
+
+### Fixed
+
+- **Two spellings of one injected type are one root.** Two controllers
+  injecting `(any TokenValidator)` and `any TokenValidator` made the
+  generator emit `flightRoutes` with two parameters named `tokenValidator`,
+  which does not compile. Root inputs are keyed on the normalized type now,
+  the way provider matching already was. Found by the demo starter template
+  the moment it gained a second controller injecting the validator.
+
 ## [0.24.0] - 2026-09-21
 
 ### Added

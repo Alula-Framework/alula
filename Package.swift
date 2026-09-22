@@ -66,6 +66,11 @@ let package = Package(
         // Authentication: a resource server. Token *validation* only, with a
         // TokenValidator seam so any issuer can be brought instead.
         .library(name: "FlightSecurityCore", targets: ["FlightSecurityCore"]),
+
+        // Push: an APNs client — provider tokens, HTTP/2, typed answers.
+        // Not gated on Web: a worker sending pushes needs no HTTP server.
+        .library(name: "FlightAPNS", targets: ["FlightAPNS"]),
+        .library(name: "FlightAPNSTesting", targets: ["FlightAPNSTesting"]),
     ],
     traits: [
         // Opt-in: a consumer names what it wants, and resolves nothing else.
@@ -91,6 +96,13 @@ let package = Package(
             name: "Security",
             description: "OIDC/JWT resource-server authentication.",
             enabledTraits: ["Web"]
+        ),
+        // JWTKit and AsyncHTTPClient again — the same two packages Security
+        // brings, so a Security consumer resolves nothing new — and nothing
+        // from Web.
+        .trait(
+            name: "APNS",
+            description: "Apple Push Notification service client."
         ),
     ],
     dependencies: [
@@ -436,6 +448,29 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: Push
+
+        .target(
+            name: "FlightAPNS",
+            dependencies: [
+                "FlightCore",
+                .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
+                .product(name: "AsyncHTTPClient", package: "async-http-client", condition: .when(traits: ["APNS"])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["APNS"])),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(traits: ["APNS"])),
+                .product(name: "NIOFoundationCompat", package: "swift-nio", condition: .when(traits: ["APNS"])),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/Push/FlightAPNS",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "FlightAPNSTesting",
+            dependencies: [.target(name: "FlightAPNS", condition: .when(traits: ["APNS"]))],
+            path: "Sources/Push/FlightAPNSTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Tests
 
         .testTarget(
@@ -589,6 +624,17 @@ let package = Package(
             name: "FlightSessionsTests",
             dependencies: ["FlightSessions", "FlightSessionsTesting"],
             path: "Tests/Sessions/FlightSessionsTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "FlightAPNSTests",
+            dependencies: [
+                .target(name: "FlightAPNS", condition: .when(traits: ["APNS"])),
+                .target(name: "FlightAPNSTesting", condition: .when(traits: ["APNS"])),
+                "FlightCore",
+                .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
+            ],
+            path: "Tests/Push/FlightAPNSTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

@@ -98,15 +98,21 @@ public final class WebRuntime: Sendable {
     public let coders: WebCoders
     public let errorMapper: ErrorMapper
     public let trustedProxies: TrustedProxies
+    /// Applied by Dispatch to every response, after every lane. `.none` here
+    /// so a hand-built runtime adds nothing unasked; `FlightWebModule` reads
+    /// `web.security-headers.*`, whose defaults are on.
+    public let securityHeaders: SecurityHeaders
 
     public init(
         coders: WebCoders = .default,
         errorMapper: ErrorMapper = .none,
-        trustedProxies: TrustedProxies = .none
+        trustedProxies: TrustedProxies = .none,
+        securityHeaders: SecurityHeaders = .none
     ) {
         self.coders = coders
         self.errorMapper = errorMapper
         self.trustedProxies = trustedProxies
+        self.securityHeaders = securityHeaders
     }
 
     /// Package defaults — what a hand-built context uses.

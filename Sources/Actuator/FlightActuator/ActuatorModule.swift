@@ -1,7 +1,8 @@
 import FlightCore
+import FlightWeb
 import Logging
 import Synchronization
-import FlightWeb
+
 import class Foundation.ProcessInfo
 
 /// Flight Actuator's one entry point — a `FlightModule`, nothing more.
@@ -26,9 +27,11 @@ import class Foundation.ProcessInfo
 ///   is not.
 /// - ``ActuatorExposure/full`` — health plus the `/actuator` dashboard,
 ///   which discloses the module list, every registered component's
-///   fully-qualified type name, and failure messages. Unauthenticated
-///   wherever it is on; putting authentication in front of it is the
-///   deployment's job, and the module does not pretend otherwise.
+///   fully-qualified type name, and failure messages. Open by default, the
+///   same as every other route; ``ActuatorDashboardAccess`` puts it behind
+///   authentication and roles (`actuator.dashboard-pipelines`,
+///   `actuator.dashboard-roles`). The health routes are never gated — an
+///   orchestrator's probe has no credential to present.
 public struct ActuatorModule: FlightModule {
     public static var dependencies: [any FlightModule.Type] { [] }
 
@@ -94,7 +97,9 @@ public struct ActuatorModule: FlightModule {
     ) throws {
         self.init(
             processEnvironment: ProcessInfo.processInfo.environment,
-            components: components, health: health, logger: logger)
+            components: components, health: health,
+            dashboardAccess: try ActuatorDashboardAccess(configuration: configuration),
+            logger: logger)
         try installController(
             format: configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr)
     }
@@ -107,11 +112,13 @@ public struct ActuatorModule: FlightModule {
         processEnvironment: [String: String],
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "flight.actuator")
     ) {
         self.logger = logger
         self.components = components
         self.health = health
+        self.dashboardAccess = dashboardAccess
         self.environment = .current(from: processEnvironment)
         self.exposureOverride = nil
         // An unset FLIGHT_ENV resolves to `dev`, which is in the dashboard
@@ -123,7 +130,7 @@ public struct ActuatorModule: FlightModule {
         self.routes = Self.makeRoutes(
             exposure: try? ActuatorExposure.resolve(
                 environment: environment, isEnvironmentDeclared: isEnvironmentDeclared),
-            controller: controller)
+            controller: controller, dashboardAccess: dashboardAccess)
         installController(format: .ssr)
         announceExposure()
     }
@@ -135,11 +142,13 @@ public struct ActuatorModule: FlightModule {
         environment: FlightEnvironment,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "flight.actuator")
     ) {
         self.logger = logger
         self.components = components
         self.health = health
+        self.dashboardAccess = dashboardAccess
         self.environment = environment
         self.exposureOverride = nil
         // Naming the environment in code is a declaration, the same as
@@ -148,7 +157,7 @@ public struct ActuatorModule: FlightModule {
         self.routes = Self.makeRoutes(
             exposure: try? ActuatorExposure.resolve(
                 environment: environment, isEnvironmentDeclared: true),
-            controller: controller)
+            controller: controller, dashboardAccess: dashboardAccess)
         installController(format: .ssr)
         announceExposure()
     }
@@ -162,20 +171,24 @@ public struct ActuatorModule: FlightModule {
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
         format: ActuatorFormat = .ssr,
+        dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "flight.actuator")
     ) {
         self.logger = logger
         self.components = components
         self.health = health
+        self.dashboardAccess = dashboardAccess
         self.environment = environment
         self.exposureOverride = exposure
         self.isEnvironmentDeclared = true
-        self.routes = Self.makeRoutes(exposure: exposure, controller: controller)
+        self.routes = Self.makeRoutes(
+            exposure: exposure, controller: controller, dashboardAccess: dashboardAccess)
         installController(format: format)
         announceExposure()
     }
 
     private let exposureOverride: ActuatorExposure?
+    private let dashboardAccess: ActuatorDashboardAccess
     private let isEnvironmentDeclared: Bool
     private let logger: Logger
 
@@ -218,17 +231,26 @@ public struct ActuatorModule: FlightModule {
                 logger.info(
                     "actuator dashboard published; environment is a development one",
                     metadata: metadata)
+            } else if dashboardAccess.requiresIdentity {
+                var gated = metadata
+                gated["dashboard-pipelines"] =
+                    "\(dashboardAccess.pipelines.map(\.name).joined(separator: ","))"
+                gated["dashboard-roles"] = "\(dashboardAccess.roles.joined(separator: ","))"
+                logger.info(
+                    "actuator dashboard published outside a development environment, behind authentication",
+                    metadata: gated)
             } else {
                 // The line this whole method exists for: `full` outside the
                 // allowlist can only come from an explicit
-                // FLIGHT_ACTUATOR_EXPOSURE, and the dashboard is
-                // unauthenticated wherever it is on.
+                // FLIGHT_ACTUATOR_EXPOSURE, and nothing configured puts the
+                // dashboard behind a credential.
                 logger.warning(
                     """
                     actuator dashboard published OUTSIDE a development environment — it is \
                     unauthenticated and discloses the module list, every component's type \
-                    name, and failure messages. Put authentication in front of /actuator, or \
-                    unset FLIGHT_ACTUATOR_EXPOSURE to fall back to health probes only.
+                    name, and failure messages. Set actuator.dashboard-pipelines: authenticated \
+                    (and actuator.dashboard-roles), or unset FLIGHT_ACTUATOR_EXPOSURE to fall back \
+                    to health probes only.
                     """,
                     metadata: metadata)
             }
@@ -278,7 +300,8 @@ public struct ActuatorModule: FlightModule {
     /// module *holds*: a computed property is excluded from that scan, which
     /// is what keeps `var service` from being taken as a contribution.
     private static func makeRoutes(
-        exposure: ActuatorExposure?, controller: ControllerBox
+        exposure: ActuatorExposure?, controller: ControllerBox,
+        dashboardAccess: ActuatorDashboardAccess
     ) -> [RouteRegistration] {
         guard let exposure, exposure.publishesHealth else { return [] }
         // Health is published wherever the actuator is enabled at all: an
@@ -309,10 +332,16 @@ public struct ActuatorModule: FlightModule {
         // published only where the exposure says so — an unrecognized
         // environment does not get it.
         if exposure.publishesDashboard {
+            let roles = dashboardAccess.roles.map(ConfiguredRole.init(roleName:))
             routes.append(
-                RouteRegistration(method: "GET", path: "/actuator", source: "FlightActuator") {
-                    context in
-                    try await controller.get().dashboard(context)
+                RouteRegistration(
+                    method: "GET", path: "/actuator", source: "FlightActuator",
+                    pipelines: dashboardAccess.pipelines
+                ) { context in
+                    // The same check a `roles:` route runs: 401 for no
+                    // credential, 403 for the wrong one.
+                    try requireRoles(roles, in: context)
+                    return try await controller.get().dashboard(context)
                 })
         }
         return routes

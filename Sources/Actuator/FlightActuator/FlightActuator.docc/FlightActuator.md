@@ -34,12 +34,14 @@ else leaks.
   deployment that never set `FLIGHT_ENV` used to get the full dashboard.
 - ``ActuatorExposure/full`` — the health routes plus the dashboard.
 
-``ActuatorExposure/full`` is **unauthenticated wherever it is enabled**. It
+``ActuatorExposure/full`` is **open unless configured otherwise**. It
 reports the module list and every registered component's fully-qualified type
 name, plus each failed module's error text — a useful map of the application
 to anyone who can reach it. Running it outside development means putting
-authentication in front of it: a middleware, a reverse proxy, or a network
-boundary. The module does not do that for you and does not pretend to.
+authentication in front of it, and ``ActuatorDashboardAccess`` does that from
+configuration: `actuator.dashboard-pipelines: authenticated` requires a
+signed-in principal, and `actuator.dashboard-roles` requires a role. The
+health routes are never gated.
 
 ## Health is composed from modules
 
@@ -66,6 +68,12 @@ slow start forever.
 - ``ActuatorExposure``
 - ``ActuatorFormat``
 - ``ActuatorConfigurationError``
+
+### Dashboard access
+
+- ``ActuatorDashboardAccess``
+- ``ActuatorConfigKey``
+- ``ActuatorDashboardAccessError``
 
 ### Output
 

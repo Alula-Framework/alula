@@ -196,6 +196,12 @@ whole application without binding a port.
 - ``AllowedOrigins``
 - ``AllowedHeaders``
 
+### Security headers
+
+- ``SecurityHeaders``
+- ``SecurityHeadersConfigKey``
+- ``SecurityHeadersConfigurationError``
+
 ### Compression
 
 - ``ResponseCompression``

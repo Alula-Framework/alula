@@ -138,9 +138,9 @@ rather than a config key because it gates whether an endpoint that discloses
 your topology exists at all — a deployment decision Actuator reads from the raw
 environment, its one sanctioned exception to reading configuration instead.
 
-The dashboard is unauthenticated wherever it is on, so `full` in production
-needs something in front of it. `health_only` is safe to expose: it answers
-`200`/`UP` or `503` and discloses nothing else.
+The dashboard is open unless configured otherwise, so `full` anywhere
+reachable wants `actuator.dashboard-pipelines` (below). `health_only` is safe
+to expose: it answers `200`/`UP` or `503` and discloses nothing else.
 
 For tests and embedders, `ActuatorModule(environment:)` bypasses the
 `FLIGHT_ENV` read — construct it directly with the environment you want.
@@ -312,9 +312,27 @@ exception to a module reading configuration instead. It is the env-var spelling
 of `actuator.exposure` under Flight Config's own convention. An unrecognized
 value stops startup rather than quietly choosing for you.
 
-**Put authentication in front of it.** `full` in an environment reachable
-by anyone else needs `requireAuthentication` (Flight Security Core) ordered
-ahead of the route. This package does not authenticate anything itself.
+**Put authentication in front of it.** Two settings do it:
+
+```yaml
+actuator:
+  dashboard-pipelines: authenticated   # lanes the /actuator route runs through
+  dashboard-roles: operator, sre       # any one of these; optional
+```
+
+`dashboard-pipelines` names lanes exactly as a route's `pipelines:` does;
+`authenticated` is the lane `FlightSecurityModule` declares, so a signed-in
+principal is required before the dashboard renders. `dashboard-roles` runs
+the same check as a `roles:` route — 401 with no credential, 403 with the
+wrong one. Roles need a lane that establishes identity; on one that doesn't,
+every caller is anonymous and gets a 401 — locked rather than open. A key
+present but naming nothing fails startup rather than reading as "no
+restriction".
+
+The health routes are never gated. An orchestrator's probe has no
+credential to present, and a probe that answers 401 restarts a healthy pod.
+Startup still warns about `full` outside a development environment unless
+the dashboard requires someone — a role, or the `authenticated` lane.
 
 One thing worth knowing before you turn it on anywhere real: a failed
 module's error text is served verbatim, and connection errors routinely

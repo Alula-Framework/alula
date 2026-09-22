@@ -500,6 +500,68 @@ all is left alone: there is no ambient, cookie-carried authority on it to
 protect. List it after `Sessions`, the same `SessionReading` ordering rule
 `Authentication` follows.
 
+**Guard sign-in too.** Forcing a visitor to sign in as the *attacker* —
+"login CSRF" — is a real attack, and `SameSite=Lax` does not stop it: `Lax`
+limits which cookies a cross-site POST *sends*, not which cookies its
+response may *set*. Nor does a JSON-shaped sign-in body: a `Codable` body
+also accepts `application/x-www-form-urlencoded`, which a plain HTML form
+on any site can submit with no CORS preflight at all. The defence is the
+same token, handed out before there is anyone to sign in:
+
+```swift
+@GetRoute("/csrf")                                     // anonymous: mints the token
+func csrf(_ context: RequestContext) throws -> CSRFTokenResponse {
+    CSRFTokenResponse(csrfToken: try context.requireSession().csrfToken())
+}
+
+@PostRoute("/", pipelines: [.default, "csrf"])         // sign-in names the lane
+func signIn(_ context: RequestContext, body: SignIn) async throws -> Response { … }
+```
+
+Minting the token is a session write, so that GET sets a cookie for an
+anonymous visitor; keep it off routes whose point is to store nothing. The
+token survives signing in — `Session.signIn(_:)` regenerates the id and
+keeps the values — and needs no rotation there: the regenerated id is what
+takes the session away from anyone who planted it, and a token is useless
+without the cookie it belongs to.
+
+### Security headers
+
+Every response carries three headers unless configured off:
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+`Referrer-Policy: strict-origin-when-cross-origin`. `Strict-Transport-Security`
+and `Content-Security-Policy` are sent only once configured:
+
+```yaml
+web:
+  security-headers:
+    frame-options: sameorigin          # deny (default) | sameorigin | off
+    referrer-policy: no-referrer       # any Referrer-Policy token, or off
+    content-type-options: nosniff      # nosniff (default) | off
+    hsts-max-age: 31536000s            # absent: no HSTS
+    hsts-include-subdomains: true
+    hsts-preload: true                 # checked against the preload list's rules
+    content-security-policy: "default-src 'self'"
+```
+
+This is a policy of the web module, not a middleware, on purpose. A
+middleware in `.default` does not run for a route that names its own lanes —
+the trap the CORS section above describes — and a missing security header,
+unlike a missing CORS header, fails silently. Dispatch applies the policy
+after every lane, to every response: errors, 404s and static assets
+included.
+
+A header a route set itself wins. A page meant to be framed by its own
+origin sets `X-Frame-Options: SAMEORIGIN` on its response, and the
+application-wide `DENY` fills in everywhere else. An unrecognized value, an
+HSTS modifier with no `hsts-max-age`, or a `preload` the preload list would
+refuse fails startup, naming the key.
+
+HSTS is off by default because it cannot be recalled: a browser remembers
+it for `max-age`, whatever the server says afterwards. Browsers ignore it
+over plain HTTP, so it is sent however this process was reached — behind a
+TLS-terminating proxy, Flight sees HTTP while the browser saw HTTPS.
+
 ### Redirects
 
 ```swift
@@ -634,7 +696,9 @@ Either mode needs `trust-roots-path`; demanding client certificates with
 nothing to verify them against is a startup error.
 
 Terminating TLS at nginx or a load balancer instead is equally supported —
-leave these keys out and Flight serves plaintext to the proxy. WebSocket
+leave these keys out and Flight serves plaintext to the proxy. Either way,
+`Strict-Transport-Security` is `web.security-headers.hsts-max-age` — see
+*Security headers* above. WebSocket
 upgrades ride whatever the listener is doing, so `wss://` needs no separate
 configuration.
 

@@ -24,7 +24,8 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightRateLimit` | A GCRA rate limiter and its store seam. Not an HTTP concern: `FlightWeb`'s `RateLimiting` middleware is one consumer, a login throttle is another. |
 | `FlightWeb`'s `TrustedProxies` | The real client address behind a reverse proxy, resolved from `X-Forwarded-For` only as far as a configured trusted range reaches. |
 | `FlightWeb`'s `CSRFProtection` | Refuses a state-changing request without the session's own token. The synchronizer pattern, keyed off `FlightSessions`. |
-| `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared. |
+| `FlightWeb`'s `SecurityHeaders` | `nosniff`, `DENY` and a strict referrer policy on every response by default; HSTS and CSP when configured. Applied after every lane, so no route can drop them. |
+| `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared, and behind authentication and a role when configured. |
 | `FlightSecurityCore` | A resource server: validates tokens your identity provider issued. Bring your own auth. Also `PasswordHashing`/`Argon2idHashing`, the one primitive a first-party credential story would sit on. |
 | `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |

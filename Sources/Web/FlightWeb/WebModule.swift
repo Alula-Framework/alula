@@ -50,7 +50,9 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
     private let configuration: Configuration
 
     /// Built in `init`, read by `service`.
-    private let dispatch: Dispatch
+    /// Internal rather than private so a `@testable` test can drive the
+    /// dispatch this module built from its configuration.
+    let dispatch: Dispatch
 
     /// - Parameters:
     ///   - configuration: The transport reads its own settings from here at
@@ -75,6 +77,10 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
     ///     `X-Forwarded-For` for `RequestContext.clientAddress`. Nil reads
     ///     `web.trusted-proxies`, which is empty — trust nothing — unless
     ///     configured.
+    ///   - securityHeaders: The headers added to every response. Nil reads
+    ///     `web.security-headers.*`: `nosniff`, `DENY` and a strict
+    ///     referrer policy unless configured off; HSTS and CSP only when
+    ///     configured.
     public init(
         configuration: Configuration,
         routes: [RouteRegistration] = [],
@@ -82,12 +88,15 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
         assetMounts: [AssetMountRegistration] = [],
         coders: WebCoders? = nil,
         errorMapper: ErrorMapper? = nil,
-        trustedProxies: TrustedProxies? = nil
+        trustedProxies: TrustedProxies? = nil,
+        securityHeaders: SecurityHeaders? = nil
     ) throws {
         let resolvedCoders = try coders ?? WebCoders(configuration: configuration)
         let resolvedMapper = errorMapper ?? .none
         let resolvedTrustedProxies =
             try trustedProxies ?? TrustedProxies(configuration: configuration)
+        let resolvedSecurityHeaders =
+            try securityHeaders ?? SecurityHeaders(configuration: configuration)
         self.configuration = configuration
         self.coders = resolvedCoders
         self.errorMapper = resolvedMapper
@@ -103,7 +112,8 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
             assetMounts: assetMounts,
             web: WebRuntime(
                 coders: resolvedCoders, errorMapper: resolvedMapper,
-                trustedProxies: resolvedTrustedProxies),
+                trustedProxies: resolvedTrustedProxies,
+                securityHeaders: resolvedSecurityHeaders),
             logger: Logger(label: "flight.web"))
     }
 

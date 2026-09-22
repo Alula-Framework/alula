@@ -7,6 +7,51 @@ wrong, say so and it changes.
 
 ---
 
+## D38 — Security headers are a dispatch policy with three defaults on, not a middleware
+
+**Context.** The September gap audit listed security headers and left them
+unbuilt only because they were not picked. The obvious shape was a
+middleware, three `settingHeader` calls.
+
+**Chosen.** A `SecurityHeaders` value on `WebRuntime`, read by
+`FlightWebModule` from `web.security-headers.*` and applied by Dispatch to
+every response after the whole chain has run. `nosniff`, `DENY` and
+`strict-origin-when-cross-origin` are on by default; HSTS and CSP are off
+until configured. A header already on the response wins.
+
+**Why not a middleware.** Dispatch routes first and then runs the matched
+route's lanes, so `.default` never runs for a route naming
+`pipelines: [.authenticated]` — the trap `CORS`'s documentation already
+spells out. A missing CORS header breaks a page visibly. A missing security
+header breaks nothing visibly, and it would go missing on precisely the
+signed-in routes, which are the ones that most want framing refused. A
+policy the envelope applies cannot be dropped by a lane choice.
+
+**Why these defaults.** The three on by default are what Helmet and most
+framework defaults send, and each is wrong only for a service that knows
+it: one framed by another origin on purpose, which says so in one line of
+configuration or one header on the route. HSTS is off because it cannot be
+recalled — a browser holds it for `max-age` whatever the server says later,
+and `includeSubDomains` from the wrong host locks a whole parent domain out
+of plain HTTP. CSP is off because no default is both useful and harmless.
+`X-XSS-Protection` is not sent at all: browsers removed the auditor it
+controlled, and `1; mode=block` is now at best inert.
+
+**Alternatives.** A `SecurityHeaders` middleware plus documentation telling
+people to list it in every lane (the CORS approach — acceptable for CORS,
+whose failure is loud). Everything default-off (a framework whose secure
+behaviour is opt-in is one most applications never opt into). HSTS on by
+default as Helmet does (the one header whose mistake cannot be undone;
+that belongs to an operator). Overriding a route's own header (a route
+that means to be framed would have no way to say so).
+
+**Cost of reversing.** Defaults are one initializer; the application point
+is one line in `DispatchBuilder.makeDispatch`. Turning the defaults off
+would be a behaviour change applications would have to be told about, the
+same way turning them on is.
+
+---
+
 ## D37 — The Argon2 dependency is vendored, not depended on: a revision pin poisoned resolution
 
 **Context.** Wiring password hashing into a real downstream consumer — the

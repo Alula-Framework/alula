@@ -386,9 +386,12 @@ left has no consumer-facing API to document.
   already has three levels, and `health_only` is the *default* outside
   development precisely so an orchestrator has a probe. The doc contradicted
   itself and has been fixed.
-  What remains, and it is small: the `full` dashboard is unauthenticated
+  ~~What remains, and it is small: the `full` dashboard is unauthenticated
   wherever it is enabled, so running it in production needs something in
-  front. That is now stated in the doc rather than implied. *Small.*
+  front. That is now stated in the doc rather than implied. *Small.*~~
+  **Closed in 0.30.0:** `actuator.dashboard-pipelines` and
+  `actuator.dashboard-roles` put the dashboard behind the `authenticated`
+  lane and a role check; health stays open.
 - No live-updating dashboard, no historical metrics. *Deliberate.*
 
 ### flight-presence

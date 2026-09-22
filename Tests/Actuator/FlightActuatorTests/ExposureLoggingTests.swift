@@ -58,6 +58,33 @@ struct ExposureLoggingTests {
         #expect(text.contains("FLIGHT_ACTUATOR_EXPOSURE"))
     }
 
+    @Test("full outside development, behind authentication, is news rather than a warning")
+    func fullBehindAuthenticationIsInfo() {
+        let capture = Capture()
+        _ = ActuatorModule(
+            environment: FlightEnvironment("production"), exposure: .full,
+            dashboardAccess: ActuatorDashboardAccess(
+                pipelines: [.authenticated], roles: ["operator"]),
+            logger: capture.logger)
+        #expect(capture.all.filter { $0.level == .warning }.isEmpty)
+        #expect(
+            capture.all.contains {
+                $0.level == .info && $0.message.contains("behind authentication")
+            })
+    }
+
+    @Test("a dashboard lane that establishes no identity still warns")
+    func unauthenticatedLaneStillWarns() {
+        // Naming a lane is not the same as requiring someone: an "audit" lane
+        // with no roles lets anybody through, and the warning has to say so.
+        let capture = Capture()
+        _ = ActuatorModule(
+            environment: FlightEnvironment("production"), exposure: .full,
+            dashboardAccess: ActuatorDashboardAccess(pipelines: ["audit"]),
+            logger: capture.logger)
+        #expect(capture.all.filter { $0.level == .warning }.count == 1)
+    }
+
     @Test("full in a development environment is ordinary news, not a warning")
     func fullInDevelopmentIsInfo() {
         let capture = Capture()

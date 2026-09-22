@@ -4,6 +4,41 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Security headers on every response.** `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`
+  by default; `Strict-Transport-Security` and `Content-Security-Policy` once
+  configured under `web.security-headers.*`. A policy of `FlightWebModule`
+  applied by Dispatch after every lane, not a middleware: a middleware in
+  `.default` never runs for a route naming its own lanes, and a missing
+  security header fails silently, on exactly the signed-in routes that
+  matter. Errors, 404s and static assets carry them too. A header a route
+  set itself wins. Unrecognized values, an HSTS modifier without a max-age,
+  and a `preload` the preload list would refuse all fail startup. D38.
+- **The actuator dashboard can require authentication.**
+  `actuator.dashboard-pipelines` names the lanes `/actuator` runs through —
+  `authenticated` requires a signed-in principal — and
+  `actuator.dashboard-roles` runs the same 401/403 check as a `roles:` route.
+  The health routes are never gated. Startup stops warning about `full`
+  outside development only when the dashboard actually requires someone.
+  `ActuatorDashboardAccess` is the same thing in code.
+- **`Docs/web.md` covers login CSRF.** `SameSite=Lax` limits which cookies a
+  cross-site POST sends, not which its response sets, and a `Codable` body
+  accepts form encoding a plain HTML form can submit without a preflight — so
+  a JSON-shaped sign-in is forgeable. The pattern: an anonymous `GET` mints
+  the token, and sign-in names the `csrf` lane. No API change was needed.
+
+### Changed
+
+- **Every response from a `FlightWebModule` now carries the three default
+  headers.** An application that is framed by another origin on purpose sets
+  `web.security-headers.frame-options: sameorigin` or `off`, or sets its own
+  header on the route that needs it. A hand-built `WebRuntime` — what
+  `TestClient` uses — adds nothing unless given a policy.
+
 ## [0.29.1] - 2026-09-22
 
 ### Fixed

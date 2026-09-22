@@ -33,3 +33,25 @@ func csrfShapes(sessionsRuntime: SessionRuntime) {
             CSRFProtection(),
         ])
 }
+
+// Login CSRF: an anonymous GET mints the token; sign-in names the lane.
+struct CSRFTokenResponse: Encodable, ResponseEncodable {
+    let csrfToken: String
+}
+
+struct SignIn: Decodable {
+    let token: String
+}
+
+@Controller("/session")
+private struct SignInController {
+    @GetRoute("/csrf")
+    func csrf(_ context: RequestContext) throws -> CSRFTokenResponse {
+        CSRFTokenResponse(csrfToken: try context.requireSession().csrfToken())
+    }
+
+    @PostRoute("/", pipelines: [.default, "csrf"])
+    func signIn(_ context: RequestContext, body: SignIn) async throws -> Response {
+        .status(.noContent)
+    }
+}

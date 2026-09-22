@@ -368,7 +368,11 @@ public enum DispatchBuilder {
                 if response.status.kind == .serverError {
                     span.setStatus(SpanStatus(code: .error))
                 }
-                return response.settingHeader(.xRequestID, requestID)
+                // After every lane, so no route's choice of lanes can drop
+                // them — see `SecurityHeaders` for why this is not a
+                // middleware. A header the response already set wins.
+                return web.securityHeaders.apply(to: response)
+                    .settingHeader(.xRequestID, requestID)
             }
         }
         return Dispatch(respond: respond, acceptsUpgrade: acceptsUpgrade, bodyMode: bodyMode)

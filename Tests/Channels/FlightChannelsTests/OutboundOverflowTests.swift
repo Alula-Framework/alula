@@ -175,7 +175,13 @@ struct OutboundOverflowTests {
         let run = Task { try await handler.handle(upgraded: peer.connection, context: makeContext()) }
         try peer.send(Envelope(ref: "1", topic: "flood:a", event: ReservedEvent.join.rawValue))
 
-        try await Task.sleep(for: .milliseconds(250))
+        // Waited for, not slept for: a fixed 250 ms was shorter than the join
+        // takes on a loaded two-core CI runner, and the test failed there
+        // before the channel existed.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while box.socket.map({ $0.droppedEnvelopeCount == 0 }) ?? true, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         let socket = try #require(box.socket)
         // 200 pushed into a queue of 2, against a writer that takes 30ms a
         // frame: most of them cannot have survived.

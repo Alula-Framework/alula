@@ -1,4 +1,4 @@
-import FlightTelemetry
+import TelemetryMacros
 
 /// What sign-in reports, as telemetry events — Flight's own providers, and
 /// any provider of yours that emits them too, which is what puts a custom
@@ -72,7 +72,9 @@ public enum SignInEvents {
         Telemetry.isEnabled(Attempt.self) ? .now : nil
     }
 
-    static func attempt(_ provider: String, _ outcome: String, since start: ContinuousClock.Instant?) {
+    static func attempt(
+        _ provider: String, _ outcome: String, since start: ContinuousClock.Instant?
+    ) {
         Telemetry.emit(Attempt.self) {
             (
                 .init(duration: start.map { .now - $0 } ?? .zero),
@@ -108,9 +110,11 @@ public enum SignInMetrics {
     /// What ``FlightSecurityModule`` contributes to the reported metrics.
     public static let definitions: [TelemetryMetric] = [
         .counter(SignInEvents.Started.self, tags: \.provider),
-        .counter(SignInEvents.Attempt.self, name: "flight.sign_in.attempts", tags: \.provider, \.outcome),
+        .counter(
+            SignInEvents.Attempt.self, name: "flight.sign_in.attempts", tags: \.provider, \.outcome),
         .distribution(
-            SignInEvents.Attempt.self, \.duration, name: "flight.sign_in.duration", unit: .milliseconds,
+            SignInEvents.Attempt.self, \.duration, name: "flight.sign_in.duration",
+            unit: .milliseconds,
             tags: \.provider),
         .counter(SignInEvents.PasswordRehashed.self, name: "flight.sign_in.password_rehashes"),
         .counter(SignInEvents.Expired.self),

@@ -1,11 +1,11 @@
 import FlightCore
 import FlightSessions
-import FlightTelemetry
 import FlightTelemetryBridges
 import FlightWeb
 import Foundation
 import Logging
 import ServiceLifecycle
+import TelemetryCore
 
 /// Authentication wiring, independent of how tokens are validated.
 ///

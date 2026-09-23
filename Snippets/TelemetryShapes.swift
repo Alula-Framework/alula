@@ -7,11 +7,10 @@
 import CoreMetrics
 import FlightCore
 import FlightSecurityCore
-import FlightTelemetry
 import FlightTelemetryBridges
-import FlightTelemetryTesting
 import FlightWeb
 import Logging
+import TelemetryMacros
 
 // snippet.hide
 func run(_ sql: String) async throws -> [Int] { [] }
@@ -156,16 +155,6 @@ func tracingAndLogs() throws {
 
 func bootstrapLogging() {
     LoggingSystem.bootstrap(StreamLogHandler.standardOutput, metadataProvider: .telemetry)
-}
-
-// MARK: Testing
-
-func testing(authenticator: PasswordAuthenticator) async throws {
-    let attempts = await TelemetryTest.capture(SignInEvents.Attempt.self) {
-        _ = try? await authenticator.authenticate(
-            identifier: "ada", password: "wrong", clientAddress: nil)
-    }
-    precondition(attempts.map(\.metadata.outcome) == ["invalid_credentials"])
 }
 
 // MARK: Choosing the backend explicitly

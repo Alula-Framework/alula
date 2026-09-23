@@ -1,7 +1,7 @@
-import FlightTelemetry
-import FlightTelemetryTesting
 import FlightWeb
 import FlightWebTesting
+import TelemetryCore
+import TelemetryTesting
 import Testing
 
 @Suite("HTTP request event")

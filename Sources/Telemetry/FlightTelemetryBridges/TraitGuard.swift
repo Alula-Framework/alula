@@ -1,6 +1,6 @@
 // Compile-time guard: this target exists only when the "Telemetry" trait is
-// on — named directly, or through "Web" or "APNS", which imply it. The core,
-// FlightTelemetry, needs no trait: any target may emit.
+// on — named directly, or through "Web" or "APNS", which imply it. Emitting
+// needs no Flight at all: that is swift-telemetry's TelemetryCore.
 #if !Telemetry
     #error(
         """

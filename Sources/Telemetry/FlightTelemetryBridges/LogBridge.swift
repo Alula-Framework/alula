@@ -1,6 +1,6 @@
-import FlightTelemetry
 import Logging
 import ServiceContextModule
+import TelemetryCore
 
 /// Turns events into log lines. One direction only: structured
 /// occurrences are events, free-form diagnostics stay in swift-log, and

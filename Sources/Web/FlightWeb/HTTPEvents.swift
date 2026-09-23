@@ -1,4 +1,4 @@
-import FlightTelemetry
+import TelemetryMacros
 
 /// What the HTTP server reports, as telemetry events.
 ///

@@ -1,10 +1,10 @@
 import FlightCore
-import FlightTelemetry
 import Foundation
 import HTTPTypes
 import Instrumentation
 import Logging
 import ServiceContextModule
+import TelemetryCore
 import Tracing
 
 /// The transport boundary: requests in, responses out — including streaming
@@ -92,7 +92,8 @@ public enum DispatchBuilder {
     static func checkSessionOrder(_ chain: [MiddlewareRegistration], route: String) throws {
         guard let sessionsIndex = chain.firstIndex(where: \.providesSession) else { return }
         if let early = chain[..<sessionsIndex].first(where: \.readsSession) {
-            throw SessionOrderError(route: route, reader: early.name, sessions: chain[sessionsIndex].name)
+            throw SessionOrderError(
+                route: route, reader: early.name, sessions: chain[sessionsIndex].name)
         }
     }
 
@@ -162,11 +163,13 @@ public enum DispatchBuilder {
             for lane in route.pipelines {
                 guard let laneChain = chainsByLane[lane] else {
                     throw UndeclaredLaneError(
-                        lane: lane, route: "\(route.method.rawValue) \(route.path) (\(route.source))")
+                        lane: lane,
+                        route: "\(route.method.rawValue) \(route.path) (\(route.source))")
                 }
                 chain += laneChain
             }
-            try checkSessionOrder(chain, route: "\(route.method.rawValue) \(route.path) (\(route.source))")
+            try checkSessionOrder(
+                chain, route: "\(route.method.rawValue) \(route.path) (\(route.source))")
             let terminal: Next = { context in
                 // The match that selected this responder, threaded through a
                 // task-local rather than re-derived. This used to re-run the
@@ -188,13 +191,15 @@ public enum DispatchBuilder {
             }
             respondersByRoute[routeIndex] = compose(chain, around: terminal)
 
-            logger.debug("route registered", metadata: [
-                "method": "\(route.method.rawValue)",
-                "path": "\(route.path)",
-                "kind": route.kind.isUpgrade ? "upgrade" : "http",
-                "pipelines": .array(route.pipelines.map { .string($0.name) }),
-                "source": "\(route.source)",
-            ])
+            logger.debug(
+                "route registered",
+                metadata: [
+                    "method": "\(route.method.rawValue)",
+                    "path": "\(route.path)",
+                    "kind": route.kind.isUpgrade ? "upgrade" : "http",
+                    "pipelines": .array(route.pipelines.map { .string($0.name) }),
+                    "source": "\(route.source)",
+                ])
         }
 
         // Asset mounts: fallbacks for GET/HEAD routing misses, each wrapped
@@ -223,11 +228,13 @@ public enum DispatchBuilder {
                     "asset mount root does not exist — every request under \(mount.prefix) will 404 until it does",
                     metadata: ["root": "\(mount.root)"])
             }
-            logger.debug("asset mount registered", metadata: [
-                "prefix": "\(mount.prefix)",
-                "root": "\(mount.root)",
-                "pipelines": .array(mount.pipelines.map { .string($0.name) }),
-            ])
+            logger.debug(
+                "asset mount registered",
+                metadata: [
+                    "prefix": "\(mount.prefix)",
+                    "root": "\(mount.root)",
+                    "pipelines": .array(mount.pipelines.map { .string($0.name) }),
+                ])
         }
 
         let defaultChain = chainsByLane[.default] ?? []
@@ -239,13 +246,16 @@ public enum DispatchBuilder {
                     context: context)
             })
 
-        logger.info("flight web dispatch assembled", metadata: [
-            "routes": .stringConvertible(router.routes.count),
-            "lanes": .dictionary(
-                .init(uniqueKeysWithValues: chainsByLane.map { lane, chain in
-                    (lane.name, Logger.MetadataValue.array(chain.map { .string($0.name) }))
-                })),
-        ])
+        logger.info(
+            "flight web dispatch assembled",
+            metadata: [
+                "routes": .stringConvertible(router.routes.count),
+                "lanes": .dictionary(
+                    .init(
+                        uniqueKeysWithValues: chainsByLane.map { lane, chain in
+                            (lane.name, Logger.MetadataValue.array(chain.map { .string($0.name) }))
+                        })),
+            ])
 
         let responders = respondersByRoute
         let fallbacks = mountResponders
@@ -300,7 +310,6 @@ public enum DispatchBuilder {
             logger: logger)
     }
 
-
     /// The assembled per-request pipeline, exposed separately so test
     /// harnesses can run a hand-built chain — a plain `[MiddlewareRegistration]`,
     /// not a single controller in it — without needing
@@ -335,7 +344,8 @@ public enum DispatchBuilder {
     ) -> Dispatch {
         let respond: @Sendable (Request) async -> Response = { request in
             // Read only when something will see the request event.
-            let start = Telemetry.isEnabled(HTTPEvents.RequestHandled.self) ? ContinuousClock.now : nil
+            let start =
+                Telemetry.isEnabled(HTTPEvents.RequestHandled.self) ? ContinuousClock.now : nil
 
             // Request identity: honor an inbound X-Request-ID, mint otherwise.
             let requestID = request.headers[.xRequestID] ?? UUID().uuidString

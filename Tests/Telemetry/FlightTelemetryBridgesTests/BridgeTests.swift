@@ -1,6 +1,6 @@
 #if Telemetry
     import FlightCore
-    import FlightTelemetry
+    import TelemetryMacros
     import FlightTelemetryBridges
     import InMemoryTracing
     import Logging
@@ -225,8 +225,8 @@
                     metricsFactory: metrics)
                 #expect(
                     module.reportedMetrics.map(\.descriptor.name) == [
-                        "bridgetest.module", "flight.telemetry.handler_failed",
-                        "flight.telemetry.cardinality_exceeded",
+                        "bridgetest.module", "telemetry.handler_failed",
+                        "telemetry.cardinality_exceeded",
                     ])
                 emitRequest("/m")
                 #expect(try metrics.expectCounter("bridgetest_module").totalValue == 1)

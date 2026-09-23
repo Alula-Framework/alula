@@ -1,4 +1,4 @@
-import FlightTelemetry
+import TelemetryMacros
 
 /// What the session middleware reports, as telemetry events.
 ///

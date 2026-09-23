@@ -1,8 +1,8 @@
 import FlightCore
-import FlightTelemetry
 import FlightTelemetryBridges
 import Logging
 import ServiceLifecycle
+import TelemetryCore
 
 /// The composition-root module (§5.3, §8): choosing a transport is choosing
 /// which of these to include —

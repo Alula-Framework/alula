@@ -6,9 +6,7 @@
 
 import FlightCore
 import FlightSecurityCore
-import FlightTelemetryTesting
 import FlightWeb
-import FlightWebTesting
 import Foundation
 
 // snippet.hide
@@ -142,12 +140,4 @@ func sessionShapes(configuration: Configuration) throws {
     // Session ids are opaque; the only thing to do with one is carry it.
     let id = SessionID.generate()
     _ = SessionID(cookieValue: id.cookieValue)
-}
-
-// Session events, captured in a test.
-func sessionEventShapes(client: TestClient) async {
-    let failures = await TelemetryTest.capture(SessionEvents.StoreFailed.self) {
-        _ = await client.get("/")
-    }
-    precondition(failures.map(\.metadata.operation) == ["load"])
 }

@@ -1,9 +1,9 @@
 import FlightAPNSTesting
 import FlightCore
-import FlightTelemetryTesting
 import Foundation
 import JWTKit
 import Synchronization
+import TelemetryTesting
 import Testing
 
 @testable import FlightAPNS
@@ -411,16 +411,21 @@ struct APNSClientTests {
             gateway.refuse(status: 410, reason: "Unregistered", timestamp: .now)
             _ = try? await client.send(.alert(body: "hi"), to: Fixture.token)
         }
-        #expect(events.map(\.name) == [
-            "flight.apns.provider_token_minted", "flight.apns.send", "flight.apns.send",
-        ], "one token, reused rather than re-minted")
-        #expect(events.dropFirst().map { $0[metadata: "outcome"] } == ["delivered", "Unregistered"])
+        #expect(
+            events.map(\.name) == [
+                "flight.apns.provider_token_minted", "flight.apns.send", "flight.apns.send",
+            ], "one token, reused rather than re-minted")
+        #expect(
+            events.dropFirst().map { $0[metadata: "outcome"] } == ["delivered", "Unregistered"])
     }
 
     @Test("the default metrics report under the names 0.33 used")
     func metricNames() {
-        #expect(APNSMetrics.definitions.map { $0.descriptor.name.replacingOccurrences(of: ".", with: "_") } == [
-            APNSMetrics.sends, APNSMetrics.sendDuration, APNSMetrics.providerTokensMinted,
-        ])
+        #expect(
+            APNSMetrics.definitions.map {
+                $0.descriptor.name.replacingOccurrences(of: ".", with: "_")
+            } == [
+                APNSMetrics.sends, APNSMetrics.sendDuration, APNSMetrics.providerTokensMinted,
+            ])
     }
 }

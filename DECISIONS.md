@@ -7,6 +7,52 @@ wrong, say so and it changes.
 
 ---
 
+## D44 — The telemetry core is its own package
+
+**Context.** D42 kept telemetry inside Flight and named the trigger for
+moving it out: an independent library adopting it. The 0.34 audit (D43)
+argued for moving it before that happened, and you agreed.
+
+**Chosen.** [swift-telemetry](https://github.com/Flight-Framework/swift-telemetry)
+is a package of its own, in the org beside swift-changeset, with three
+modules:
+
+- **`TelemetryCore`**: events, spans, handlers, metric definitions and the
+  bounded stream. It depends on swift-service-context only.
+- **`TelemetryMacros`**: the macros, which re-export the core. Separating
+  them was the audit's other recommendation: a library that writes
+  conformances by hand needs no swift-syntax.
+- **`TelemetryTesting`**: capture.
+
+No module is named `Telemetry`, because a module sharing the name of the
+type every call site writes breaks qualified lookup. swift-changeset is
+`Changesets` for the same reason. The package carries its own decisions
+(T1–T4), CI (the TSan stress test, compile refusals, allocation-enforced
+benchmarks, docs, macOS), and the benchmarks.
+
+Flight keeps what is Flight's: `FlightTelemetryBridges`, meaning the
+swift-metrics reporter, the tracing observer, the log bridge and
+`FlightTelemetryModule`, plus the events its own subsystems emit. Every
+use of swift-telemetry in Flight is trait-gated, so the lean consumer
+resolves 7 packages again; 0.34 had made it 8.
+
+**Renamed in the move.** The runtime's own events,
+`flight.telemetry.handler_failed` and `flight.telemetry.cardinality_exceeded`,
+became `telemetry.*`. A neutral package shouldn't carry Flight's name, and
+nothing outside Flight used them yet.
+
+**Not moved.** The bridges stay in Flight. They are how Flight composes
+telemetry, and swift-metrics, swift-distributed-tracing and swift-log are
+reporting choices. Putting those in the core would give every library
+emitting an event those dependencies too, which is the coupling this move
+exists to avoid.
+
+**Cost of reversing.** Folding it back in means one package dependency
+fewer and three module renames. Every independent adopter would then have
+to take on Flight.
+
+---
+
 ## D43 — Answering the 0.34 telemetry audit
 
 **Context.** An external audit of the 0.34 telemetry work found no P0. It
@@ -86,8 +132,8 @@ Extracting means a new repository and package: a telemetry core, a macro
 product separate from the core so hand-written events need no swift-syntax,
 and testing. Flight would depend on it and keep the bridges and the module.
 That's a new published repository and a new dependency for every Flight
-consumer, so it's the user's call rather than a finding to fix. The
-recommendation stands: extract before Hangar adopts.
+consumer, so it was the user's call rather than a finding to fix. The
+user agreed, and D44 records the move.
 
 ---
 

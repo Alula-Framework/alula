@@ -1,8 +1,8 @@
 import Crypto
 import FlightSessions
-import FlightTelemetry
 import FlightWeb
 import Foundation
+import TelemetryCore
 
 /// Links that work once: password reset, email verification, magic sign-in.
 ///

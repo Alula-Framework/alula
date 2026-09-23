@@ -6,51 +6,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Answers an external audit of the 0.34 telemetry work. D43 has the record.
-
-### Fixed
-
-- **A narrow prefix no longer slows unrelated telemetry.**
-  - An erased handler or a span observer on one prefix used to switch
-    every event and span in the process onto the slow path.
-  - With a narrow prefix attached, an unrelated event cost 16.8 ns instead
-    of 1.7 ns. An unrelated span cost 908 ns and 3 allocations.
-  - The bits are now set per slot, only where a prefix matches: 1.9 ns and
-    2.0 ns, with no allocations. Two new benchmark scenarios hold that line.
-- **A metrics backend bootstrapped after composition is found.**
-  `SwiftMetricsReporter` resolves `MetricsSystem.factory` when it makes each
-  instrument. `FlightTelemetryModule` looks again when its service starts,
-  if reporting was automatically off at composition.
-- **A handler list retired inside a dispatch is freed** when the outermost
-  dispatch ends. Before, it could be kept for the life of the process.
-
-### Added
-
-- `Telemetry.stream(E.self, id:capacity:)` and `stream(prefix:…)` hand
-  events to async code through a bounded buffer. When it's full, the
-  oldest (or newest) events are dropped and counted. The handler detaches
-  when the subscription is dropped.
-- `EventRecord` and `AnyEventRecord` are in `FlightTelemetry`.
-  `CapturedEvent` and `CapturedAnyEvent` are typealiases of them.
-- `SpanFlags(name:)`, which the span macro now writes, and which scopes a
-  span's observed bit to its own name.
-- The telemetry guide opens with the rule that telemetry is observational
-  only, and carries five laws.
+The telemetry core moved out of Flight into a package of its own,
+[swift-telemetry](https://github.com/Flight-Framework/swift-telemetry), so
+that a library can emit without depending on Flight (D44). The release also
+answers an external audit of the 0.34 telemetry work (D43). The audit fixes
+landed in swift-telemetry 0.1.0, and Flight picks them up there.
 
 ### Changed
 
-- **Breaking: event names belong to one type.** A second type claiming a
-  name is refused. Attaching to it throws the new
-  `AttachError.nameConflict`, and its emits go nowhere, with a warning.
-  This replaces a debug assertion and a release-mode warning.
-- **Breaking: the log keys are renamed.** `telemetry.span_id` is now
-  `telemetry.local_span_id`, and `telemetry.parent_span_id` is now
-  `telemetry.local_parent_span_id`. They're unique within one process, not
-  across replicas.
-- **`SwiftMetricsReporter.factory` is optional.** Nil means the
-  bootstrapped factory, read when each instrument is first made.
+- **Breaking: `FlightTelemetry` and `FlightTelemetryTesting` are gone.**
+  - For your own events, depend on swift-telemetry:
+    `.product(name: "TelemetryMacros", package: "swift-telemetry")`, or
+    `TelemetryCore` if you write conformances by hand.
+  - For capture in tests, use `TelemetryTesting`.
+  - Types and API are unchanged apart from the renames below.
+  - `FlightTelemetryBridges` and `FlightTelemetryModule` stay in Flight.
+- **Breaking: the runtime's own events are renamed.** They are now
+  `telemetry.handler_failed` and `telemetry.cardinality_exceeded`, and so
+  are the metrics `FlightTelemetryModule` reports for them.
+- **Breaking: two changes from the audit.**
+  - A second event type claiming a taken name is refused. Attaching to it
+    throws `AttachError.nameConflict`, and its emits are dropped.
+  - The log keys `telemetry.span_id` and `telemetry.parent_span_id` are now
+    `telemetry.local_span_id` and `telemetry.local_parent_span_id`.
+- **`Telemetry.stream` moved to swift-telemetry's core.** It's a bounded
+  async bridge.
+- **A lean consumer resolves 7 packages again.** Every use of
+  swift-telemetry is trait-gated.
+- **`SwiftMetricsReporter.factory` is optional.** Nil means the bootstrapped
+  factory, read when each instrument is first made.
+
+### Fixed (from the audit, D43)
+
+- **A narrow prefix no longer puts unrelated telemetry on the slow path.**
+  Before, an unrelated event cost 16.8 ns instead of about 1.7 ns, and an
+  unrelated span cost 908 ns and 3 allocations. Both are back to about
+  2 ns, with no allocations.
+- **A metrics backend bootstrapped after composition is found** when
+  `FlightTelemetryModule`'s service starts.
+- **A handler list retired inside a dispatch is freed** when that dispatch
+  ends.
 - **`MetricBuckets` is documented as a hint** that `SwiftMetricsReporter`
-  doesn't honor. swift-metrics has no API for bucket boundaries.
+  can't honor.
 
 ## [0.34.0] - 2026-09-23
 

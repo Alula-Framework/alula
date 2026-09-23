@@ -1,9 +1,9 @@
 import FlightRateLimit
-import FlightTelemetry
 import FlightWeb
 import Foundation
 import Logging
 import Synchronization
+import TelemetryCore
 
 /// Checks an identifier and password against a ``CredentialStore`` and
 /// answers with a ``Principal`` — the same type every other sign-in path

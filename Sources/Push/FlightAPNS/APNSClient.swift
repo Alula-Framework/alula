@@ -1,6 +1,6 @@
-import FlightTelemetry
 import Foundation
 import Logging
+import TelemetryCore
 
 /// What the gateway answered for an accepted push.
 public struct APNSReceipt: Sendable, Equatable {
@@ -188,4 +188,3 @@ public final class APNSClient: Sendable {
                 timestamp: response.status == 410 ? timestamp : nil))
     }
 }
-

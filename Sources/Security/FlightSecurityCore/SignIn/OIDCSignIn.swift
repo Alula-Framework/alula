@@ -1,8 +1,8 @@
 import Crypto
 import FlightCore
-import FlightTelemetry
 import FlightWeb
 import Foundation
+import TelemetryCore
 
 /// What ``OIDCSignIn`` needs: who the provider is, who this application is
 /// to it, and where the browser comes back.

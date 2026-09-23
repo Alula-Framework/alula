@@ -13,13 +13,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "LeanConsumer",
-            dependencies: [
-                .product(name: "FlightCore", package: "flight"),
-                // Ungated: any target may emit, with no trait named. Built
-                // here so a dependency creeping into the core shows up as a
-                // resolution this check refuses.
-                .product(name: "FlightTelemetry", package: "flight"),
-            ]
+            dependencies: [.product(name: "FlightCore", package: "flight")]
         )
     ]
 )

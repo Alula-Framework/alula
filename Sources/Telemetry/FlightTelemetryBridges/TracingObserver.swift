@@ -1,5 +1,5 @@
-import FlightTelemetry
 import ServiceContextModule
+import TelemetryCore
 import Tracing
 
 /// Turns telemetry spans into swift-distributed-tracing spans — exported by

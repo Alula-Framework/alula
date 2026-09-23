@@ -1,9 +1,9 @@
 import CoreMetrics
 import FlightCore
-import FlightTelemetry
 import Logging
 import ServiceLifecycle
 import Synchronization
+import TelemetryCore
 import Tracing
 
 /// Reports every module's metrics, and optionally traces spans and logs
@@ -215,11 +215,11 @@ public struct FlightTelemetryModule: FlightModule {
 /// them at shutdown — attaching late what composition could not, when a
 /// backend was bootstrapped after it.
 final class TelemetryAttachments: Service, Sendable {
-    private let tokens: Lock<HandlerTokens?>
+    private let tokens: Mutex<HandlerTokens?>
     private let late: (@Sendable () throws -> HandlerTokens)?
 
     init(_ tokens: consuming HandlerTokens, late: (@Sendable () throws -> HandlerTokens)?) {
-        self.tokens = Lock(tokens)
+        self.tokens = Mutex(tokens)
         self.late = late
     }
 

@@ -1,9 +1,9 @@
 import FlightCore
 import FlightSessions
-import FlightTelemetry
 import FlightWeb
 import Foundation
 import HTTPTypes
+import TelemetryCore
 
 /// Extracts the bearer token, validates it, and writes the resulting
 /// ``Principal`` onto the copy of the request context it passes downstream.

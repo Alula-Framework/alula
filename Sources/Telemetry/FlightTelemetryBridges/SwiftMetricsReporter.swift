@@ -1,6 +1,6 @@
 import CoreMetrics
-import FlightTelemetry
 import Synchronization
+import TelemetryCore
 
 /// Reports metric definitions through swift-metrics — to whatever backend
 /// the application bootstrapped, Prometheus, StatsD, OpenTelemetry.
@@ -94,7 +94,7 @@ final class SwiftMetricsRecorder: MetricRecorder {
     private let label: String
     private let explicitFactory: (any MetricsFactory)?
     private let limit: Int
-    private let instruments = Lock<[[String]: Instrument]>([:])
+    private let instruments = Mutex<[[String]: Instrument]>([:])
     private let overflowReported = Atomic<Bool>(false)
 
     init(descriptor: MetricDescriptor, factory: (any MetricsFactory)?, limit: Int) {

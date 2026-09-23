@@ -1,6 +1,6 @@
 import FlightCore
-import FlightTelemetry
 import FlightTelemetryBridges
+import TelemetryCore
 
 /// The module:
 ///

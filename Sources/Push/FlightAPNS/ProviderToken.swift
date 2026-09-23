@@ -1,7 +1,7 @@
-import FlightTelemetry
 import Foundation
 import JWTKit
 import Synchronization
+import TelemetryCore
 
 /// The claims of an APNs provider token: who is asking (`iss`, the team id)
 /// and when it was minted (`iat`). Apple wants nothing else in the payload,

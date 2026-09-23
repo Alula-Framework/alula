@@ -1,8 +1,8 @@
 import FlightSessions
-import FlightTelemetry
 import Foundation
 import HTTPTypes
 import Logging
+import TelemetryCore
 
 /// What the session middleware is composed with: the store, the settings,
 /// the value coding, and the clock. One immutable reference shared by every
@@ -270,4 +270,3 @@ extension RequestContext {
         return session
     }
 }
-

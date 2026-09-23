@@ -159,7 +159,7 @@ called directly gets an empty session from `RequestContext.mock(session:)`.
 asked of it, so a test can assert something *was cached* — or evicted —
 rather than only that it returned the right value.
 
-### Telemetry — `FlightTelemetryTesting`
+### Telemetry — swift-telemetry's `TelemetryTesting`
 
 `TelemetryTest.capture(E.self) { … }` returns the events its body emitted,
 typed. That includes events from child tasks and from requests made through

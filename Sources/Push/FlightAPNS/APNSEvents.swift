@@ -1,4 +1,4 @@
-import FlightTelemetry
+import TelemetryMacros
 
 /// What the APNs client reports, as telemetry events.
 ///

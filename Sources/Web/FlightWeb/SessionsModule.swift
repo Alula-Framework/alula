@@ -1,7 +1,7 @@
 import FlightCore
 import FlightSessions
-import FlightTelemetry
 import FlightTelemetryBridges
+import TelemetryCore
 
 /// Session wiring, composed by argument:
 ///

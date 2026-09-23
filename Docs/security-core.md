@@ -521,7 +521,7 @@ No account model — the application's users stay its own, reached through
 for OIDC-compliant providers (each is configuration of the one generic
 validator and the one generic sign-in), no token issuance, no TLS opinions.
 
-"No first-party credential checking" was a non-goal until 0.33.0 reversed
+"No first-party credential checking" was a non-goal until 0.31.0 reversed
 it on purpose: an application should be able to start on its own accounts
 without running an identity provider, and move to one later without
 rewriting its sign-in. D39 records why, and what keeps the switch cheap.

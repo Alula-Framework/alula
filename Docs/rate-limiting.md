@@ -23,7 +23,7 @@ limiter as the web layer without any of them needing an HTTP server.
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.32.0", traits: ["Web"]),
+        from: "0.33.0", traits: ["Web"]),
 ],
 ```
 

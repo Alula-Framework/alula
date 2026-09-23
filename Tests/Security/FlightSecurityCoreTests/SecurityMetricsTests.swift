@@ -3,26 +3,47 @@ import FlightRateLimit
 import FlightRateLimitTesting
 import FlightSessions
 import FlightSessionsTesting
+import FlightTelemetry
+import FlightTelemetryTesting
 import FlightWeb
 import FlightWebTesting
 import Foundation
 import Logging
-import MetricsTestKit
 import Testing
 
 @testable import FlightSecurityCore
 
-/// The counters the audit asked for, asserted through an injected factory —
-/// never the process-wide `MetricsSystem`, which suites running in parallel
-/// would share.
-@Suite("Security metrics")
+/// The events behind the counters the audit asked for, captured per test —
+/// a capture sees only its own body's emits, so suites running in parallel
+/// never count each other's.
+@Suite("Security telemetry")
 struct SecurityMetricsTests {
-    private let metrics = TestMetrics()
     private let fast = Argon2idHashing(
         parameters: .init(timeCost: 1, memoryCost: 8, parallelism: 1))
 
-    private func total(_ label: String, _ dimensions: [(String, String)] = []) -> Int64 {
-        (try? metrics.expectCounter(label, dimensions).totalValue) ?? 0
+    /// How many of `events` are `name` with every `metadata` field matching.
+    private func count(
+        _ events: [CapturedAnyEvent], _ name: EventName, _ metadata: [String: String] = [:]
+    ) -> Int {
+        events.filter { event in
+            event.name == name && metadata.allSatisfy { event[metadata: $0.key] == $0.value }
+        }.count
+    }
+
+    @Test("the default metrics report under the names 0.33 used")
+    func metricNames() {
+        let labels = { (definitions: [TelemetryMetric]) in
+            definitions.map { $0.descriptor.name.replacingOccurrences(of: ".", with: "_") }
+        }
+        #expect(labels(SignInMetrics.definitions) == [
+            SignInMetrics.started, SignInMetrics.attempts, SignInMetrics.duration,
+            SignInMetrics.passwordRehashes, SignInMetrics.expired, SignInMetrics.tokensIssued,
+            SignInMetrics.tokensRedeemed,
+        ])
+        #expect(labels(SessionMetrics.definitions) == [
+            SessionMetrics.created, SessionMetrics.regenerated, SessionMetrics.storeFailures,
+            SessionMetrics.revoked, SessionMetrics.revocationFailures,
+        ])
     }
 
     @Test("password sign-in counts each outcome by a closed name, and rehashes")
@@ -36,43 +57,48 @@ struct SecurityMetricsTests {
         let auth = PasswordAuthenticator(
             store: store, issuer: "local", hasher: stronger,
             limiter: RateLimiter(store: RecordingRateLimitStore()),
-            throttle: .init(perIdentifier: .perMinute(2), perAddress: .perMinute(100)),
-            metrics: metrics)
+            throttle: .init(perIdentifier: .perMinute(2), perAddress: .perMinute(100)))
 
-        _ = try await auth.authenticate(identifier: "u", password: "pw", clientAddress: nil)
-        _ = try? await auth.authenticate(identifier: "u", password: "wrong", clientAddress: nil)
-        _ = try? await auth.authenticate(identifier: "u", password: "pw", clientAddress: nil)
-
+        let events = try await TelemetryTest.capture(prefix: "flight.sign_in") {
+            _ = try await auth.authenticate(identifier: "u", password: "pw", clientAddress: nil)
+            _ = try? await auth.authenticate(identifier: "u", password: "wrong", clientAddress: nil)
+            _ = try? await auth.authenticate(identifier: "u", password: "pw", clientAddress: nil)
+        }
         let attempt = { (outcome: String) in
-            total(SignInMetrics.attempts, [("provider", "password"), ("outcome", outcome)])
+            count(events, SignInEvents.Attempt.name, ["provider": "password", "outcome": outcome])
         }
         #expect(attempt("success") == 1)
         #expect(attempt("invalid_credentials") == 1)
         #expect(attempt("throttled") == 1)
-        #expect(total(SignInMetrics.passwordRehashes) == 1)
+        #expect(count(events, SignInEvents.PasswordRehashed.name) == 1)
+        let durations = events.filter { $0.name == SignInEvents.Attempt.name }
+            .compactMap { $0.measurement("duration") as? Duration }
+        #expect(durations.count == 3 && durations[0] > .zero, "hashing takes time, and is measured")
     }
 
     @Test("one-time token redemptions keep the difference the caller is never told")
     func tokenOutcomes() async throws {
         let clock = TestClock()
         let tokens = OneTimeTokens(
-            store: InMemoryOneTimeTokenStore(now: clock.nowProvider), now: clock.nowProvider,
-            metrics: metrics)
-        let a = try await tokens.issue(for: "u", purpose: .passwordReset, lifetime: .seconds(60))
-        _ = try await tokens.redeem(a, purpose: .passwordReset)
-        _ = try? await tokens.redeem(a, purpose: .passwordReset)
-        let b = try await tokens.issue(
-            for: "u", purpose: .emailVerification, lifetime: .seconds(60))
-        _ = try? await tokens.redeem(b, purpose: .passwordReset)
-        let c = try await tokens.issue(
-            for: "u", purpose: .passwordReset, lifetime: .seconds(60), binding: "h1")
-        _ = try? await tokens.redeem(c, purpose: .passwordReset) { _ in "h2" }
+            store: InMemoryOneTimeTokenStore(now: clock.nowProvider), now: clock.nowProvider)
+        let events = try await TelemetryTest.capture(prefix: "flight.one_time_tokens") {
+            let a = try await tokens.issue(for: "u", purpose: .passwordReset, lifetime: .seconds(60))
+            _ = try await tokens.redeem(a, purpose: .passwordReset)
+            _ = try? await tokens.redeem(a, purpose: .passwordReset)
+            let b = try await tokens.issue(
+                for: "u", purpose: .emailVerification, lifetime: .seconds(60))
+            _ = try? await tokens.redeem(b, purpose: .passwordReset)
+            let c = try await tokens.issue(
+                for: "u", purpose: .passwordReset, lifetime: .seconds(60), binding: "h1")
+            _ = try? await tokens.redeem(c, purpose: .passwordReset) { _ in "h2" }
+        }
 
         let redeemed = { (outcome: String) in
-            total(
-                SignInMetrics.tokensRedeemed, [("purpose", "password-reset"), ("outcome", outcome)])
+            count(
+                events, SignInEvents.TokenRedemption.name,
+                ["purpose": "password-reset", "outcome": outcome])
         }
-        #expect(total(SignInMetrics.tokensIssued, [("purpose", "password-reset")]) == 2)
+        #expect(count(events, SignInEvents.TokenIssued.name, ["purpose": "password-reset"]) == 2)
         #expect(redeemed("redeemed") == 1)
         #expect(redeemed("unknown_or_used") == 1)
         #expect(redeemed("wrong_purpose") == 1)
@@ -101,19 +127,20 @@ struct SecurityMetricsTests {
                 issuer: testIssuer, clientID: "my-app",
                 redirectURI: URL(string: "https://app.example.com/cb")!),
             http: NoHTTP(), poster: NoPost(),
-            jwksSource: try InMemoryJWKSSource(json: jwksJSON([])),
-            metrics: metrics)
+            jwksSource: try InMemoryJWKSSource(json: jwksJSON([])))
         let session = Session()
         let context = RequestContext(
             request: Request(path: "/cb"), session: session, logger: Logger(label: "t"))
-        _ = try await provider.beginSignIn(context, returnTo: nil)
-        _ = try? await provider.completeSignIn(
-            RequestContext(
-                request: Request(path: "/cb?code=x&state=forged"), session: session,
-                logger: Logger(label: "t")))
-        #expect(total(SignInMetrics.started, [("provider", "oidc")]) == 1)
+        let events = try await TelemetryTest.capture(prefix: "flight.sign_in") {
+            _ = try await provider.beginSignIn(context, returnTo: nil)
+            _ = try? await provider.completeSignIn(
+                RequestContext(
+                    request: Request(path: "/cb?code=x&state=forged"), session: session,
+                    logger: Logger(label: "t")))
+        }
+        #expect(count(events, SignInEvents.Started.name, ["provider": "oidc"]) == 1)
         #expect(
-            total(SignInMetrics.attempts, [("provider", "oidc"), ("outcome", "invalid_callback")])
+            count(events, SignInEvents.Attempt.name, ["provider": "oidc", "outcome": "invalid_callback"])
                 == 1)
     }
 
@@ -124,7 +151,7 @@ struct SecurityMetricsTests {
             store: InMemorySessionStore(now: clock.nowProvider),
             settings: try SessionSettings(
                 ttl: .seconds(86_400), cookieSecure: false, authenticatedLifetime: .seconds(60)),
-            now: clock.nowProvider, metrics: metrics)
+            now: clock.nowProvider)
         let routes = [
             RouteRegistration(method: .post, path: "/visit", source: "t") { context in
                 try context.requireSession().set("k", 1)
@@ -143,19 +170,22 @@ struct SecurityMetricsTests {
             routes: routes,
             middleware: MiddlewareRegistration.lane(.default, [Sessions(runtime: runtime)])
                 + FlightSecurityModule(validator: nil, sessions: runtime).middleware)
-        let visit = await client.post("/visit")
-        let cookie = try #require(
-            visit.headerValues("Set-Cookie").first?.split(separator: ";").first.map(String.init))
-        let login = await client.post("/login", headers: [.cookie: cookie])
-        let signedIn = try #require(
-            login.headerValues("Set-Cookie").first?.split(separator: ";").first.map(String.init))
-        _ = try await runtime.revokeSessions(ownedBy: "nobody")
-        clock.advance(by: 61)
-        #expect(await client.get("/me", headers: [.cookie: signedIn]).status == .unauthorized)
+        let events = try await TelemetryTest.capture(prefix: "flight") {
+            let visit = await client.post("/visit")
+            let cookie = try #require(
+                visit.headerValues("Set-Cookie").first?.split(separator: ";").first.map(String.init))
+            let login = await client.post("/login", headers: [.cookie: cookie])
+            let signedIn = try #require(
+                login.headerValues("Set-Cookie").first?.split(separator: ";").first.map(String.init))
+            _ = try await runtime.revokeSessions(ownedBy: "nobody")
+            clock.advance(by: 61)
+            #expect(await client.get("/me", headers: [.cookie: signedIn]).status == .unauthorized)
+        }
 
-        #expect(total(SessionMetrics.created) == 1)
-        #expect(total(SessionMetrics.regenerated) >= 1)
-        #expect(total(SignInMetrics.expired) == 1)
-        #expect(total(SessionMetrics.revoked) == 0)
+        #expect(count(events, SessionEvents.Created.name) == 1)
+        #expect(count(events, SessionEvents.Regenerated.name) >= 1)
+        #expect(count(events, SignInEvents.Expired.name) == 1)
+        let revoked = events.filter { $0.name == SessionEvents.Revoked.name }
+        #expect(revoked.map { $0.measurement("sessions")?.telemetryDescription } == ["0"])
     }
 }

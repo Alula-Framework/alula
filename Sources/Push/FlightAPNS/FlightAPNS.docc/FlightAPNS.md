@@ -54,6 +54,7 @@ environment or topic, so those never delete.
 - ``PushPriority``
 - ``APNSReceipt``
 - ``APNSError``
+- ``APNSEvents``
 - ``APNSMetrics``
 
 ### Hosting

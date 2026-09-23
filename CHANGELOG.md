@@ -4,6 +4,95 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Telemetry. Libraries emit typed events, and applications decide what
+those become: metrics, traces, logs, or assertions in a test. Flight's own
+subsystems are the first emitters. `Docs/telemetry.md` is the guide, and
+D42 records the design and where it departs from the spec it came from.
+
+### Added
+
+- **`FlightTelemetry`: typed events, spans and metric definitions.** It
+  depends on swift-service-context alone and needs no trait, so any
+  target can emit.
+  - `@TelemetryEvent("hangar.query")` makes a caseless enum an event. Its
+    `Measurements` and `Metadata` structs encode themselves.
+  - Names are checked at build time. A string measurement, a tag that
+    isn't a `TagValue`, and a tag from another event's fields are compile
+    errors.
+  - `Telemetry.emit(E.self) { … }` builds its payload only if something is
+    listening.
+  - `@TelemetrySpan` plus `Telemetry.span(E.self, metadata:) { span in … }`
+    emit start, stop and exception phases. Each phase is an event with its
+    own handlers. Stop metadata is set inside the body, typed throws pass
+    through unchanged, and inner work gets a `ServiceContext` carrying the
+    span's id and its parent's.
+  - Typed handlers, erased prefix handlers (`AnyEvent`) and `SpanObserver`s
+    are all available. Each attach returns a noncopyable `HandlerToken`
+    that detaches when dropped (`persist()` keeps it).
+  - A handler that throws is detached and reported as
+    `TelemetryHandlerFailed`. Re-entry is capped at 8.
+  - **The detach guarantee:** once `detach()` returns, the handler is never
+    called again, even by an emit already under way.
+  - `.counter`, `.sum`, `.lastValue` and `.distribution` are metric
+    definitions, type-checked by key path, with any number of tags and a
+    `keep:` filter.
+- **Performance.** With nothing attached, an emit is one load (about
+  1.7 ns) and an unobserved span one load (about 1.8 ns). One typed handler
+  costs about 23 ns and one erased handler about 53 ns. None of these
+  allocate. `Benchmarks/` measures and enforces them.
+- **`FlightTelemetryBridges`**, behind a new `Telemetry` trait that `Web`
+  and `APNS` imply:
+  - `SwiftMetricsReporter` reports through swift-metrics. It caps each
+    metric at 1,000 tag combinations; past that, values go to `_overflow`
+    and `TelemetryCardinalityExceeded` fires once.
+  - `TracingObserver` turns spans into swift-distributed-tracing spans,
+    parenting everything inside.
+  - `LogBridge` turns events into log lines.
+  - `Logger.MetadataProvider.telemetry` stamps span ids on every log line.
+  - `FlightTelemetryModule` wires all of these from `telemetry.*`.
+- **`FlightTelemetryTesting`.** `TelemetryTest.capture(E.self) { … }`,
+  `capture(prefix:)`, `captureSpans` and `expectNoEmission` see only
+  their own body's emits, including child tasks and `TestClient`
+  requests, however many tests run in parallel.
+- **`HTTPEvents.RequestHandled`** (`flight.http.request`), emitted for
+  every request with its method, route pattern, status and duration.
+  `FlightWebModule` contributes `flight_http_requests` and
+  `flight_http_request_duration`. A request nothing matched is tagged
+  `unmatched`, never with its path.
+- **Latency metrics.** `flight_sign_in_duration`, mostly password hashing,
+  and `flight_apns_send_duration`.
+- **Macro diagnostics** name the fix: a class where a struct belongs, an
+  enum with cases, a stop field without a default, a field name the flat
+  stop metadata would collide on.
+- **CI.**
+  - A ThreadSanitizer job runs the telemetry suite with a 5-second
+    concurrent emit/attach/detach stress test.
+  - A compile-refusal check proves the type errors above stay errors.
+  - A benchmarks job enforces zero allocations on every push.
+
+### Changed
+
+- **Flight's metrics are events first.** Sessions, sign-in, one-time
+  tokens and APNs emit `SessionEvents`, `SignInEvents` and `APNSEvents`.
+  Their modules contribute the metrics, under the same names as 0.33.
+  `FlightTelemetryModule` comes with the Web, Sessions, Security and APNs
+  modules, and reports once a metrics backend is bootstrapped, so an
+  application that had these series keeps them with no change.
+- **Breaking: the `metrics:` factory parameters are gone** from
+  `SessionRuntime`, `Authentication`, `PasswordAuthenticator`,
+  `OIDCSignIn`, `OneTimeTokens` and `APNSClient`, one release after they
+  arrived. They existed for tests. Capture the events instead:
+  `TelemetryTest.capture(SignInEvents.Attempt.self) { … }`.
+- **The lean consumer resolves 8 packages, up from 7.** `FlightTelemetry`
+  is ungated, and brings swift-service-context, which is Apple's and has no
+  dependencies of its own.
+- **The composition generator imports the module of every included
+  module.** A module brought in only through another's `dependencies`
+  failed to build, because nothing imported it. `FlightTelemetryModule`
+  was the first such module.
+
 ## [0.33.0] - 2026-09-23
 
 Everything here answers an independent security review of 0.23–0.32.

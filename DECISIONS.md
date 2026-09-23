@@ -7,6 +7,186 @@ wrong, say so and it changes.
 
 ---
 
+## D42 — Telemetry: typed events in the core, reporting as a module, and where it departs from the spec
+
+**Context.** The swift-telemetry design spec (typed events after Elixir's
+`:telemetry`; spans; metric definitions; bridges; testing capture;
+performance targets) was to be brought into Flight "in the most library
+cohesive way", maximizing performance, developer experience and
+ergonomics.
+
+**Chosen — placement.** One package, as everything else is. The spec's
+eight targets become three products and a macro plugin:
+
+- `FlightTelemetry` holds events, emit, spans, handlers, metric definitions
+  and the macros.
+- `FlightTelemetryTesting` holds capture.
+- `FlightTelemetryBridges` holds the swift-metrics reporter, the tracing
+  observer, the log bridge and `FlightTelemetryModule`.
+
+The core depends on swift-service-context alone and is **ungated**, so any
+target, FlightCore's lean ones included, can emit. That moves the lean
+consumer from 7 resolved packages to 8, because SwiftPM resolves by
+package, not product. The alternative, gating the core behind a trait,
+would have left FlightSessions, FlightRateLimit and FlightScheduler unable
+to emit. The bridges sit behind a new `Telemetry` trait, which `Web` and
+`APNS` imply. Both already bring swift-metrics and tracing, so neither
+resolves anything new.
+
+**Chosen — adoption.** Flight's own subsystems are the first emitters. The
+0.33 counters became events (`SessionEvents`, `SignInEvents`,
+`APNSEvents`), plus `HTTPEvents.RequestHandled` from dispatch: an event,
+not a span, because the request is already a tracing span. Each module
+contributes default metric definitions under the exact 0.33 names, through
+the D15 aggregate, so a package Flight has never heard of does it the same
+way. The `metrics:` factory parameters from 0.33 are gone; tests capture
+events instead.
+
+`FlightTelemetryModule` is a `dependencies` entry of the Web, Sessions,
+Security and APNs modules ("naming one module names its stack"). Reporting
+is **on when a backend is bootstrapped**: metrics when `MetricsSystem` is
+not the no-op, tracing when `InstrumentationSystem` is not. Without this,
+an app upgrading from 0.33 with Prometheus bootstrapped would silently lose
+every Flight series. With it, an app with no backend attaches nothing and
+pays nothing.
+
+**Departures from the spec, each for a reason.**
+
+1. **`SpanHandle` is `~Copyable`, not `~Escapable`.** The spec
+   pre-authorized this fallback, and asked for a reproducer. On Swift
+   6.3.3, `struct H: ~Copyable, ~Escapable { @_lifetime(immortal) init() {} }`
+   fails with "an initializer cannot return a ~Escapable result", and
+   `@_lifetime` needs the experimental `Lifetimes` feature.
+2. **`EventContext` is a lazy, noncopyable view, like `AnyEvent`.** The
+   spec reads the clock and `ServiceContext.current` once per emit. Measured
+   here, that is 15 ns plus 13 ns of a 40 ns budget, on every emit, for
+   values a metrics handler never reads. Each value is now read on first
+   access and shared by every later handler. `snapshot()` keeps a copy. The
+   timestamp is "first read", which is also "at the emit" whenever handlers
+   keep the O(1) contract.
+3. **Metric definitions are static members (`.counter(…)`), not
+   `Counter(…)` types, and the builder is `TelemetryMetric.all { }`, not
+   `Metrics { }`.** swift-metrics already has a `Counter` type and a
+   `Metrics` module, and an application imports both. The spec's
+   `MetricsReporter` protocol became `MetricRecorder`, one per definition,
+   and `SwiftMetricsReporter.attach` returns `HandlerTokens`.
+4. **A span's `start` measurement is `monotonicTime: Duration`** since a
+   process reference. `ContinuousClock.Instant` is not a measurement.
+5. **`expectNoEmission` throws** rather than asserting. Flight's testing
+   modules import no test framework, and a thrown error fails a test under
+   any framework.
+6. **No `Poller`.** A `@Scheduled` job that emits is one. `@Instrumented`
+   stays deferred, as the spec's open questions allow.
+7. **Field names are snake_cased** from property names. This is what every
+   backend expects of a label.
+
+**Chosen — the hot path, after the spec's default failed.** The spec's
+default was a mutex snapshot per emit, to be switched only if the 40 ns
+target failed. It failed at 233 ns. The components, measured on this
+machine:
+
+| Component | Cost |
+| --- | --- |
+| mutex lock plus array retain | 36 ns |
+| per-handler in-flight atomics | 15.5 ns |
+| clock | 15 ns |
+| task-local | 13 ns |
+| seven pthread-key calls | ~12 ns |
+
+On top of those, the dispatch generic ran unspecialized across the module
+boundary. The replacements:
+
+- **One flags word per slot.** It says whether typed handlers exist, and
+  whether any erased handler or span observer exists anywhere; the registry
+  keeps the last two bits current on every enrolled slot. Nothing attached
+  is then one load.
+- **A span-level flags word** (`_spanFlags`, written by the macro), so an
+  unobserved span is one load, not five.
+- **RCU for typed handlers.** An emit announces itself in one of two epoch
+  counters and reads the published list without a lock. Attach and detach
+  swap the list and wait out a two-flip grace period before freeing the
+  old one. That wait is the detach guarantee, so typed handlers need no
+  per-handler atomics.
+- **An `@inlinable` typed dispatch**, so handlers are called specialized.
+  The spec limits `@inlinable` to the emit path, and this is the emit path.
+- **One thread-state pointer** instead of seven pthread-key calls.
+
+Erased handlers keep the per-entry Dekker check, because they are cached on
+every slot they match and cannot be swapped out of all of them at once.
+
+The result, measured by `Benchmarks/`:
+
+| Scenario | Measured | Target |
+| --- | --- | --- |
+| emit, nothing attached | 1.7 ns | ≤2 |
+| span, nothing attached | 1.8 ns | ≤5 |
+| emit, one typed handler | 23 ns | ≤40 |
+| emit, one erased handler | 53 ns | ≤80 |
+
+All four make zero allocations.
+
+**Refined — the detach guarantee.** `detach()` returning means the handler
+is never called again. A detach from *inside* a handler now does not wait,
+and takes effect for emits that start after it. Waiting there was a latent
+deadlock: two threads each detaching the other's handler wait on each other
+forever. That hazard existed before this redesign too.
+
+**Found — ThreadSanitizer cannot see `Synchronization.Mutex` on Linux.** A
+reproducer on Swift 6.3.3: four threads appending to an array only inside
+`Mutex.withLock` produce "Swift access race". The lock and unlock live in
+the uninstrumented standard library and hand off through a futex. A TSan
+gate that reports every contended lock is no gate, so telemetry locks with
+a `package` `Lock` over `pthread_mutex_t`, which TSan intercepts. That is
+this package's one `@unchecked Sendable`, justified at the declaration.
+
+Its state is never `Void`: a zero-sized field shares its address with the
+lock's own storage, and TSan reports the overlap as a race.
+
+**CI.**
+
+- **ThreadSanitizer job.** The telemetry suite runs with the 5 s stress
+  test, and any report fails the job.
+- **`check-telemetry-compile-errors.sh`.** It pins the refusals: a string
+  measurement, a non-tag tag, another event's tag or field, a bad name. It
+  also builds a positive control, so a refusal proves something.
+- **Benchmarks job.** It enforces zero allocations on every push. It prints
+  latency but doesn't enforce it, because a shared runner cannot hold a
+  2 ns line. The latency gate is `swift run -c release TelemetryBenchmarks`
+  on a quiet machine before tagging, which exits non-zero on a miss.
+
+**Found on the way.**
+
+- **The composition generator's imports.** It never imported the Swift
+  module of a module included only through another's `dependencies`. It was
+  latent until `FlightTelemetryModule` became the first such module, and
+  wiring the demo found it; `composerImportsDependencyModules` pins it.
+- **A capture double-counting.** A prefix capture counted events twice when
+  a broader capture elsewhere was live, because each shared erased handler
+  delivered to every current sink. `overlappingPrefixes` pins that.
+
+**Alternatives.**
+
+- **A separate swift-telemetry package**, as the spec's layout assumes.
+  One package is how every other Flight subsystem ships. The core depends
+  only on swift-service-context and swift-syntax, so extracting it later is
+  mechanical. That becomes the right call when Hangar adopts telemetry and
+  must stay light: it should not resolve Flight to emit.
+- **Keep the 0.33 counters and add events beside them.** Two mechanisms
+  for one fact, and the counters could not be captured in a test, traced
+  or logged.
+- **Opt-in `FlightTelemetryModule`.** This silently drops 0.33's series on
+  upgrade, as described under adoption.
+
+**Cost of reversing.**
+
+- **Placement:** extracting the core is mechanical.
+- **Adoption:** reversing it means restoring direct counters in three
+  subsystems.
+- **Hot path:** the RCU list is self-contained in `HandlerSlot`; a mutex
+  could return in an afternoon, at 4–10× the cost per emit.
+
+---
+
 ## D41 — Answering the 0.32 security review: what changed, and the one thing that did not
 
 **Context.** An independent review of the security stack found no P0. It

@@ -16,3 +16,4 @@ spikes/
 # untracked: it was removed from history once already, and a bare
 # `git add -A` will otherwise keep pulling it back in.
 COMPOSITION-MIGRATION.md
+.build-tsan/

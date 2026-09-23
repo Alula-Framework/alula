@@ -1,5 +1,7 @@
 import FlightCore
 import FlightSessions
+import FlightTelemetry
+import FlightTelemetryBridges
 
 /// Session wiring, composed by argument:
 ///
@@ -30,6 +32,10 @@ import FlightSessions
 /// No `service`: the in-memory store has no long-running work. An adapter
 /// module with a connection exposes its own.
 public struct FlightSessionsModule: FlightModule {
+
+    /// Reporting comes with the stack: `FlightTelemetryModule` reports this
+    /// module's metrics once a backend is bootstrapped.
+    public static var dependencies: [any FlightModule.Type] { [FlightTelemetryModule.self] }
     /// What the middleware runs on — store, settings, coding, clock. The one
     /// value this module provides, typed distinctly from `any SessionStore`
     /// so it never collides with the adapter that provides one.
@@ -37,6 +43,9 @@ public struct FlightSessionsModule: FlightModule {
 
     /// ``Sessions``, in the default lane.
     public let middleware: [MiddlewareRegistration]
+
+    /// ``SessionMetrics/definitions``, for `FlightTelemetryModule` to report.
+    public let telemetryMetrics: [TelemetryMetric] = SessionMetrics.definitions
 
     /// - Parameters:
     ///   - configuration: `sessions.*` is read from here.

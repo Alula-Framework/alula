@@ -159,6 +159,25 @@ called directly gets an empty session from `RequestContext.mock(session:)`.
 asked of it, so a test can assert something *was cached* — or evicted —
 rather than only that it returned the right value.
 
+### Telemetry — `FlightTelemetryTesting`
+
+`TelemetryTest.capture(E.self) { … }` returns the events its body emitted,
+typed. That includes events from child tasks and from requests made through
+`TestClient`, and excludes every other test's, however many run in
+parallel. Assert on what happened rather than on a metric: a sign-in
+failure, a store outage, a span's stop metadata.
+
+```swift
+let attempts = await TelemetryTest.capture(SignInEvents.Attempt.self) {
+    _ = try? await authenticator.authenticate(identifier: "ada", password: "wrong", clientAddress: nil)
+}
+#expect(attempts.map(\.metadata.outcome) == ["invalid_credentials"])
+```
+
+`capture(prefix:)` sees every event under a name, `captureSpans` sees every
+phase, and `expectNoEmission(prefix:)` throws with whatever was emitted.
+`Docs/telemetry.md` has the rest.
+
 ## What still needs a real server
 
 Nothing in this page does. Where a suite genuinely needs Postgres or Valkey —

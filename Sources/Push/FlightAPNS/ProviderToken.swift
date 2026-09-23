@@ -1,4 +1,4 @@
-import CoreMetrics
+import FlightTelemetry
 import Foundation
 import JWTKit
 import Synchronization
@@ -41,17 +41,14 @@ final class ProviderTokenSource: Sendable {
     private let now: @Sendable () -> Date
     private let cached = Mutex<Cached?>(nil)
 
-    private let metrics: any MetricsFactory
-
     init(
         keyID: String, teamID: String, privateKey: ES256PrivateKey,
-        now: @escaping @Sendable () -> Date, metrics: any MetricsFactory = MetricsSystem.factory
+        now: @escaping @Sendable () -> Date
     ) {
         self.keyID = keyID
         self.teamID = teamID
         self.privateKey = privateKey
         self.now = now
-        self.metrics = metrics
     }
 
     /// The current token, minting one when there is none or the cached one
@@ -70,7 +67,7 @@ final class ProviderTokenSource: Sendable {
             ProviderTokenClaims(iss: IssuerClaim(value: teamID), iat: IssuedAtClaim(value: now)),
             kid: kid)
         cached.withLock { $0 = Cached(token: token, issuedAt: now) }
-        Counter(label: APNSMetrics.providerTokensMinted, factory: metrics).increment()
+        Telemetry.emit(APNSEvents.ProviderTokenMinted.self)
         return token
     }
 

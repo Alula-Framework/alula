@@ -1,6 +1,6 @@
-import CoreMetrics
 import FlightCore
 import FlightSessions
+import FlightTelemetry
 import FlightWeb
 import Foundation
 import HTTPTypes
@@ -48,7 +48,6 @@ public struct Authentication: Sendable, SessionReading {
     /// stack, or a hand-built one, gets.
     private var authenticatedLifetime: Duration? = nil
     private var now: @Sendable () -> Date = Date.init
-    private var metrics: any MetricsFactory = MetricsSystem.factory
 
     /// For manual wiring or tests, where `@Inject` has nothing to
     /// resolve from.
@@ -59,18 +58,16 @@ public struct Authentication: Sendable, SessionReading {
     ///     sign-in. `FlightSecurityModule` passes
     ///     `sessions.authenticated-lifetime`.
     ///   - now: The clock the lifetime is measured on.
-    ///   - metrics: Where `flight_sign_in_expired` goes; the bootstrapped
-    ///     `MetricsSystem` when nil.
+    ///
+    /// A sign-in past its lifetime is reported as ``SignInEvents/Expired``.
     public init(
         validator: any TokenValidator,
         authenticatedLifetime: Duration? = nil,
-        now: @escaping @Sendable () -> Date = Date.init,
-        metrics: (any MetricsFactory)? = nil
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.validator = validator
         self.authenticatedLifetime = authenticatedLifetime
         self.now = now
-        self.metrics = metrics ?? MetricsSystem.factory
     }
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
@@ -88,7 +85,7 @@ public struct Authentication: Sendable, SessionReading {
                                 "session sign-in past its absolute lifetime; signing out",
                                 metadata: ["subject": "\(principal.subject)"])
                             session.signOut()
-                            Counter(label: SignInMetrics.expired, factory: metrics).increment()
+                            Telemetry.emit(SignInEvents.Expired.self)
                             return try await next(context)
                         }
                         return try await next(context.authenticated(as: principal))

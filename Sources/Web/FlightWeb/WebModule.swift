@@ -1,4 +1,6 @@
 import FlightCore
+import FlightTelemetry
+import FlightTelemetryBridges
 import Logging
 import ServiceLifecycle
 
@@ -26,6 +28,10 @@ import ServiceLifecycle
 /// per request (COMPOSITION-MIGRATION.md §9).
 public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @unchecked Sendable {
 
+    /// Reporting comes with the stack: `FlightTelemetryModule` reports this
+    /// module's metrics once a backend is bootstrapped.
+    public static var dependencies: [any FlightModule.Type] { [FlightTelemetryModule.self] }
+
     /// Every route in the application: the generated ones, plus whatever each
     /// module declares. The composition root concatenates them.
     public let routes: [RouteRegistration]
@@ -35,6 +41,9 @@ public final class FlightWebModule<Transport: ServerTransport>: FlightModule, @u
 
     /// Static-asset mounts, which are routing fallbacks rather than routes.
     public let assetMounts: [AssetMountRegistration]
+
+    /// ``HTTPMetrics/definitions``, for `FlightTelemetryModule` to report.
+    public let telemetryMetrics: [TelemetryMetric] = HTTPMetrics.definitions
 
     /// Encoders and decoders, read from `web.*` once at composition. A
     /// misspelled `web.json.date-strategy` fails here rather than on

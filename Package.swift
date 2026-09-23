@@ -73,6 +73,12 @@ let package = Package(
         // TokenValidator seam so any issuer can be brought instead.
         .library(name: "FlightSecurityCore", targets: ["FlightSecurityCore"]),
 
+        // Telemetry: libraries emit typed events, applications decide what
+        // they become. The core depends on swift-service-context alone.
+        .library(name: "FlightTelemetry", targets: ["FlightTelemetry"]),
+        .library(name: "FlightTelemetryTesting", targets: ["FlightTelemetryTesting"]),
+        .library(name: "FlightTelemetryBridges", targets: ["FlightTelemetryBridges"]),
+
         // Push: an APNs client — provider tokens, HTTP/2, typed answers.
         // Not gated on Web: a worker sending pushes needs no HTTP server.
         .library(name: "FlightAPNS", targets: ["FlightAPNS"]),
@@ -96,7 +102,8 @@ let package = Package(
         .default(enabledTraits: []),
         .trait(
             name: "Web",
-            description: "HTTP, WebSockets, SSE, Channels, Presence, and the actuator."
+            description: "HTTP, WebSockets, SSE, Channels, Presence, and the actuator.",
+            enabledTraits: ["Telemetry"]
         ),
         .trait(
             name: "Security",
@@ -108,7 +115,14 @@ let package = Package(
         // from Web.
         .trait(
             name: "APNS",
-            description: "Apple Push Notification service client."
+            description: "Apple Push Notification service client.",
+            enabledTraits: ["Telemetry"]
+        ),
+        // Reporting telemetry: swift-metrics and swift-distributed-tracing.
+        // The core, FlightTelemetry, needs no trait — any target may emit.
+        .trait(
+            name: "Telemetry",
+            description: "Telemetry reporting: swift-metrics, tracing and logging bridges."
         ),
     ],
     dependencies: [
@@ -265,7 +279,8 @@ let package = Package(
         .target(
             name: "FlightWeb",
             dependencies: [
-                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Web"])),
+                "FlightTelemetry",
+                .target(name: "FlightTelemetryBridges", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebMacrosImpl", condition: .when(traits: ["Web"])),
                 "FlightCore",
                 "FlightSessions",
@@ -502,13 +517,89 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: Telemetry
+
+        // Emission and dispatch. No trait: like FlightSessions and
+        // FlightRateLimit it is dependency-light, so any target — and any
+        // application — can emit without choosing a backend.
+        // The macros are optional sugar: every conformance they write can be
+        // written by hand, and the core's tests do exactly that.
+        .macro(
+            name: "FlightTelemetryMacrosImpl",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+            ],
+            path: "Sources/Telemetry/FlightTelemetryMacrosImpl",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "FlightTelemetry",
+            dependencies: [
+                "FlightTelemetryMacrosImpl",
+                .product(name: "ServiceContextModule", package: "swift-service-context"),
+            ],
+            path: "Sources/Telemetry/FlightTelemetry",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        // Reporting: swift-metrics, swift-distributed-tracing and swift-log
+        // bridges, and the module that wires them from configuration. Behind
+        // the Telemetry trait, which Web and APNS imply — both already bring
+        // swift-metrics and tracing, so neither resolves anything new.
+        .target(
+            name: "FlightTelemetryBridges",
+            dependencies: [
+                "FlightTelemetry", "FlightCore",
+                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Telemetry"])),
+                .product(
+                    name: "Tracing", package: "swift-distributed-tracing",
+                    condition: .when(traits: ["Telemetry"])),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+            ],
+            path: "Sources/Telemetry/FlightTelemetryBridges",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "FlightTelemetryTesting",
+            dependencies: ["FlightTelemetry"],
+            path: "Sources/Telemetry/FlightTelemetryTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "FlightTelemetryTests",
+            dependencies: [
+                "FlightTelemetry", "FlightTelemetryTesting",
+                .target(name: "FlightTelemetryBridges", condition: .when(traits: ["Telemetry"])),
+                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["Telemetry"])),
+                .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["Telemetry"])),
+                .product(name: "InMemoryTracing", package: "swift-distributed-tracing", condition: .when(traits: ["Telemetry"])),
+            ],
+            path: "Tests/Telemetry/FlightTelemetryTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "FlightTelemetryMacroTests",
+            dependencies: [
+                "FlightTelemetryMacrosImpl",
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacrosGenericTestSupport", package: "swift-syntax"),
+            ],
+            path: "Tests/Telemetry/FlightTelemetryMacroTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Security
 
         .target(
             name: "FlightSecurityCore",
             dependencies: [
-                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Security"])),
-                "FlightCore", "FlightSessions", "FlightRateLimit",
+                "FlightCore", "FlightSessions", "FlightRateLimit", "FlightTelemetry",
+                .target(name: "FlightTelemetryBridges", condition: .when(traits: ["Security"])),
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .product(
                     name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
@@ -556,8 +647,8 @@ let package = Package(
         .target(
             name: "FlightAPNS",
             dependencies: [
-                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["APNS"])),
-                "FlightCore",
+                "FlightCore", "FlightTelemetry",
+                .target(name: "FlightTelemetryBridges", condition: .when(traits: ["APNS"])),
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
                 .product(
                     name: "AsyncHTTPClient", package: "async-http-client",
@@ -626,10 +717,9 @@ let package = Package(
         .testTarget(
             name: "FlightWebTests",
             dependencies: [
-                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
-                "FlightSessions", "FlightSessionsTesting",
+                "FlightSessions", "FlightSessionsTesting", "FlightTelemetry", "FlightTelemetryTesting",
                 "FlightRateLimit", "FlightRateLimitTesting",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 // Inflating what ResponseCompression produced: the only claim
@@ -777,8 +867,8 @@ let package = Package(
         .testTarget(
             name: "FlightAPNSTests",
             dependencies: [
-                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["APNS"])),
                 .target(name: "FlightAPNS", condition: .when(traits: ["APNS"])),
+                "FlightTelemetry", "FlightTelemetryTesting",
                 .target(name: "FlightAPNSTesting", condition: .when(traits: ["APNS"])),
                 "FlightCore",
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
@@ -789,8 +879,8 @@ let package = Package(
         .testTarget(
             name: "FlightSecurityCoreTests",
             dependencies: [
-                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["Security"])),
                 .target(name: "FlightSecurityCore", condition: .when(traits: ["Security"])),
+                "FlightTelemetry", "FlightTelemetryTesting",
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
                 "FlightSessions", "FlightSessionsTesting",

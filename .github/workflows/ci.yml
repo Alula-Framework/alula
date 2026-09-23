@@ -58,6 +58,55 @@ jobs:
       - name: Generated file compiles
         run: ./CI/check-generated-compiles.sh
 
+      # Typed events promise refusals — a measurement that is not a number, a
+      # tag that is not a tag, a field from another event, a malformed name.
+      # A unit test cannot hold a promise that something does not compile.
+      - name: Telemetry's type errors are compile errors
+        run: ./CI/check-telemetry-compile-errors.sh
+
+  # The telemetry spec's concurrency gate: 16 threads emitting while 4 attach
+  # and detach, for five seconds, under ThreadSanitizer — and the detach
+  # guarantee with it. A report fails the job whatever the exit code says.
+  # FlightTelemetry locks with pthread mutexes rather than
+  # Synchronization.Mutex for this job's sake: TSan cannot see Mutex's
+  # handoff on Linux and reports every contended one as a race (D42).
+  telemetry-tsan:
+    name: Telemetry under ThreadSanitizer
+    runs-on: ubuntu-latest
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stress, detach guarantee, and the rest of the suite
+        env:
+          FLIGHT_TELEMETRY_STRESS_SECONDS: "5"
+        # bash, and pipefail: a container job's default shell is sh, and the
+        # tee would otherwise hide a failing test run.
+        shell: bash
+        run: |
+          set -o pipefail
+          swift test --enable-all-traits --sanitize=thread --filter FlightTelemetryTests 2>&1 | tee tsan.log
+          if grep -q "WARNING: ThreadSanitizer" tsan.log; then
+            echo "::error::ThreadSanitizer reported a race"
+            exit 1
+          fi
+
+  # The spec's performance targets: emit with nothing attached ≤ 2 ns, one
+  # typed handler ≤ 40 ns, one erased ≤ 80 ns, a span with nothing attached
+  # ≤ 5 ns — all with zero allocations. Allocations are deterministic and
+  # fail this job. Latency on a shared runner is not: a 2 ns line cannot be
+  # held on a noisy neighbour, so here it is printed, and enforced before
+  # tagging on a quiet machine — `swift run -c release TelemetryBenchmarks`
+  # in Benchmarks/, which exits non-zero on a miss (D42).
+  benchmarks:
+    name: Telemetry benchmarks (allocations enforced)
+    runs-on: ubuntu-latest
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run
+        working-directory: Benchmarks
+        run: swift run -c release TelemetryBenchmarks --no-latency
+
   # OIDC sign-in against a real Keycloak. The unit suite proves the protocol
   # against fakes; this proves the seam holds against what it exists to plug
   # into. Its own job because the test job runs inside a Swift container,
@@ -142,7 +191,9 @@ jobs:
                         FlightTransport FlightScheduler \
                         FlightSessions FlightSessionsTesting \
                         FlightAPNS FlightAPNSTesting \
-                        FlightRateLimit FlightRateLimitTesting; do
+                        FlightRateLimit FlightRateLimitTesting \
+                        FlightTelemetry FlightTelemetryTesting \
+                        FlightTelemetryBridges; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

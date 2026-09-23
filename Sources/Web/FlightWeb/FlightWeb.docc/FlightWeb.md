@@ -165,7 +165,10 @@ whole application without binding a port.
 
 - ``Sessions``
 - ``FlightSessionsModule``
+- ``SessionEvents``
 - ``SessionMetrics``
+- ``HTTPEvents``
+- ``HTTPMetrics``
 - ``CSRFProtection``
 - ``CSRFError``
 - ``SessionSettings``

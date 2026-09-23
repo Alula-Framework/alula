@@ -25,8 +25,11 @@ done
 # Assert the count, do not merely print it. The README quotes this number, and
 # a figure nothing checks is a figure that drifts: it read "8" against an
 # actual 7 until the 2026-09-17 audit caught it. Update both together.
+# 8 since 0.34.0: FlightTelemetry is ungated so that any target can emit,
+# and it brings swift-service-context — Apple's, with no dependencies of its
+# own. See D42.
 resolved=$(grep -c '"identity"' Package.resolved)
-expected=7
+expected=8
 echo "lean consumer resolved $resolved packages"
 if [ "$resolved" -ne "$expected" ]; then
   echo "::error::lean consumer resolves $resolved packages, expected $expected."

@@ -48,9 +48,13 @@ struct RegistrableAttributesTests {
                     block.append(lines[i])
                     i -= 1
                 }
-                if block.joined(separator: "\n").range(
+                // A macro that writes an initializer without making a
+                // component — `@TelemetryFields`' memberwise one — says so.
+                let attributes = block.joined(separator: "\n")
+                if attributes.range(
                     of: #"@attached\(\s*member[\s\S]*?named\(init\)"#,
-                    options: .regularExpression) != nil
+                    options: .regularExpression) != nil,
+                    !attributes.contains("flight:not-a-component")
                 {
                     found.insert(name)
                 }

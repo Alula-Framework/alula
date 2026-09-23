@@ -102,7 +102,7 @@ func oneTimeShapes(
     try await sessions.revokeSessions(ownedBy: subject)
 }
 
-// The 0.33 session settings, and a metrics factory for tests.
+// The 0.33 session settings, and the metric names the events report as.
 func sessionHardeningShapes(store: any SessionStore) throws {
     let settings = try SessionSettings(
         ttl: .seconds(14 * 24 * 3600), authenticatedLifetime: .seconds(12 * 3600),

@@ -162,7 +162,11 @@ in favour of the two above.
 or Apple's reason string. `flight_apns_provider_tokens_minted` counts each
 provider token signed. Apple refuses updates more often than every 20
 minutes, so a rising rate there warns before `TooManyProviderTokenUpdates`
-does. `APNSClient(metrics:)` takes a factory for tests.
+does. Both are telemetry events first (`APNSEvents`), and
+`FlightAPNSModule` contributes them as metrics, together with
+`flight_apns_send_duration` for send latency. In a test,
+`TelemetryTest.capture(prefix: "flight.apns")` shows what a send reported.
+See `Docs/telemetry.md`.
 
 The one retry the client performs itself is the one the protocol asks for:
 a `403 ExpiredProviderToken` mints a fresh token and sends once more. Every

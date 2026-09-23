@@ -287,13 +287,17 @@ stores support it.
 
 ## Metrics
 
-Everything here counts itself through swift-metrics, to whatever backend
-the application bootstraps. Every dimension is a closed set, never a
-subject, an address or a token, so the number of series stays fixed.
+Everything here reports itself as telemetry events (`SignInEvents`), and
+`FlightSecurityModule` contributes the metrics below, which reach whatever
+backend the application bootstraps. Every dimension is a closed set, never
+a subject, an address or a token, so the number of series stays fixed. A
+sign-in provider of your own can emit `SignInEvents.Attempt` too, which
+puts it on the same dashboards as the built-in ones.
 
 | Counter | Dimensions |
 |---|---|
 | `flight_sign_in_attempts` | `provider` (`password`, `oidc`), `outcome` (`success`, `invalid_credentials`, `throttled`, `unavailable`, `invalid_callback`, `userinfo_subject_mismatch`, …) |
+| `flight_sign_in_duration` | `provider`: a timer, mostly password hashing for `password` |
 | `flight_sign_in_started` | `provider` |
 | `flight_sign_in_password_rehashes` | none |
 | `flight_sign_in_expired` | none: sign-ins that reached `sessions.authenticated-lifetime` |
@@ -304,7 +308,9 @@ A caller holding a bad link is told one thing. This is where the
 difference is kept. A rise in `binding_mismatch` means reset links are
 arriving after passwords changed. A rise in `wrong_purpose` means someone
 is trying one link type as another. `SignInMetrics` has the labels as
-constants, and each emitting type takes a `metrics:` factory for tests.
+constants. In a test, capture the events rather than counting metrics:
+`TelemetryTest.capture(SignInEvents.Attempt.self) { … }`. See
+`Docs/telemetry.md`.
 
 ## Not yet here
 

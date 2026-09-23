@@ -1,6 +1,6 @@
-import CoreMetrics
 import Crypto
 import FlightCore
+import FlightTelemetry
 import FlightWeb
 import Foundation
 
@@ -135,22 +135,18 @@ public final class OIDCSignIn: SignInProvider {
     private let poster: any HTTPFormPosting
     private let validator: OIDCTokenValidator
     private let now: @Sendable () -> Date
-    private let metrics: any MetricsFactory
 
-    /// - Parameters:
-    ///   - configuration: The provider, this client, and where the browser
-    ///     comes back.
-    ///   - metrics: Where ``SignInMetrics`` counters go; the bootstrapped
-    ///     `MetricsSystem` when nil.
-    public convenience init(
-        configuration: OIDCSignInConfiguration, metrics: (any MetricsFactory)? = nil
-    ) {
+    /// - Parameter configuration: The provider, this client, and where the
+    ///   browser comes back.
+    ///
+    /// Sign-ins are reported as ``SignInEvents``.
+    public convenience init(configuration: OIDCSignInConfiguration) {
         let policy = configuration.validation.jwksTransport
         self.init(
             configuration: configuration,
             http: AsyncHTTPGetter(timeout: .seconds(10), policy: policy),
             poster: AsyncHTTPFormPoster(timeout: .seconds(10), policy: policy),
-            jwksSource: nil, metrics: metrics)
+            jwksSource: nil)
     }
 
     init(
@@ -158,10 +154,8 @@ public final class OIDCSignIn: SignInProvider {
         http: any HTTPGetting,
         poster: any HTTPFormPosting,
         jwksSource: (any JWKSSource)?,
-        now: @escaping @Sendable () -> Date = { Date() },
-        metrics: (any MetricsFactory)? = nil
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.metrics = metrics ?? MetricsSystem.factory
         self.configuration = configuration
         let policy = configuration.validation.jwksTransport
         self.metadata = OIDCMetadataSource(issuer: configuration.issuer, http: http, policy: policy)
@@ -180,8 +174,7 @@ public final class OIDCSignIn: SignInProvider {
 
     public func beginSignIn(_ context: RequestContext, returnTo: String?) async throws -> SignInStep
     {
-        Counter(label: SignInMetrics.started, dimensions: [("provider", "oidc")], factory: metrics)
-            .increment()
+        Telemetry.emit(SignInEvents.Started.self) { .init(provider: "oidc") }
         let metadata = try await metadata.metadata()
         let pending = PendingSignIn(
             state: Self.randomToken(), nonce: Self.randomToken(), verifier: Self.randomToken(),
@@ -215,12 +208,13 @@ public final class OIDCSignIn: SignInProvider {
     // MARK: Complete
 
     public func completeSignIn(_ context: RequestContext) async throws -> SignInResult {
+        let start = SignInEvents.attemptStarted()
         do {
             let result = try await completeSignInUncounted(context)
-            SignInMetrics.attempt("oidc", "success", metrics)
+            SignInEvents.attempt("oidc", "success", since: start)
             return result
         } catch let error as OIDCSignInError {
-            SignInMetrics.attempt("oidc", error.metricOutcome, metrics)
+            SignInEvents.attempt("oidc", error.metricOutcome, since: start)
             throw error
         }
     }

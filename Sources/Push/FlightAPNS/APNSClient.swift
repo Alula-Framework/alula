@@ -1,4 +1,4 @@
-import CoreMetrics
+import FlightTelemetry
 import Foundation
 import Logging
 
@@ -30,7 +30,6 @@ public final class APNSClient: Sendable {
     private let tokens: ProviderTokenSource
     private let logger: Logger
     private let encoder: JSONEncoder
-    private let metrics: any MetricsFactory
 
     /// - Parameters:
     ///   - configuration: Key, team, topic, environment.
@@ -38,22 +37,19 @@ public final class APNSClient: Sendable {
     ///     `FlightAPNSTesting.RecordingAPNSTransport` in tests.
     ///   - now: The clock, injectable so provider-token refresh is testable.
     ///   - logger: Where the one debug line this client writes goes.
-    ///   - metrics: Where ``APNSMetrics`` counters go; the bootstrapped
-    ///     `MetricsSystem` when nil.
+    ///
+    /// Sends and provider tokens are reported as ``APNSEvents``.
     public init(
         configuration: APNSConfiguration,
         transport: any APNSTransport = AsyncHTTPAPNSTransport(),
         now: @escaping @Sendable () -> Date = Date.init,
-        logger: Logger? = nil,
-        metrics: (any MetricsFactory)? = nil
+        logger: Logger? = nil
     ) {
-        let metrics = metrics ?? MetricsSystem.factory
-        self.metrics = metrics
         self.configuration = configuration
         self.transport = transport
         self.tokens = ProviderTokenSource(
             keyID: configuration.keyID, teamID: configuration.teamID,
-            privateKey: configuration.privateKey, now: now, metrics: metrics)
+            privateKey: configuration.privateKey, now: now)
         self.logger = logger ?? Logger(label: "flight.apns")
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -68,12 +64,13 @@ public final class APNSClient: Sendable {
     public func send<Custom>(
         _ notification: APNSNotification<Custom>, to token: DeviceToken
     ) async throws -> APNSReceipt {
+        let start = Telemetry.isEnabled(APNSEvents.Send.self) ? ContinuousClock.now : nil
         do {
             let receipt = try await sendUncounted(notification, to: token)
-            APNSMetrics.send("delivered", metrics)
+            APNSEvents.sent("delivered", since: start)
             return receipt
         } catch let error as APNSError {
-            APNSMetrics.send(error.reason.rawValue, metrics)
+            APNSEvents.sent(error.reason.rawValue, since: start)
             throw error
         }
     }
@@ -192,18 +189,3 @@ public final class APNSClient: Sendable {
     }
 }
 
-/// The APNs counters, by label. `outcome` is `delivered` or Apple's reason
-/// string (`Unregistered`, `TooManyRequests`, …, or this package's own
-/// `flight:transport` and friends) — a closed set, never a device token.
-public enum APNSMetrics {
-    /// One per `send`, after the one protocol retry. `outcome`.
-    public static let sends = "flight_apns_sends"
-    /// A provider token signed. Apple refuses updates more often than every
-    /// 20 minutes (`TooManyProviderTokenUpdates`); a rate climbing past that
-    /// is the early warning.
-    public static let providerTokensMinted = "flight_apns_provider_tokens_minted"
-
-    static func send(_ outcome: String, _ factory: any MetricsFactory) {
-        Counter(label: sends, dimensions: [("outcome", outcome)], factory: factory).increment()
-    }
-}

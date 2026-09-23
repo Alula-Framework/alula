@@ -1,5 +1,7 @@
 import FlightCore
 import FlightSessions
+import FlightTelemetry
+import FlightTelemetryBridges
 import FlightWeb
 import Foundation
 import Logging
@@ -46,6 +48,10 @@ import ServiceLifecycle
 /// bootstrap call site.
 public struct FlightSecurityModule: FlightModule {
 
+    /// Reporting comes with the stack: `FlightTelemetryModule` reports this
+    /// module's metrics once a backend is bootstrapped.
+    public static var dependencies: [any FlightModule.Type] { [FlightTelemetryModule.self] }
+
     /// The authentication stack, as values.
     ///
     /// Whether these exist is a property of "did this application include a
@@ -65,6 +71,9 @@ public struct FlightSecurityModule: FlightModule {
     /// with `Authentication`: `[.authenticated]` must establish the identity
     /// it then requires, without depending on the default lane it replaced.
     public let middleware: [MiddlewareRegistration]
+
+    /// ``SignInMetrics/definitions``, for `FlightTelemetryModule` to report.
+    public let telemetryMetrics: [TelemetryMetric] = SignInMetrics.definitions
 
     /// - Parameters:
     ///   - validator: How bearer tokens are validated — from `FlightOIDCModule`,
@@ -94,8 +103,7 @@ public struct FlightSecurityModule: FlightModule {
         let authentication = Authentication(
             validator: validator ?? RejectingTokenValidator(),
             authenticatedLifetime: sessions?.settings.authenticatedLifetime,
-            now: sessions?.now ?? Date.init,
-            metrics: sessions?.metrics)
+            now: sessions?.now ?? Date.init)
         let require = RequireAuthentication()
         let session: [any Middleware] = sessions.map { [Sessions(runtime: $0)] } ?? []
         self.middleware =

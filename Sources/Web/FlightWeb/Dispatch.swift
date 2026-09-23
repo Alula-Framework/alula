@@ -1,4 +1,5 @@
 import FlightCore
+import FlightTelemetry
 import Foundation
 import HTTPTypes
 import Instrumentation
@@ -285,6 +286,16 @@ public enum DispatchBuilder {
                 else { return .buffered(maxBytes: nil) }
                 return match.route.bodyMode
             },
+            routePattern: { request in
+                switch router.route(method: request.method, path: request.path) {
+                case .matched(let match):
+                    return match.route.path
+                case .notFound:
+                    return fallbacks.first { $0.0.claims(request) }.map { $0.0.prefix + "*" }
+                case .methodNotAllowed:
+                    return nil
+                }
+            },
             web: web,
             logger: logger)
     }
@@ -318,10 +329,14 @@ public enum DispatchBuilder {
         bodyMode: @escaping @Sendable (Request) -> RouteRegistration.BodyMode = { _ in
             .buffered(maxBytes: nil)
         },
+        routePattern: @escaping @Sendable (Request) -> String? = { _ in nil },
         web: WebRuntime = .default,
         logger: Logger
     ) -> Dispatch {
         let respond: @Sendable (Request) async -> Response = { request in
+            // Read only when something will see the request event.
+            let start = Telemetry.isEnabled(HTTPEvents.RequestHandled.self) ? ContinuousClock.now : nil
+
             // Request identity: honor an inbound X-Request-ID, mint otherwise.
             let requestID = request.headers[.xRequestID] ?? UUID().uuidString
 
@@ -367,6 +382,15 @@ public enum DispatchBuilder {
                 span.attributes["http.response.status_code"] = response.status.code
                 if response.status.kind == .serverError {
                     span.setStatus(SpanStatus(code: .error))
+                }
+                Telemetry.emit(HTTPEvents.RequestHandled.self) {
+                    (
+                        .init(duration: start.map { .now - $0 } ?? .zero),
+                        .init(
+                            method: request.method.rawValue,
+                            route: routePattern(request) ?? "unmatched",
+                            status: response.status.code)
+                    )
                 }
                 // After every lane, so no route's choice of lanes can drop
                 // them — see `SecurityHeaders` for why this is not a

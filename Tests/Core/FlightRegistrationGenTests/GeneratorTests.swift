@@ -79,7 +79,8 @@ struct GeneratorTests {
         targetModule: String = "AppModule",
         packageDirectory: String? = nil,
         flightYAML: String? = nil,
-        configFiles: [String: String] = [:]
+        configFiles: [String: String] = [:],
+        dependencyModules: [String: [String: String]] = [:]
     ) throws -> Result {
         let workspace = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("flightgen-\(UUID().uuidString)")
@@ -102,10 +103,24 @@ struct GeneratorTests {
                 to: workspace.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
 
+        // Other Swift modules the target links, each in its own directory.
+        var modules: [[String: Any]] = [["name": targetModule, "files": paths]]
+        for (module, files) in dependencyModules.sorted(by: { $0.key < $1.key }) {
+            let directory = workspace.appendingPathComponent(module)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var modulePaths: [String] = []
+            for (name, contents) in files.sorted(by: { $0.key < $1.key }) {
+                let path = directory.appendingPathComponent(name)
+                try contents.write(to: path, atomically: true, encoding: .utf8)
+                modulePaths.append(path.path)
+            }
+            modules.append(["name": module, "files": modulePaths])
+        }
+
         let output = workspace.appendingPathComponent("FlightRegistrations.swift")
         var manifest: [String: Any] = [
             "targetModuleName": targetModule,
-            "modules": [["name": targetModule, "files": paths]],
+            "modules": modules,
             "output": output.path,
         ]
         manifest["packageDirectory"] = packageDirectory ?? workspace.path
@@ -1009,6 +1024,50 @@ struct GeneratorTests {
             result.generated.contains(
                 "let channelsModule = try ChannelsModule(configuration: configuration, pubsub: pubSubModule)"
             ))
+    }
+
+    @Test("a module brought in by another's dependencies is imported, though the target never imports it")
+    func composerImportsDependencyModules() throws {
+        // `FlightWebModule` lists `FlightTelemetryModule`, which lives in a
+        // Swift module no application imports. The composer constructs it,
+        // so the generated file must import it: it did not, and the first
+        // application to include such a module failed to build.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import FlightCore
+                import Stack
+                @main struct Main {
+                static func main() async {
+                await Flight.run(configuration: Configuration.load(), modules: [StackModule.self])
+                }
+                }
+                """
+            ],
+            dependencyModules: [
+                "Stack": [
+                    "StackModule.swift": """
+                    import FlightCore
+                    import Reporting
+                    public struct StackModule: FlightModule {
+                    public static var dependencies: [any FlightModule.Type] { [ReportingModule.self] }
+                    public init() {}
+                    }
+                    """
+                ],
+                "Reporting": [
+                    "ReportingModule.swift": """
+                    import FlightCore
+                    public struct ReportingModule: FlightModule {
+                    public init() {}
+                    }
+                    """
+                ],
+            ])
+        #expect(result.exitCode == 0, "\(result.diagnostics)")
+        #expect(result.generated.contains("let reportingModule = ReportingModule()"))
+        #expect(result.generated.contains("import Reporting\n"))
+        #expect(result.generated.components(separatedBy: "import Stack\n").count == 2, "once")
     }
 
     @Test("a module's property is wired into another module's parameter")

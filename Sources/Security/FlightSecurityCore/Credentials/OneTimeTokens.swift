@@ -1,6 +1,6 @@
-import CoreMetrics
 import Crypto
 import FlightSessions
+import FlightTelemetry
 import FlightWeb
 import Foundation
 
@@ -58,21 +58,16 @@ public struct OneTimeTokens: Sendable {
 
     private let store: any OneTimeTokenStore
     private let now: @Sendable () -> Date
-    private let metrics: any MetricsFactory
 
     /// - Parameters:
     ///   - store: Where the digests live — in memory, or Valkey across
     ///     replicas.
     ///   - now: The clock expiry is measured on.
-    ///   - metrics: Where ``SignInMetrics`` token counters go; the
-    ///     bootstrapped `MetricsSystem` when nil.
-    public init(
-        store: any OneTimeTokenStore, now: @escaping @Sendable () -> Date = Date.init,
-        metrics: (any MetricsFactory)? = nil
-    ) {
+    ///
+    /// Issues and redemptions are reported as ``SignInEvents``.
+    public init(store: any OneTimeTokenStore, now: @escaping @Sendable () -> Date = Date.init) {
         self.store = store
         self.now = now
-        self.metrics = metrics ?? MetricsSystem.factory
     }
 
     /// A fresh token for `subject`. Return it to whoever delivers it — an
@@ -85,11 +80,7 @@ public struct OneTimeTokens: Sendable {
             subject: subject, purpose: purpose, bindingDigest: binding.map(Self.digest),
             expiresAt: now().addingTimeInterval(Double(lifetime.components.seconds)))
         try await store.put(Self.key(for: token), try JSONEncoder().encode(record), ttl: lifetime)
-        Counter(
-            label: SignInMetrics.tokensIssued, dimensions: [("purpose", purpose.name)],
-            factory: metrics
-        )
-        .increment()
+        Telemetry.emit(SignInEvents.TokenIssued.self) { .init(purpose: purpose.name) }
         return token
     }
 
@@ -131,10 +122,9 @@ public struct OneTimeTokens: Sendable {
     }
 
     private func redeemed(_ purpose: Purpose, _ outcome: String) {
-        Counter(
-            label: SignInMetrics.tokensRedeemed,
-            dimensions: [("purpose", purpose.name), ("outcome", outcome)], factory: metrics
-        ).increment()
+        Telemetry.emit(SignInEvents.TokenRedemption.self) {
+            .init(purpose: purpose.name, outcome: outcome)
+        }
     }
 
     static func randomToken() -> String {

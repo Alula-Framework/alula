@@ -1,8 +1,8 @@
 import FlightAPNSTesting
 import FlightCore
+import FlightTelemetryTesting
 import Foundation
 import JWTKit
-import MetricsTestKit
 import Synchronization
 import Testing
 
@@ -402,23 +402,25 @@ struct APNSClientTests {
         #expect(!refusal(.payloadTooLarge, status: 413).isRetryable)
     }
 
-    @Test("each send counts its outcome, and each provider token minted is counted")
-    func sendMetrics() async throws {
-        let metrics = TestMetrics()
+    @Test("each send reports its outcome, and each provider token minted is reported")
+    func sendEvents() async throws {
         let client = APNSClient(
-            configuration: try Fixture.configuration(), transport: gateway,
-            now: clock.nowProvider, metrics: metrics)
-        _ = try await client.send(.alert(body: "hi"), to: Fixture.token)
-        gateway.refuse(status: 410, reason: "Unregistered", timestamp: .now)
-        _ = try? await client.send(.alert(body: "hi"), to: Fixture.token)
-        #expect(
-            try metrics.expectCounter(APNSMetrics.sends, [("outcome", "delivered")]).totalValue == 1
-        )
-        #expect(
-            try metrics.expectCounter(APNSMetrics.sends, [("outcome", "Unregistered")]).totalValue
-                == 1)
-        #expect(
-            try metrics.expectCounter(APNSMetrics.providerTokensMinted).totalValue == 1,
-            "reused, not re-minted")
+            configuration: try Fixture.configuration(), transport: gateway, now: clock.nowProvider)
+        let events = try await TelemetryTest.capture(prefix: "flight.apns") {
+            _ = try await client.send(.alert(body: "hi"), to: Fixture.token)
+            gateway.refuse(status: 410, reason: "Unregistered", timestamp: .now)
+            _ = try? await client.send(.alert(body: "hi"), to: Fixture.token)
+        }
+        #expect(events.map(\.name) == [
+            "flight.apns.provider_token_minted", "flight.apns.send", "flight.apns.send",
+        ], "one token, reused rather than re-minted")
+        #expect(events.dropFirst().map { $0[metadata: "outcome"] } == ["delivered", "Unregistered"])
+    }
+
+    @Test("the default metrics report under the names 0.33 used")
+    func metricNames() {
+        #expect(APNSMetrics.definitions.map { $0.descriptor.name.replacingOccurrences(of: ".", with: "_") } == [
+            APNSMetrics.sends, APNSMetrics.sendDuration, APNSMetrics.providerTokensMinted,
+        ])
     }
 }

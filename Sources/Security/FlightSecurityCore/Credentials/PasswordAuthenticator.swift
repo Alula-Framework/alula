@@ -1,5 +1,5 @@
-import CoreMetrics
 import FlightRateLimit
+import FlightTelemetry
 import FlightWeb
 import Foundation
 import Logging
@@ -78,7 +78,6 @@ public struct PasswordAuthenticator: Sendable {
     private let issuer: String
     private let logger: Logger
     private let dummyHash: DummyHash
-    private let metrics: any MetricsFactory
 
     /// - Parameters:
     ///   - store: Where accounts are looked up.
@@ -94,18 +93,16 @@ public struct PasswordAuthenticator: Sendable {
     ///   - throttle: The two budgets. ``Throttle/default`` unless given one.
     ///   - logger: Where store and throttle failures, and failed hash
     ///     upgrades, are reported. Never the password or the hash.
-    ///   - metrics: Where ``SignInMetrics`` counters go; the bootstrapped
-    ///     `MetricsSystem` when nil.
+    ///
+    /// Attempts and rehashes are reported as ``SignInEvents``.
     public init(
         store: any CredentialStore,
         issuer: String,
         hasher: any PasswordHashing = Argon2idHashing(),
         limiter: RateLimiter,
         throttle: Throttle = .default,
-        logger: Logger = Logger(label: "flight.security.password"),
-        metrics: (any MetricsFactory)? = nil
+        logger: Logger = Logger(label: "flight.security.password")
     ) {
-        self.metrics = metrics ?? MetricsSystem.factory
         self.store = store
         self.issuer = issuer
         self.hasher = hasher
@@ -128,13 +125,14 @@ public struct PasswordAuthenticator: Sendable {
     public func authenticate(
         identifier rawIdentifier: String, password: String, clientAddress: String?
     ) async throws -> Principal {
+        let start = SignInEvents.attemptStarted()
         do {
             let principal = try await authenticateUncounted(
                 identifier: rawIdentifier, password: password, clientAddress: clientAddress)
-            SignInMetrics.attempt("password", "success", metrics)
+            SignInEvents.attempt("password", "success", since: start)
             return principal
         } catch let error as PasswordAuthenticationError {
-            SignInMetrics.attempt("password", error.metricOutcome, metrics)
+            SignInEvents.attempt("password", error.metricOutcome, since: start)
             throw error
         }
     }
@@ -184,7 +182,7 @@ public struct PasswordAuthenticator: Sendable {
         // A legacy-form match is always rehashed: the stored hash is of a
         // form this version no longer produces.
         if verifiedLegacyForm || hasher.needsRehash(stored) {
-            Counter(label: SignInMetrics.passwordRehashes, factory: metrics).increment()
+            Telemetry.emit(SignInEvents.PasswordRehashed.self)
             do {
                 try await store.updatePasswordHash(
                     hasher.hash(normalized), forSubject: credential.subject)

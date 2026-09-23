@@ -1,4 +1,6 @@
 import FlightCore
+import FlightTelemetry
+import FlightTelemetryBridges
 
 /// The module:
 ///
@@ -27,11 +29,18 @@ import FlightCore
 /// provider token is minted on first use. Not gated on `Web` — a worker
 /// that sends pushes from a scheduled job should not pay for an HTTP server.
 public struct FlightAPNSModule: FlightModule {
+
+    /// Reporting comes with the stack: `FlightTelemetryModule` reports this
+    /// module's metrics once a backend is bootstrapped.
+    public static var dependencies: [any FlightModule.Type] { [FlightTelemetryModule.self] }
     /// `apns.*`, read once at composition.
     public let settings: APNSConfiguration
 
     /// The client this module provides.
     public let client: APNSClient
+
+    /// ``APNSMetrics/definitions``, for `FlightTelemetryModule` to report.
+    public let telemetryMetrics: [TelemetryMetric] = APNSMetrics.definitions
 
     public init(configuration: Configuration) throws {
         let settings = try APNSConfiguration(configuration: configuration)

@@ -406,8 +406,20 @@ reject fail at startup.
 | `flight_sessions_revoked` | none: counted per session ended, not per call |
 | `flight_sessions_revocation_failures` | none, including a store that can't revoke |
 
-These go through swift-metrics to whatever backend the application
-bootstraps. `SessionRuntime(metrics:)` takes a factory for tests.
+Each is a telemetry event first (`SessionEvents`), and
+`FlightSessionsModule` contributes the definitions above, so they reach
+whatever metrics backend the application bootstraps, under the names 0.33
+used. Attach to the events directly for anything else: an alert on store
+failures, a log line, or a test.
+
+```swift
+let failures = await TelemetryTest.capture(SessionEvents.StoreFailed.self) {
+    _ = await client.get("/")
+}
+#expect(failures.map(\.metadata.operation) == ["load"])
+```
+
+`Docs/telemetry.md` has the rest.
 
 ## One-time links
 

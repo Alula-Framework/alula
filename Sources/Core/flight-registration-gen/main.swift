@@ -1912,6 +1912,22 @@ for module in targetImports.sorted()
 where module != "FlightCore" && !dependencyModules.contains(module) {
     out += "import \(module)\n"
 }
+// Plus the module of every *included* module the target does not import
+// itself. A module brought in only by another's `dependencies` —
+// `FlightTelemetryModule`, which `FlightWebModule` lists — is constructed
+// here, so its type must be in scope, though the application never named
+// it and has no reason to import it.
+let includedModuleImports: [String] = {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    return Set(includedModules.compactMap { scannedModule($0, in: byName)?.module }).sorted()
+}()
+for module in includedModuleImports
+where module != "FlightCore" && module != manifest.targetModuleName
+    && !dependencyModules.contains(module) && !targetImports.contains(module)
+{
+    out += "import \(module)\n"
+}
 
 /// What `FlightGraph`'s initializer takes, published by `emitFlightGraph` for
 /// the composer to wire.

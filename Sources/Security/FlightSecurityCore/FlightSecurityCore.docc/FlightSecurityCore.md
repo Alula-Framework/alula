@@ -150,6 +150,7 @@ the whole story.
 - ``SignInResult``
 - ``SignOutStep``
 - ``SignInReturnPath``
+- ``SignInEvents``
 - ``SignInMetrics``
 - ``PasswordSignIn``
 - ``OIDCSignIn``

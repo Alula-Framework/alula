@@ -28,10 +28,12 @@ and `FlightPresence`; a service behind an existing identity provider adds
 | `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared, and behind authentication and a role when configured. |
 | `FlightSecurityCore` | Validates tokens your identity provider issued, and signs people in: against your own accounts (`PasswordSignIn`, throttled, Argon2id) or any OpenID Connect provider (`OIDCSignIn`), behind one `SignInProvider` seam so switching is a change to the module list. |
 | `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
+| `FlightTelemetry` | Typed events and spans, emitted by libraries and handled by the application; metric definitions checked by the compiler. One load when nothing listens. Needs no trait. |
+| `FlightTelemetryBridges` | Telemetry to swift-metrics, swift-distributed-tracing and swift-log, wired from `telemetry.*` by `FlightTelemetryModule`, which the Web, Sessions, Security and APNs modules bring with them. |
 | `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `FlightChannelsClient` for joining topics over a socket, `FlightPresenceClient` for applying presence state and diffs. |
-| `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. |
+| `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, telemetry and the Scheduler — in-memory transports, mock contexts, cluster harnesses, per-test event capture, a clock that does not sleep. |
 
 Per-product documentation lives in [Docs/](Docs/), and
 [Docs/testing.md](Docs/testing.md) covers how to test an application built
@@ -53,16 +55,17 @@ on it.
 ## Traits
 
 Merging eight packages into one would otherwise hand every consumer the union
-of their dependencies. Two traits prevent that — SwiftPM resolves only what an
+of their dependencies. Traits prevent that — SwiftPM resolves only what an
 enabled trait reaches.
 
 | Trait | Brings |
 | --- | --- |
-| `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack, swift-metrics |
+| `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack. Implies `Telemetry`. |
 | `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
-| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient, swift-metrics. Implies nothing; a push-sending worker needs no HTTP server. |
+| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient. Implies `Telemetry` and nothing else; a push-sending worker needs no HTTP server. |
+| `Telemetry` | `FlightTelemetryBridges` — swift-metrics and swift-distributed-tracing. Emitting needs no trait; this is for reporting. |
 
-All three are opt-in. Name what you want:
+All are opt-in. Name what you want:
 
 ```swift
 // An HTTP service.
@@ -73,7 +76,7 @@ All three are opt-in. Name what you want:
 .package(url: "https://github.com/Flight-Framework/flight.git",
          from: "0.33.0", traits: ["Security"])
 
-// Just composition and lifecycle — 7 resolved dependencies instead of 29.
+// Just composition, lifecycle and telemetry — 8 resolved dependencies instead of 29.
 .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.33.0")
 ```
 

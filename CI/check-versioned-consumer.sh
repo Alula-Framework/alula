@@ -35,7 +35,8 @@ mkdir -p "$scratch/flight"
   git tag 999.0.0
 )
 
-# Every trait a consumer can name. `Security` implies `Web`; `APNS` stands alone.
+# Every trait a consumer can name. `Security` implies `Web`; `Web` and `APNS`
+# imply `Telemetry`, named anyway so dropping an implication cannot hide it.
 mkdir -p "$scratch/consumer/Sources/Consumer"
 cat > "$scratch/consumer/Package.swift" <<EOF
 // swift-tools-version: 6.3
@@ -45,7 +46,7 @@ let package = Package(
     name: "versioned-consumer",
     platforms: [.macOS(.v15)],
     dependencies: [
-        .package(url: "file://$scratch/flight", from: "999.0.0", traits: ["Security", "APNS"])
+        .package(url: "file://$scratch/flight", from: "999.0.0", traits: ["Security", "APNS", "Telemetry"])
     ],
     targets: [
         .executableTarget(
@@ -65,4 +66,5 @@ if ! (cd "$scratch/consumer" && swift package resolve) >"$scratch/resolve.log" 2
   echo "::error::Check Package.swift for a revision:/branch: dependency — see D37 in DECISIONS.md."
   exit 1
 fi
-echo "versioned consumer resolved Flight 999.0.0 with Security and APNS"
+resolved=$(grep -c '"identity"' "$scratch/consumer/Package.resolved")
+echo "versioned consumer resolved Flight 999.0.0 with every trait: $resolved packages"

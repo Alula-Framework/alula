@@ -17,3 +17,6 @@ spikes/
 # `git add -A` will otherwise keep pulling it back in.
 COMPOSITION-MIGRATION.md
 .build-tsan/
+
+# DocC output; CI and local runs generate it here.
+docs/

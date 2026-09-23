@@ -1,3 +1,4 @@
+import CoreMetrics
 import Crypto
 import FlightSessions
 import FlightWeb
@@ -57,10 +58,21 @@ public struct OneTimeTokens: Sendable {
 
     private let store: any OneTimeTokenStore
     private let now: @Sendable () -> Date
+    private let metrics: any MetricsFactory
 
-    public init(store: any OneTimeTokenStore, now: @escaping @Sendable () -> Date = Date.init) {
+    /// - Parameters:
+    ///   - store: Where the digests live — in memory, or Valkey across
+    ///     replicas.
+    ///   - now: The clock expiry is measured on.
+    ///   - metrics: Where ``SignInMetrics`` token counters go; the
+    ///     bootstrapped `MetricsSystem` when nil.
+    public init(
+        store: any OneTimeTokenStore, now: @escaping @Sendable () -> Date = Date.init,
+        metrics: (any MetricsFactory)? = nil
+    ) {
         self.store = store
         self.now = now
+        self.metrics = metrics ?? MetricsSystem.factory
     }
 
     /// A fresh token for `subject`. Return it to whoever delivers it — an
@@ -73,6 +85,11 @@ public struct OneTimeTokens: Sendable {
             subject: subject, purpose: purpose, bindingDigest: binding.map(Self.digest),
             expiresAt: now().addingTimeInterval(Double(lifetime.components.seconds)))
         try await store.put(Self.key(for: token), try JSONEncoder().encode(record), ttl: lifetime)
+        Counter(
+            label: SignInMetrics.tokensIssued, dimensions: [("purpose", purpose.name)],
+            factory: metrics
+        )
+        .increment()
         return token
     }
 
@@ -93,19 +110,31 @@ public struct OneTimeTokens: Sendable {
         _ token: String, purpose: Purpose,
         currentBinding: (@Sendable (String) async throws -> String?)? = nil
     ) async throws -> String {
+        func refuse(_ outcome: String) -> OneTimeTokenError {
+            redeemed(purpose, outcome)
+            return .invalidOrExpired
+        }
         guard !token.isEmpty, token.count <= 128,
             let data = try await store.take(Self.key(for: token)),
-            let record = try? JSONDecoder().decode(Record.self, from: data),
-            record.purpose == purpose,
-            record.expiresAt > now()
-        else { throw OneTimeTokenError.invalidOrExpired }
+            let record = try? JSONDecoder().decode(Record.self, from: data)
+        else { throw refuse("unknown_or_used") }
+        guard record.purpose == purpose else { throw refuse("wrong_purpose") }
+        guard record.expiresAt > now() else { throw refuse("expired") }
 
         if let expected = record.bindingDigest {
             guard let currentBinding, let current = try await currentBinding(record.subject),
                 Self.digest(current) == expected
-            else { throw OneTimeTokenError.invalidOrExpired }
+            else { throw refuse("binding_mismatch") }
         }
+        redeemed(purpose, "redeemed")
         return record.subject
+    }
+
+    private func redeemed(_ purpose: Purpose, _ outcome: String) {
+        Counter(
+            label: SignInMetrics.tokensRedeemed,
+            dimensions: [("purpose", purpose.name), ("outcome", outcome)], factory: metrics
+        ).increment()
     }
 
     static func randomToken() -> String {

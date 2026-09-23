@@ -12,9 +12,14 @@ import Logging
 
 // snippet.hide
 struct Account: Sendable {}
+struct DeviceRegistration: Sendable {
+    let token: DeviceToken
+    /// Updated every time the device reports this token.
+    let registeredAt: Date
+}
 struct DeviceRepository: Sendable {
-    func tokens(for account: Account) async throws -> [DeviceToken] { [] }
-    func forget(_ token: DeviceToken) async throws {}
+    func registrations(for account: Account) async throws -> [DeviceRegistration] { [] }
+    func forget(_ device: DeviceRegistration) async throws {}
 }
 let logger = Logger(label: "snippet")
 // snippet.show
@@ -25,19 +30,30 @@ struct Reminders {
     @Inject var devices: DeviceRepository
 
     func remind(_ account: Account) async throws {
-        for token in try await devices.tokens(for: account) {
+        for device in try await devices.registrations(for: account) {
             do {
                 let receipt = try await apns.send(
-                    .alert(title: "Standup", body: "in 5 minutes", badge: 1), to: token)
+                    .alert(title: "Standup", body: "in 5 minutes", badge: 1), to: device.token)
                 logger.debug("sent", metadata: ["apns-id": "\(receipt.apnsID)"])
-            } catch let error as APNSError where error.deviceTokenIsInvalid {
-                try await devices.forget(token)
+            } catch let error as APNSError
+                where error.shouldForgetDeviceToken(registeredAt: device.registeredAt)
+            {
+                try await devices.forget(device)  // it died, and has not registered again since
             }
         }
     }
 }
 
 func apnsShapes(configuration: Configuration, apns: APNSClient, token: DeviceToken) async throws {
+    do {
+        _ = try await apns.send(.background, to: token)
+    } catch let error as APNSError {
+        switch error.retryAdvice {
+        case .throttled, .backOff, .reconnect: break  // the application's retry policy
+        case .never: break
+        }
+        if case .inactive(let since) = error.deviceTokenProblem { _ = since }
+    }
     struct Payload: Encodable { let conversation: String }
 
     var notification = APNSNotification(

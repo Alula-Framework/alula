@@ -58,9 +58,9 @@ enabled trait reaches.
 
 | Trait | Brings |
 | --- | --- |
-| `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack |
+| `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack, swift-metrics |
 | `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
-| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient. Implies nothing; a push-sending worker needs no HTTP server. |
+| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient, swift-metrics. Implies nothing; a push-sending worker needs no HTTP server. |
 
 All three are opt-in. Name what you want:
 

@@ -28,13 +28,16 @@ private let keycloakURL = ProcessInfo.processInfo.environment["FLIGHT_TEST_KEYCL
 struct KeycloakSignInTests {
     private var issuer: String { "\(keycloakURL!)/realms/flight-test" }
 
-    private func provider() throws -> OIDCSignIn {
+    private func provider(
+        client: String = "flight-test-app", fetchUserInfo: Bool = true,
+        scopes: [String] = OIDCSignInConfiguration.defaultScopes
+    ) throws -> OIDCSignIn {
         OIDCSignIn(
             configuration: try OIDCSignInConfiguration(
-                issuer: issuer, clientID: "flight-test-app", clientSecret: "flight-test-secret",
+                issuer: issuer, clientID: client, clientSecret: "flight-test-secret",
                 redirectURI: URL(string: "http://localhost:8080/auth/callback")!,
                 postLogoutRedirectURI: URL(string: "http://localhost:8080/")!,
-                transport: .allowInsecureLoopback))
+                scopes: scopes, transport: .allowInsecureLoopback, fetchUserInfo: fetchUserInfo))
     }
 
     private func context(_ session: Session, target: String = "/auth/callback") -> RequestContext {
@@ -164,5 +167,30 @@ struct KeycloakSignInTests {
             return
         }
         #expect(url.absoluteString.hasPrefix("\(issuer)/protocol/openid-connect/logout"))
+    }
+
+    @Test("a client whose ID token carries no profile claims gets them from UserInfo")
+    func userInfoAgainstKeycloak() async throws {
+        // flight-test-userinfo maps email, name and preferred_username into
+        // UserInfo only — the shape OIDC Core §5.4 describes for the code flow.
+        // Only `openid`: the client offers no profile or email scope, which is
+        // why its mappers are what put the claims in UserInfo.
+        let bare = try provider(
+            client: "flight-test-userinfo", fetchUserInfo: false, scopes: ["openid"])
+        let session = Session()
+        let target = try #require(try await signInAtKeycloak(bare, session))
+        let idTokenOnly = try await bare.completeSignIn(context(session, target: target))
+        #expect(idTokenOnly.principal.email == nil, "the ID token really does leave them out")
+
+        let provider = try provider(client: "flight-test-userinfo", scopes: ["openid"])
+        let second = Session()
+        let callback = try #require(try await signInAtKeycloak(provider, second))
+        let principal = try await provider.completeSignIn(context(second, target: callback))
+            .principal
+        #expect(principal.subject == idTokenOnly.principal.subject)
+        #expect(principal.email == "ada@example.com")
+        #expect(principal.emailVerified)
+        #expect(principal.name == "Ada Lovelace")
+        #expect(principal.preferredUsername == "ada")
     }
 }

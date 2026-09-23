@@ -77,6 +77,9 @@ private final class MintingTokenEndpoint: HTTPFormPosting, Sendable {
         }
         return (200, Data(#"{"id_token":"\#(token)"}"#.utf8))
     }
+    func getWithBearer(_ url: URL, token: String) async throws -> (status: Int, body: Data) {
+        (404, Data())
+    }
 }
 
 @Suite("Sign-in contract: one controller, either provider")

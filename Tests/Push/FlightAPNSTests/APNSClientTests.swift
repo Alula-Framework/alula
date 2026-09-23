@@ -2,6 +2,7 @@ import FlightAPNSTesting
 import FlightCore
 import Foundation
 import JWTKit
+import MetricsTestKit
 import Synchronization
 import Testing
 
@@ -233,7 +234,7 @@ struct APNSClientTests {
         } catch let error as APNSError {
             #expect(error.status == 410)
             #expect(error.reason == .unregistered)
-            #expect(error.deviceTokenIsInvalid)
+            #expect(error.deviceTokenProblem != nil)
             #expect(!error.isRetryable)
             #expect(error.timestamp == when)
             #expect(error.apnsID == "id-410")
@@ -255,7 +256,7 @@ struct APNSClientTests {
             { errors.append(error) }
         }
         #expect(errors.count == 4)
-        #expect(errors[0].reason == .badDeviceToken && errors[0].deviceTokenIsInvalid)
+        #expect(errors[0].reason == .badDeviceToken && errors[0].deviceTokenProblem == .rejected)
         #expect(errors[1].reason == .tooManyRequests && errors[1].isRetryable)
         #expect(errors[2].reason == .serviceUnavailable && errors[2].isRetryable)
         #expect(errors[3].reason == .unknown && errors[3].rawReason == "SomethingNew")
@@ -351,5 +352,73 @@ struct APNSClientTests {
             #expect(error.reason == .expiredProviderToken)
         }
         #expect(gateway.sent.count == 5, "one retry, not a loop")
+    }
+
+    // MARK: Which tokens to forget, and how to retry
+
+    private func refusal(_ reason: APNSError.Reason, status: Int, at timestamp: Date? = nil)
+        -> APNSError
+    {
+        APNSError(status: status, reason: reason, rawReason: reason.rawValue, timestamp: timestamp)
+    }
+
+    @Test("a 410 forgets the token only if it was not registered again after it died")
+    func forgetRespectsReRegistration() {
+        let died = Date(timeIntervalSince1970: 1_700_000_000)
+        let gone = refusal(.unregistered, status: 410, at: died)
+        #expect(gone.deviceTokenProblem == .inactive(since: died))
+        #expect(gone.shouldForgetDeviceToken(registeredAt: died.addingTimeInterval(-60)))
+        #expect(
+            !gone.shouldForgetDeviceToken(registeredAt: died.addingTimeInterval(60)),
+            "re-registered after the token died: a late 410 must not delete it")
+        #expect(gone.shouldForgetDeviceToken(registeredAt: nil))
+        #expect(refusal(.expiredToken, status: 410).shouldForgetDeviceToken(registeredAt: .now))
+    }
+
+    @Test(
+        "BadDeviceToken and DeviceTokenNotForTopic never delete: that is what a misconfigured environment looks like"
+    )
+    func misconfigurationNeverDeletes() {
+        let wrongEnvironment = refusal(.badDeviceToken, status: 400)
+        #expect(wrongEnvironment.deviceTokenProblem == .rejected)
+        #expect(!wrongEnvironment.shouldForgetDeviceToken(registeredAt: nil))
+        let wrongTopic = refusal(.deviceTokenNotForTopic, status: 400)
+        #expect(wrongTopic.deviceTokenProblem == .wrongTopic)
+        #expect(!wrongTopic.shouldForgetDeviceToken(registeredAt: nil))
+        #expect(refusal(.badTopic, status: 400).deviceTokenProblem == nil)
+    }
+
+    @Test("retry advice separates throttling, gateway failure and a lost connection")
+    func retryAdvice() {
+        #expect(refusal(.tooManyRequests, status: 429).retryAdvice == .throttled)
+        #expect(refusal(.tooManyProviderTokenUpdates, status: 429).retryAdvice == .throttled)
+        #expect(refusal(.serviceUnavailable, status: 503).retryAdvice == .backOff)
+        #expect(refusal(.unknown, status: 502).retryAdvice == .backOff)
+        #expect(refusal(.transportFailure, status: 0).retryAdvice == .reconnect)
+        #expect(refusal(.idleTimeout, status: 400).retryAdvice == .reconnect)
+        #expect(refusal(.badDeviceToken, status: 400).retryAdvice == .never)
+        #expect(refusal(.unregistered, status: 410).retryAdvice == .never)
+        #expect(refusal(.serviceUnavailable, status: 503).isRetryable)
+        #expect(!refusal(.payloadTooLarge, status: 413).isRetryable)
+    }
+
+    @Test("each send counts its outcome, and each provider token minted is counted")
+    func sendMetrics() async throws {
+        let metrics = TestMetrics()
+        let client = APNSClient(
+            configuration: try Fixture.configuration(), transport: gateway,
+            now: clock.nowProvider, metrics: metrics)
+        _ = try await client.send(.alert(body: "hi"), to: Fixture.token)
+        gateway.refuse(status: 410, reason: "Unregistered", timestamp: .now)
+        _ = try? await client.send(.alert(body: "hi"), to: Fixture.token)
+        #expect(
+            try metrics.expectCounter(APNSMetrics.sends, [("outcome", "delivered")]).totalValue == 1
+        )
+        #expect(
+            try metrics.expectCounter(APNSMetrics.sends, [("outcome", "Unregistered")]).totalValue
+                == 1)
+        #expect(
+            try metrics.expectCounter(APNSMetrics.providerTokensMinted).totalValue == 1,
+            "reused, not re-minted")
     }
 }

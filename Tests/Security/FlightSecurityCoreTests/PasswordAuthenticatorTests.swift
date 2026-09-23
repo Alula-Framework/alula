@@ -263,4 +263,57 @@ struct PasswordAuthenticatorTests {
         #expect(PasswordAuthenticationError.invalidCredentials.httpStatus == .unauthorized)
         #expect(PasswordAuthenticationError.accountDisabled.httpStatus == .forbidden)
     }
+
+    // MARK: NFC, and the NFKC hashes 0.31/0.32 made
+
+    @Test(
+        "a password with compatibility characters hashed under the old NFKC form still signs in, and is rehashed under NFC"
+    )
+    func legacyNFKCUpgrades() async throws {
+        let password = "\u{FB01}sh and chips"  // "ﬁ": NFKC folds it to "fi"; NFC keeps it
+        #expect(
+            PasswordAuthenticator.normalizedPassword(password)
+                != PasswordAuthenticator.legacyNormalizedPassword(password))
+        // What 0.32 stored: the hash of the NFKC form.
+        let legacyHash = try fast.hash(PasswordAuthenticator.legacyNormalizedPassword(password))
+        store.insert(StoredCredential(subject: "u", passwordHash: legacyHash), identifiers: ["u"])
+
+        #expect(
+            try await authenticator().authenticate(
+                identifier: "u", password: password, clientAddress: nil
+            ).subject == "u")
+        let upgraded = try #require(store.credential(forSubject: "u")?.passwordHash)
+        #expect(upgraded != legacyHash, "rehashed on the spot")
+        #expect(fast.verify(PasswordAuthenticator.normalizedPassword(password), against: upgraded))
+        // And it keeps working from the new hash.
+        #expect(
+            try await authenticator().authenticate(
+                identifier: "u", password: password, clientAddress: nil
+            ).subject == "u")
+    }
+
+    @Test("under NFC a ligature and its letters are different passwords")
+    func nfcKeepsCompatibilityCharactersDistinct() async throws {
+        let auth = authenticator()
+        store.insert(
+            StoredCredential(subject: "u", passwordHash: try auth.hashNewPassword("\u{FB01}sh")),
+            identifiers: ["u"])
+        await #expect(throws: PasswordAuthenticationError.invalidCredentials) {
+            try await auth.authenticate(identifier: "u", password: "fish", clientAddress: nil)
+        }
+    }
+
+    @Test("an unknown account costs the legacy retry too, when the password would get one")
+    func unknownAccountMatchesLegacyWork() async throws {
+        let counting = CountingHasher(fast)
+        let auth = authenticator(hasher: counting)
+        _ = try? await auth.authenticate(
+            identifier: "nobody", password: "\u{FB01}sh", clientAddress: nil)
+        #expect(
+            counting.verifications == 2,
+            "the same two verifications a real account's wrong guess costs")
+        _ = try? await auth.authenticate(
+            identifier: "nobody", password: "plain ascii", clientAddress: nil)
+        #expect(counting.verifications == 3, "and only one when the forms agree")
+    }
 }

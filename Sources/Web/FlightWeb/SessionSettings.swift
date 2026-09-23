@@ -23,6 +23,11 @@ public enum SessionConfigKey {
     public static let cookieDomain = "sessions.cookie-domain"
     /// `sessions.memory.max-entries` — the in-memory store's bound.
     public static let memoryMaxEntries = "sessions.memory.max-entries"
+    /// `sessions.authenticated-lifetime` — how long a sign-in lasts however
+    /// active the session is. Absolute, not sliding.
+    public static let authenticatedLifetime = "sessions.authenticated-lifetime"
+    /// `sessions.cookie-host-prefix` — name the cookie `__Host-<name>`.
+    public static let cookieHostPrefix = "sessions.cookie-host-prefix"
 }
 
 /// Loaded, validated settings — read once at composition, so a bad value
@@ -35,6 +40,24 @@ public struct SessionSettings: Sendable, Equatable {
     public var cookiePath: String
     public var cookieDomain: String?
     public var memoryMaxEntries: Int
+    /// How long a signed-in principal lasts in a session, counted from the
+    /// sign-in, however active the session stays. `ttl` is sliding — an
+    /// active session never idles out — which is right for a cart and wrong
+    /// for authority: a stolen signed-in cookie used continuously would
+    /// otherwise last forever. Past this, `Authentication` signs the session
+    /// out and the browser signs in again; the rest of the session survives.
+    public var authenticatedLifetime: Duration
+    /// Names the cookie `__Host-<cookieName>`, which browsers accept only
+    /// when it is `Secure`, has `Path=/` and no `Domain` — so no subdomain
+    /// can set or overwrite it. Off by default because renaming the cookie
+    /// signs everyone out once, and because a deployment that shares the
+    /// cookie across subdomains cannot use it.
+    public var cookieHostPrefix: Bool
+
+    /// The name the cookie is actually set and read under.
+    public var effectiveCookieName: String {
+        cookieHostPrefix ? "__Host-" + cookieName : cookieName
+    }
 
     /// The defaults, written once, for the memberwise initializer and the
     /// configuration reader alike.
@@ -54,6 +77,11 @@ public struct SessionSettings: Sendable, Equatable {
         public static let cookieSameSite = Cookie.SameSite.lax
         public static let cookiePath = "/"
         public static let memoryMaxEntries = 100_000
+        /// A week. Long enough that signing in is not a daily chore, short
+        /// enough that a stolen cookie stops working on its own. A
+        /// high-value application sets this in hours.
+        public static let authenticatedLifetime: Duration = .seconds(7 * 24 * 60 * 60)
+        public static let cookieHostPrefix = false
     }
 
     public init(
@@ -63,7 +91,9 @@ public struct SessionSettings: Sendable, Equatable {
         cookieSameSite: Cookie.SameSite = Defaults.cookieSameSite,
         cookiePath: String = Defaults.cookiePath,
         cookieDomain: String? = nil,
-        memoryMaxEntries: Int = Defaults.memoryMaxEntries
+        memoryMaxEntries: Int = Defaults.memoryMaxEntries,
+        authenticatedLifetime: Duration = Defaults.authenticatedLifetime,
+        cookieHostPrefix: Bool = Defaults.cookieHostPrefix
     ) throws {
         self.cookieName = cookieName
         self.ttl = ttl
@@ -72,6 +102,8 @@ public struct SessionSettings: Sendable, Equatable {
         self.cookiePath = cookiePath
         self.cookieDomain = cookieDomain
         self.memoryMaxEntries = memoryMaxEntries
+        self.authenticatedLifetime = authenticatedLifetime
+        self.cookieHostPrefix = cookieHostPrefix
         try validate()
     }
 
@@ -90,7 +122,11 @@ public struct SessionSettings: Sendable, Equatable {
                 ?? Defaults.cookiePath,
             cookieDomain: try configuration.getIfPresent(SessionConfigKey.cookieDomain),
             memoryMaxEntries: try configuration.getIfPresent(SessionConfigKey.memoryMaxEntries)
-                ?? Defaults.memoryMaxEntries)
+                ?? Defaults.memoryMaxEntries,
+            authenticatedLifetime: try configuration.getIfPresent(
+                SessionConfigKey.authenticatedLifetime) ?? Defaults.authenticatedLifetime,
+            cookieHostPrefix: try configuration.getIfPresent(SessionConfigKey.cookieHostPrefix)
+                ?? Defaults.cookieHostPrefix)
     }
 
     private func validate() throws {
@@ -110,6 +146,15 @@ public struct SessionSettings: Sendable, Equatable {
         guard memoryMaxEntries > 0 else {
             throw SessionConfigurationError.invalidMaxEntries(memoryMaxEntries)
         }
+        guard authenticatedLifetime > .zero else {
+            throw SessionConfigurationError.nonPositiveAuthenticatedLifetime(authenticatedLifetime)
+        }
+        // The browser's own rules for the prefix (RFC 6265bis §4.1.3.2). A
+        // cookie that breaks them is silently dropped, which would read as
+        // "nobody can stay signed in".
+        if cookieHostPrefix, !cookieSecure || cookiePath != "/" || cookieDomain != nil {
+            throw SessionConfigurationError.hostPrefixRequirementsNotMet
+        }
     }
 
     private static func isForbiddenInCookieName(_ character: Character) -> Bool {
@@ -124,6 +169,8 @@ public enum SessionConfigurationError: Error, Sendable, Equatable, CustomStringC
     case nonPositiveTTL(Duration)
     case sameSiteNoneRequiresSecure
     case invalidMaxEntries(Int)
+    case nonPositiveAuthenticatedLifetime(Duration)
+    case hostPrefixRequirementsNotMet
 
     public var description: String {
         switch self {
@@ -144,6 +191,15 @@ public enum SessionConfigurationError: Error, Sendable, Equatable, CustomStringC
             return """
                 \(SessionConfigKey.memoryMaxEntries) must be positive; it is \(value). The in-memory \
                 store is bounded by design.
+                """
+        case .nonPositiveAuthenticatedLifetime(let value):
+            return "\(SessionConfigKey.authenticatedLifetime) must be positive; it is \(value)."
+        case .hostPrefixRequirementsNotMet:
+            return """
+                \(SessionConfigKey.cookieHostPrefix) is on, which browsers accept only for a cookie \
+                that is Secure, has Path=/ and no Domain. Set \(SessionConfigKey.cookieSecure): true, \
+                \(SessionConfigKey.cookiePath): /, and no \(SessionConfigKey.cookieDomain) — or turn \
+                the prefix off.
                 """
         }
     }

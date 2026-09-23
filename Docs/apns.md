@@ -75,13 +75,15 @@ struct Reminders {
     @Inject var devices: DeviceRepository
 
     func remind(_ account: Account) async throws {
-        for token in try await devices.tokens(for: account) {
+        for device in try await devices.registrations(for: account) {
             do {
                 let receipt = try await apns.send(
-                    .alert(title: "Standup", body: "in 5 minutes", badge: 1), to: token)
+                    .alert(title: "Standup", body: "in 5 minutes", badge: 1), to: device.token)
                 logger.debug("sent", metadata: ["apns-id": "\(receipt.apnsID)"])
-            } catch let error as APNSError where error.deviceTokenIsInvalid {
-                try await devices.forget(token)       // Apple said so; keep sending and you get throttled
+            } catch let error as APNSError
+                where error.shouldForgetDeviceToken(registeredAt: device.registeredAt)
+            {
+                try await devices.forget(device)      // it died, and has not registered again since
             }
         }
     }
@@ -135,9 +137,32 @@ A notification's own `topic` is sent as given, suffix and all.
 |---|---|
 | `APNSReceipt.apnsID` | The `apns-id`, yours or the gateway's. What to quote to Apple |
 | `APNSError.reason` | Apple's reason, as an enum; unknown ones keep `rawReason` |
-| `APNSError.deviceTokenIsInvalid` | `BadDeviceToken`, `Unregistered`, `DeviceTokenNotForTopic`, `ExpiredToken`: delete the token |
-| `APNSError.timestamp` | `410 Unregistered` only: when the token died |
-| `APNSError.isRetryable` | 429, 5xx, a lost connection: the same request may succeed later |
+| `APNSError.shouldForgetDeviceToken(registeredAt:)` | Delete the stored token? Only on a `410`, and only if the device hasn't registered again since Apple stopped accepting the token |
+| `APNSError.deviceTokenProblem` | `.inactive(since:)` (`410 Unregistered`, `ExpiredToken`), `.rejected` (`BadDeviceToken`), `.wrongTopic` (`DeviceTokenNotForTopic`) |
+| `APNSError.timestamp` | On a `410`: when the token stopped being valid |
+| `APNSError.retryAdvice` | `.throttled` (429: slow the whole stream), `.backOff` (5xx: exponential backoff), `.reconnect` (the connection failed), or `.never` |
+
+**Keep when each token was registered.** A device that reinstalls, or has
+its token rotated, registers again. A `410` for a push sent before that can
+arrive after it, and deleting on it would remove a live token. So store
+`registeredAt` with each token, updated every time the device reports it.
+`shouldForgetDeviceToken` compares it with the `410`'s timestamp.
+
+**Don't delete on `BadDeviceToken` or `DeviceTokenNotForTopic`.** Every
+token returns those when the environment or the topic is misconfigured, for
+example a sandbox token sent to production, or the wrong bundle id. An
+application that deleted on them would lose every device it knows about to
+one configuration mistake. When they appear for every token at once, fix
+the configuration. When one token fails this way while others to the same
+topic succeed, that one token is bad, and forgetting it is right.
+`deviceTokenIsInvalid` treated all four reasons alike, so it's deprecated
+in favour of the two above.
+
+`flight_apns_sends` counts every send by `outcome`, which is `delivered`
+or Apple's reason string. `flight_apns_provider_tokens_minted` counts each
+provider token signed. Apple refuses updates more often than every 20
+minutes, so a rising rate there warns before `TooManyProviderTokenUpdates`
+does. `APNSClient(metrics:)` takes a factory for tests.
 
 The one retry the client performs itself is the one the protocol asks for:
 a `403 ExpiredProviderToken` mints a fresh token and sends once more. Every

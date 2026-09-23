@@ -32,10 +32,22 @@ private final class FakeTokenEndpoint: HTTPFormPosting, Sendable {
     }
     private let calls = Mutex<[Call]>([])
     private let answer = Mutex<(Int, Data)>((500, Data()))
+    private let userInfoAnswer = Mutex<(Int, Data)>((404, Data()))
+    private let bearers = Mutex<[String]>([])
 
     var last: Call? { calls.withLock { $0.last } }
+    /// Every access token UserInfo was asked with.
+    var userInfoBearers: [String] { bearers.withLock { $0 } }
     func respond(status: Int = 200, json: String) {
         answer.withLock { $0 = (status, Data(json.utf8)) }
+    }
+    func respondToUserInfo(status: Int = 200, json: String) {
+        userInfoAnswer.withLock { $0 = (status, Data(json.utf8)) }
+    }
+
+    func getWithBearer(_ url: URL, token: String) async throws -> (status: Int, body: Data) {
+        bearers.withLock { $0.append(token) }
+        return userInfoAnswer.withLock { $0 }
     }
 
     func postForm(
@@ -65,16 +77,18 @@ struct OIDCSignInTests {
          "authorization_endpoint":"https://idp.example.com/authorize?prompt=login",
          "token_endpoint":"https://idp.example.com/token",
          "end_session_endpoint":"https://idp.example.com/logout",
+         "userinfo_endpoint":"https://idp.example.com/userinfo",
          "code_challenge_methods_supported":["S256"]}
         """
 
     private func provider(
-        secret: String? = nil, discovery: String = discovery
+        secret: String? = nil, discovery: String = discovery, fetchUserInfo: Bool = true
     ) throws -> OIDCSignIn {
         let configuration = try OIDCSignInConfiguration(
             issuer: testIssuer, clientID: "my-app", clientSecret: secret,
             redirectURI: URL(string: "https://app.example.com/auth/callback")!,
-            postLogoutRedirectURI: URL(string: "https://app.example.com/")!)
+            postLogoutRedirectURI: URL(string: "https://app.example.com/")!,
+            fetchUserInfo: fetchUserInfo)
         return OIDCSignIn(
             configuration: configuration,
             http: FakeHTTP([
@@ -111,14 +125,17 @@ struct OIDCSignInTests {
     }
 
     private func idToken(
-        nonce: String?, audience: String = "my-app", extra: [String: JSONValue] = [:]
+        nonce: String?, audience: String = "my-app", extra: [String: JSONValue] = [:],
+        profile: Bool = true
     ) async throws -> String {
         var claims = extra
         if let nonce { claims["nonce"] = .string(nonce) }
-        claims["email"] = .string("ada@example.com")
-        claims["email_verified"] = .bool(true)
-        claims["name"] = .string("Ada Lovelace")
-        claims["preferred_username"] = .string("ada")
+        if profile {
+            claims["email"] = .string("ada@example.com")
+            claims["email_verified"] = .bool(true)
+            claims["name"] = .string("Ada Lovelace")
+            claims["preferred_username"] = .string("ada")
+        }
         claims["roles"] = .array([.string("author")])
         return try await identity.sign(
             standardClaims(
@@ -407,5 +424,91 @@ struct OIDCSignInTests {
                 try OIDCSignInConfiguration(configuration: Configuration(values: values))
             }
         }
+    }
+
+    // MARK: UserInfo
+
+    /// Begins, answers the exchange with the ID token and access token
+    /// `at-1`, and completes.
+    private func complete(
+        _ provider: OIDCSignIn, idToken makeToken: (String) async throws -> String
+    ) async throws -> SignInResult {
+        let session = Session()
+        let sent = try await begin(provider, session)
+        let token = try await makeToken(sent["nonce"]!)
+        tokens.respond(json: #"{"id_token":"\#(token)","access_token":"at-1"}"#)
+        return try await provider.completeSignIn(
+            context(session, query: "code=abc&state=\(sent["state"]!)"))
+    }
+
+    @Test("claims the ID token left out come from UserInfo, asked once with the access token")
+    func userInfoFillsGaps() async throws {
+        tokens.respondToUserInfo(
+            json:
+                #"{"sub":"kc-123","email":"ada@example.com","email_verified":true,"name":"Ada Lovelace","preferred_username":"ada"}"#
+        )
+        let result = try await complete(try provider()) {
+            try await idToken(nonce: $0, profile: false)
+        }
+        #expect(result.principal.email == "ada@example.com")
+        #expect(result.principal.emailVerified)
+        #expect(result.principal.name == "Ada Lovelace")
+        #expect(result.principal.preferredUsername == "ada")
+        #expect(tokens.userInfoBearers == ["at-1"])
+    }
+
+    @Test("UserInfo answering for another subject fails the sign-in and none of it is used")
+    func userInfoSubjectMismatch() async throws {
+        tokens.respondToUserInfo(json: #"{"sub":"someone-else","email":"mallory@example.com"}"#)
+        await #expect(throws: OIDCSignInError.userInfoSubjectMismatch) {
+            try await complete(try provider()) { try await idToken(nonce: $0, profile: false) }
+        }
+        #expect(OIDCSignInError.userInfoSubjectMismatch.httpStatus == .unauthorized)
+    }
+
+    @Test("a UserInfo endpoint that fails is a provider failure, not a half-filled principal")
+    func userInfoFailure() async throws {
+        tokens.respondToUserInfo(status: 500, json: "{}")
+        await #expect(throws: OIDCSignInError.userInfo("HTTP 500")) {
+            try await complete(try provider()) { try await idToken(nonce: $0, profile: false) }
+        }
+        #expect(OIDCSignInError.userInfo("x").httpStatus == .badGateway)
+    }
+
+    @Test("where both carry a claim, the signed ID token wins")
+    func idTokenWins() async throws {
+        tokens.respondToUserInfo(
+            json: #"{"sub":"kc-123","email":"other@example.com","name":"Ada Lovelace"}"#)
+        let result = try await complete(try provider()) {
+            try await idToken(
+                nonce: $0, extra: ["email": .string("ada@example.com")], profile: false)
+        }
+        #expect(result.principal.email == "ada@example.com")
+        #expect(result.principal.name == "Ada Lovelace", "the gap was still filled")
+    }
+
+    @Test(
+        "UserInfo is not asked when the ID token already has every standard claim, or when turned off"
+    )
+    func userInfoSkipped() async throws {
+        _ = try await complete(try provider()) { try await idToken(nonce: $0) }
+        #expect(tokens.userInfoBearers.isEmpty)
+        _ = try await complete(try provider(fetchUserInfo: false)) {
+            try await idToken(nonce: $0, profile: false)
+        }
+        #expect(tokens.userInfoBearers.isEmpty)
+    }
+
+    @Test("a provider without a UserInfo endpoint signs in on the ID token alone")
+    func noUserInfoEndpoint() async throws {
+        let without = Self.discovery.split(separator: "\n")
+            .filter { !$0.contains("userinfo_endpoint") }.joined(separator: "\n")
+        #expect(!without.contains("userinfo"))
+        let result = try await complete(try provider(discovery: without)) {
+            try await idToken(nonce: $0, profile: false)
+        }
+        #expect(result.principal.subject == "kc-123")
+        #expect(result.principal.email == nil)
+        #expect(tokens.userInfoBearers.isEmpty)
     }
 }

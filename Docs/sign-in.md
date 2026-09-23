@@ -149,11 +149,18 @@ wrong. It does all of the following:
   with no password, and a wrong password are all `401 Invalid credentials`.
   A disabled account is reported, as a `403`, only after its password
   verifies.
-- **Normalizes input.** Passwords are NFKC-normalized, as NIST SP 800-63B
+- **Normalizes input.** Passwords are NFC-normalized, as NIST SP 800-63B-4
   recommends, so the same password typed on two keyboards verifies. ASCII is
-  unchanged, so older hashes still verify. Hash new passwords with
-  `hashNewPassword(_:)` rather than the hasher directly, so they're
-  normalized the same way.
+  unchanged. Hash new passwords with `hashNewPassword(_:)` rather than the
+  hasher directly, so they're normalized the same way.
+
+  0.31 and 0.32 used NFKC, following the earlier revision of the guidance.
+  NFKC also folds compatibility characters, such as ligatures and
+  full-width forms, which NFC keeps distinct. A password whose two forms
+  differ is checked against the old form when the new one fails, and it's
+  rehashed under NFC the moment it matches. Accounts upgrade themselves as
+  they sign in, and nobody is locked out. Unknown accounts get the same
+  second check, so the extra work can't reveal which accounts exist.
 - **Strengthens hashes over time.** A hash made under weaker parameters is
   replaced after a successful sign-in, the only moment the plaintext is
   available.
@@ -188,9 +195,22 @@ token exactly as a bearer token is validated, plus its `nonce`. Every
 endpoint the discovery document names is held to the same transport policy
 as the key fetch.
 
-No tokens are kept. The ID token establishes who signed in, once, and the
-session holds the principal, the same as for every other sign-in. Signing
-out redirects to the provider's end-session endpoint when it has one.
+**UserInfo fills what the ID token leaves out.** In the code flow, OpenID
+Connect Core §5.4 has profile and email claims returned from the UserInfo
+endpoint, and a conforming provider may leave them out of the ID token
+entirely. So when any of the four standard claims is missing,
+`OIDCSignIn` spends the access token once on UserInfo. It requires
+UserInfo's `sub` to match the ID token's exactly, as §5.3.2 demands, and
+fills the gaps. The signed ID token wins wherever both carry a claim. A
+`sub` mismatch fails the sign-in with a `401`, and a UserInfo endpoint that
+fails is a `502`: a half-filled principal would be worse than an error.
+`security.oidc.userinfo: false` turns this off. The CI suite checks it
+against a Keycloak client whose ID token carries no profile claims at all.
+
+No tokens are kept. The ID token establishes who signed in, and the access
+token is used for that one UserInfo request and then dropped. The session
+holds the principal, the same as for every other sign-in. Signing out
+redirects to the provider's end-session endpoint when it has one.
 
 `FlightOIDCSignInModule` doesn't validate bearer tokens. List
 `FlightOIDCModule` beside it for an API that also accepts them. The two
@@ -264,6 +284,27 @@ so `SessionRuntime.revokeSessions(ownedBy:keeping:)` can end every other
 session one person has after a password change, or all of them when an
 account is disabled. `Docs/sessions.md` has the details, including which
 stores support it.
+
+## Metrics
+
+Everything here counts itself through swift-metrics, to whatever backend
+the application bootstraps. Every dimension is a closed set, never a
+subject, an address or a token, so the number of series stays fixed.
+
+| Counter | Dimensions |
+|---|---|
+| `flight_sign_in_attempts` | `provider` (`password`, `oidc`), `outcome` (`success`, `invalid_credentials`, `throttled`, `unavailable`, `invalid_callback`, `userinfo_subject_mismatch`, …) |
+| `flight_sign_in_started` | `provider` |
+| `flight_sign_in_password_rehashes` | none |
+| `flight_sign_in_expired` | none: sign-ins that reached `sessions.authenticated-lifetime` |
+| `flight_one_time_tokens_issued` | `purpose` |
+| `flight_one_time_tokens_redeemed` | `purpose`, `outcome` (`redeemed`, `unknown_or_used`, `expired`, `wrong_purpose`, `binding_mismatch`) |
+
+A caller holding a bad link is told one thing. This is where the
+difference is kept. A rise in `binding_mismatch` means reset links are
+arriving after passwords changed. A rise in `wrong_purpose` means someone
+is trying one link type as another. `SignInMetrics` has the labels as
+constants, and each emitting type takes a `metrics:` factory for tests.
 
 ## Not yet here
 

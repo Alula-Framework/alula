@@ -1,3 +1,4 @@
+import CoreMetrics
 import Crypto
 import FlightCore
 import FlightWeb
@@ -34,6 +35,12 @@ public struct OIDCSignInConfiguration: Sendable {
     public var validation: OIDCSecurityConfiguration
     /// How long a started sign-in may take before its state expires.
     public var pendingLifetime: Duration
+    /// Whether to ask the provider's UserInfo endpoint for the standard
+    /// claims the ID token did not carry. On by default: in the code flow,
+    /// OIDC Core §5.4 has profile and email claims returned from UserInfo,
+    /// and a conforming provider may leave them out of the ID token.
+    /// `security.oidc.userinfo: false` turns it off.
+    public var fetchUserInfo: Bool
 
     public static let defaultScopes = ["openid", "profile", "email"]
 
@@ -46,7 +53,8 @@ public struct OIDCSignInConfiguration: Sendable {
         scopes: [String] = OIDCSignInConfiguration.defaultScopes,
         transport: JWKSTransportPolicy = .httpsOnly,
         rolesClaims: [String] = OIDCSecurityConfiguration.Defaults.rolesClaims,
-        pendingLifetime: Duration = .seconds(600)
+        pendingLifetime: Duration = .seconds(600),
+        fetchUserInfo: Bool = true
     ) throws {
         guard scopes.contains("openid") else {
             // Without it there is no ID token, and no one to sign in.
@@ -59,6 +67,7 @@ public struct OIDCSignInConfiguration: Sendable {
         self.postLogoutRedirectURI = postLogoutRedirectURI
         self.scopes = scopes
         self.pendingLifetime = pendingLifetime
+        self.fetchUserInfo = fetchUserInfo
         // The ID token's audience is this client — not the API audience a
         // bearer token carries, which is why validation is its own copy.
         self.validation = try OIDCSecurityConfiguration(
@@ -98,7 +107,8 @@ public struct OIDCSignInConfiguration: Sendable {
             postLogoutRedirectURI: postLogout,
             scopes: scopes,
             transport: try S.transportPolicy(string("jwks-transport")),
-            rolesClaims: rolesClaims)
+            rolesClaims: rolesClaims,
+            fetchUserInfo: try S.setting(configuration, "userinfo", as: Bool.self) ?? true)
     }
 }
 
@@ -125,14 +135,22 @@ public final class OIDCSignIn: SignInProvider {
     private let poster: any HTTPFormPosting
     private let validator: OIDCTokenValidator
     private let now: @Sendable () -> Date
+    private let metrics: any MetricsFactory
 
-    public convenience init(configuration: OIDCSignInConfiguration) {
+    /// - Parameters:
+    ///   - configuration: The provider, this client, and where the browser
+    ///     comes back.
+    ///   - metrics: Where ``SignInMetrics`` counters go; the bootstrapped
+    ///     `MetricsSystem` when nil.
+    public convenience init(
+        configuration: OIDCSignInConfiguration, metrics: (any MetricsFactory)? = nil
+    ) {
         let policy = configuration.validation.jwksTransport
         self.init(
             configuration: configuration,
             http: AsyncHTTPGetter(timeout: .seconds(10), policy: policy),
             poster: AsyncHTTPFormPoster(timeout: .seconds(10), policy: policy),
-            jwksSource: nil)
+            jwksSource: nil, metrics: metrics)
     }
 
     init(
@@ -140,8 +158,10 @@ public final class OIDCSignIn: SignInProvider {
         http: any HTTPGetting,
         poster: any HTTPFormPosting,
         jwksSource: (any JWKSSource)?,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        metrics: (any MetricsFactory)? = nil
     ) {
+        self.metrics = metrics ?? MetricsSystem.factory
         self.configuration = configuration
         let policy = configuration.validation.jwksTransport
         self.metadata = OIDCMetadataSource(issuer: configuration.issuer, http: http, policy: policy)
@@ -160,6 +180,8 @@ public final class OIDCSignIn: SignInProvider {
 
     public func beginSignIn(_ context: RequestContext, returnTo: String?) async throws -> SignInStep
     {
+        Counter(label: SignInMetrics.started, dimensions: [("provider", "oidc")], factory: metrics)
+            .increment()
         let metadata = try await metadata.metadata()
         let pending = PendingSignIn(
             state: Self.randomToken(), nonce: Self.randomToken(), verifier: Self.randomToken(),
@@ -193,6 +215,17 @@ public final class OIDCSignIn: SignInProvider {
     // MARK: Complete
 
     public func completeSignIn(_ context: RequestContext) async throws -> SignInResult {
+        do {
+            let result = try await completeSignInUncounted(context)
+            SignInMetrics.attempt("oidc", "success", metrics)
+            return result
+        } catch let error as OIDCSignInError {
+            SignInMetrics.attempt("oidc", error.metricOutcome, metrics)
+            throw error
+        }
+    }
+
+    private func completeSignInUncounted(_ context: RequestContext) async throws -> SignInResult {
         let request = context.request
         if let error = request.queryParam("error") {
             // The user declined, or the provider refused. Not a fault here.
@@ -253,7 +286,55 @@ public final class OIDCSignIn: SignInProvider {
         guard principal.claim("nonce", as: String.self) == pending.nonce else {
             throw OIDCSignInError.invalidIDToken("nonce does not match")
         }
-        return SignInResult(principal: principal, returnTo: pending.returnTo)
+        let completed = try await withUserInfo(
+            principal, metadata: metadata, accessToken: tokens.accessToken)
+        return SignInResult(principal: completed, returnTo: pending.returnTo)
+    }
+
+    /// Fills the standard claims the ID token left out from the UserInfo
+    /// endpoint, spending the access token once and keeping nothing.
+    ///
+    /// OIDC Core §5.3.2: UserInfo's `sub` must equal the ID token's exactly,
+    /// or none of it is used — here, the sign-in fails, since a provider
+    /// answering for someone else is not one to keep going with. The ID
+    /// token wins wherever both carry a claim: it is signed, and UserInfo is
+    /// only as trustworthy as the TLS connection it came over.
+    private func withUserInfo(
+        _ principal: Principal, metadata: OIDCProviderMetadata, accessToken: String?
+    ) async throws -> Principal {
+        let missing = Principal.StandardClaim.persisted.filter { principal.claims[$0] == nil }
+        guard configuration.fetchUserInfo, !missing.isEmpty,
+            let endpoint = metadata.userinfoEndpoint, let accessToken
+        else { return principal }
+
+        let answer: (status: Int, body: Data)
+        do {
+            answer = try await poster.getWithBearer(endpoint, token: accessToken)
+        } catch let error as OIDCSignInError {
+            throw error
+        } catch {
+            throw OIDCSignInError.userInfo("\(error)")
+        }
+        guard (200..<300).contains(answer.status) else {
+            throw OIDCSignInError.userInfo("HTTP \(answer.status)")
+        }
+        guard let claims = try? JSONDecoder().decode([String: JSONValue].self, from: answer.body)
+        else {
+            // A provider configured to sign its UserInfo answers
+            // `application/jwt`; this reads JSON only.
+            throw OIDCSignInError.userInfo("response is not a JSON object")
+        }
+        guard claims["sub"]?.stringValue == principal.subject else {
+            throw OIDCSignInError.userInfoSubjectMismatch
+        }
+
+        var merged = principal.claims
+        for name in missing {
+            if let value = claims[name]?.anySendable { merged[name] = value }
+        }
+        return Principal(
+            subject: principal.subject, issuer: principal.issuer, roles: principal.roles,
+            scopes: principal.scopes, claims: merged)
     }
 
     // MARK: Sign out
@@ -299,7 +380,11 @@ public final class OIDCSignIn: SignInProvider {
 
     private struct TokenResponse: Decodable {
         let idToken: String?
-        enum CodingKeys: String, CodingKey { case idToken = "id_token" }
+        let accessToken: String?
+        enum CodingKeys: String, CodingKey {
+            case idToken = "id_token"
+            case accessToken = "access_token"
+        }
     }
 
     private struct TokenErrorResponse: Decodable {
@@ -373,6 +458,11 @@ public enum OIDCSignInError: Error, Sendable, Equatable, CustomStringConvertible
     case tokenExchange(String)
     /// The ID token failed validation or did not match this sign-in.
     case invalidIDToken(String)
+    /// The UserInfo endpoint could not be asked, or did not answer usably.
+    case userInfo(String)
+    /// UserInfo answered for a different subject than the ID token named.
+    /// OIDC Core §5.3.2: its claims must then not be used.
+    case userInfoSubjectMismatch
 
     public var description: String {
         switch self {
@@ -382,6 +472,8 @@ public enum OIDCSignInError: Error, Sendable, Equatable, CustomStringConvertible
         case .invalidCallback(let detail): "invalid sign-in callback: \(detail)"
         case .tokenExchange(let detail): "token exchange failed: \(detail)"
         case .invalidIDToken(let detail): "ID token rejected: \(detail)"
+        case .userInfo(let detail): "UserInfo request failed: \(detail)"
+        case .userInfoSubjectMismatch: "UserInfo answered for a different subject than the ID token"
         }
     }
 }
@@ -389,15 +481,17 @@ public enum OIDCSignInError: Error, Sendable, Equatable, CustomStringConvertible
 extension OIDCSignInError: HTTPErrorRepresentable {
     public var httpStatus: HTTPResponse.Status {
         switch self {
-        case .configuration, .discovery, .tokenExchange: .badGateway
-        case .providerRefused, .invalidCallback, .invalidIDToken: .unauthorized
+        case .configuration, .discovery, .tokenExchange, .userInfo: .badGateway
+        case .providerRefused, .invalidCallback, .invalidIDToken, .userInfoSubjectMismatch:
+            .unauthorized
         }
     }
 
     public var httpMessage: String {
         switch self {
-        case .configuration, .discovery, .tokenExchange: "Sign-in provider unavailable"
-        case .providerRefused, .invalidCallback, .invalidIDToken: "Sign-in failed"
+        case .configuration, .discovery, .tokenExchange, .userInfo: "Sign-in provider unavailable"
+        case .providerRefused, .invalidCallback, .invalidIDToken, .userInfoSubjectMismatch:
+            "Sign-in failed"
         }
     }
 }

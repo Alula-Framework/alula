@@ -100,6 +100,47 @@ struct SessionsTests {
         return nil
     }
 
+    // MARK: __Host- prefix
+
+    @Test("with the host prefix on, the cookie is set and read as __Host-<name>")
+    func hostPrefix() async throws {
+        let client = try client(
+            settings: SessionSettings(ttl: .seconds(3600), cookieHostPrefix: true))
+        let login = await client.post("/login?user=ada")
+        let id = try #require(sessionCookie(login, name: "__Host-session"))
+        #expect(sessionCookie(login, name: "session") == nil)
+        let setCookie = try #require(login.header("Set-Cookie"))
+        #expect(setCookie.contains("Secure") && setCookie.contains("Path=/"))
+        #expect(!setCookie.contains("Domain"))
+        let read = await client.get("/read", headers: [.cookie: "__Host-session=\(id)"])
+        #expect(read.bodyText == "ada")
+    }
+
+    @Test("the host prefix refuses settings a browser would drop the cookie for")
+    func hostPrefixRequirements() {
+        for settings in [
+            { try SessionSettings(cookieSecure: false, cookieHostPrefix: true) },
+            { try SessionSettings(cookiePath: "/app", cookieHostPrefix: true) },
+            { try SessionSettings(cookieDomain: "example.com", cookieHostPrefix: true) },
+        ] as [() throws -> SessionSettings] {
+            #expect(throws: SessionConfigurationError.hostPrefixRequirementsNotMet) {
+                _ = try settings()
+            }
+        }
+    }
+
+    @Test("the authenticated lifetime defaults to a week and must be positive")
+    func authenticatedLifetimeSetting() throws {
+        #expect(try SessionSettings().authenticatedLifetime == .seconds(7 * 24 * 3600))
+        #expect(
+            try SessionSettings(
+                configuration: Configuration(values: ["sessions.authenticated-lifetime": "12h"])
+            ).authenticatedLifetime == .seconds(12 * 3600))
+        #expect(throws: SessionConfigurationError.self) {
+            try SessionSettings(authenticatedLifetime: .zero)
+        }
+    }
+
     // MARK: Nothing until something is written
 
     @Test("a request that only reads leaves no record and sets no cookie")

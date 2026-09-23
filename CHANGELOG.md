@@ -4,6 +4,78 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Everything here answers an independent security review of 0.23–0.32.
+Each finding was checked against the code and the standards it cites
+before anything changed. D41 has the record.
+
+### Added
+
+- **An absolute lifetime for signed-in sessions.** `sessions.ttl` is
+  sliding, so an active session never idled out. That's fine for a cart,
+  but a stolen signed-in cookie used continuously would last forever.
+  `sessions.authenticated-lifetime` (default 7 days) limits a sign-in,
+  counted from `Session.signIn`, which now records when it happened, and
+  never renewed by activity. Past it, `Authentication` signs the session
+  out and the rest of the session survives. Sign-ins recorded before this
+  release are stamped once and get one full lifetime, rather than
+  everyone being signed out at upgrade.
+- **OIDC UserInfo.** OIDC Core §5.4 has profile and email claims returned
+  from UserInfo in the code flow, and a conforming provider may leave them
+  out of the ID token. `OIDCSignIn` now spends the access token once on
+  UserInfo when a standard claim is missing, requires an exact `sub`
+  match (§5.3.2), fills the gaps, and lets the ID token win on conflicts.
+  Turn it off with `security.oidc.userinfo: false`. It's proven in CI
+  against a Keycloak client whose ID token carries no profile claims.
+- **`sessions.cookie-host-prefix`**, opt-in: the cookie becomes
+  `__Host-<name>`. Settings a browser would reject for that prefix fail
+  startup.
+- **APNs token and retry guidance.**
+  - `APNSError.deviceTokenProblem`: `.inactive(since:)`, `.rejected` or
+    `.wrongTopic`.
+  - `shouldForgetDeviceToken(registeredAt:)`: only a `410`, and only if the
+    device hasn't registered again since.
+  - `retryAdvice`: `.throttled`, `.backOff`, `.reconnect` or `.never`.
+- **Metrics** through swift-metrics:
+  - sessions: created, regenerated, store failures, revoked, revocation
+    failures;
+  - sign-in: attempts by provider and outcome, started, rehashes, expired
+    by lifetime;
+  - one-time tokens: issued, and redeemed by outcome;
+  - APNs: sends by outcome, and provider tokens minted.
+
+  Every dimension is a closed set. Every emitting type takes a `metrics:`
+  factory.
+
+### Changed
+
+- **Passwords are NFC-normalized, per NIST SP 800-63B-4.** 0.31 and 0.32
+  used NFKC and wrongly called that the current guidance. It was revision
+  3's. A password whose NFKC and NFC forms differ is verified against the
+  old form when the new one fails, then rehashed under NFC, so nobody is
+  locked out. An unknown account costs the same second verification, so
+  the retry reveals nothing.
+- **`APNSError.deviceTokenIsInvalid` is deprecated.** It also flagged
+  `BadDeviceToken` and `DeviceTokenNotForTopic`. Every token returns those
+  when the environment or topic is misconfigured, so deleting on it could
+  delete every stored token at once.
+- **`isRetryable` now includes `TooManyProviderTokenUpdates`**, as
+  `.throttled`. The same request succeeds once the rate drops.
+- **Session revocation is documented as point-in-time.** A sign-in that
+  verified the old password just before a change can save its session
+  just after the scan. The documentation names that window, the ordering
+  that keeps it to one in-flight sign-in, and the lifetime that bounds it.
+- `SessionRuntime.now` is public, and `SessionRuntime`, `Authentication`,
+  `PasswordAuthenticator`, `OIDCSignIn`, `OneTimeTokens` and `APNSClient`
+  take a `metrics:` factory. `OIDCSignInError` gains `userInfo` and
+  `userInfoSubjectMismatch`. `SessionConfigurationError` gains two cases.
+  All three are source-breaking only for an exhaustive `switch` over them.
+- swift-metrics is a new dependency of the `Web`, `Security` and `APNS`
+  traits. Under `Web` it was already resolved through Hummingbird. `APNS`
+  alone gains it, and it has no dependencies of its own. A lean consumer
+  still resolves 7 packages.
+
 ## [0.32.0] - 2026-09-22
 
 ### Added

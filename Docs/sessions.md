@@ -186,6 +186,8 @@ kebab-case, none required.
 | `cookie-path` | `/` | |
 | `cookie-domain` | unset | The request's host only |
 | `memory.max-entries` | `100000` | The in-memory store's bound. Past it, expired entries go first, then the least recently loaded |
+| `authenticated-lifetime` | `7d` | The absolute limit on a sign-in, counted from the sign-in and never renewed by activity. See *The authenticated lifetime* |
+| `cookie-host-prefix` | `false` | Names the cookie `__Host-<cookie-name>`. Needs `cookie-secure`, `cookie-path: /` and no `cookie-domain`, or startup fails |
 
 Every value is read once at composition, so a bad one fails startup rather
 than the first request that sets a cookie.
@@ -353,6 +355,59 @@ is the failure this exists to prevent.
 
 A session with no owner encodes exactly as it did before owners existed,
 so records already in a store read unchanged.
+
+**Revocation is point-in-time.** It ends the sessions that exist when it
+runs, and that's all it guarantees. Suppose one request signs in with the
+old password while another changes it and revokes. The sign-in can verify
+before the change and save its session after the revocation scan, and that
+one session survives. To keep that window to one in-flight sign-in, change
+the credential first and revoke second. The authenticated lifetime (below)
+bounds whatever gets through.
+
+A stronger guarantee is possible, but it means a per-account version that
+every request checks: a store read on every authenticated request, forever,
+to close a window measured in milliseconds. That's the trade D40 records.
+
+## The authenticated lifetime
+
+`sessions.ttl` is sliding, so an active session never idles out. That's
+right for a cart and wrong for a signed-in user: a stolen cookie that's used
+continuously would last forever. `sessions.authenticated-lifetime` (default
+7 days) is the absolute limit on a sign-in, counted from the sign-in itself
+and never renewed by activity. Past it, `Authentication` signs the session
+out and the browser signs in again. The rest of the session, such as the
+cart, survives.
+
+```yaml
+sessions:
+  ttl: 14d                        # idle timeout, sliding
+  authenticated-lifetime: 12h     # hard limit on a sign-in
+  cookie-host-prefix: true        # the cookie becomes __Host-session
+```
+
+A sign-in recorded before 0.33.0 has no sign-in time. It's stamped the
+first time it's seen and gets one full lifetime from then, rather than
+everyone being signed out at upgrade.
+
+`cookie-host-prefix` names the cookie `__Host-<name>`. Browsers accept that
+only for a cookie that's `Secure`, has `Path=/` and no `Domain`, so no
+subdomain can set or overwrite it. It's off by default, for two reasons:
+renaming the cookie signs everyone out once, and a deployment that shares
+its session across subdomains can't use it. Settings the browser would
+reject fail at startup.
+
+## Metrics
+
+| Counter | Dimensions |
+|---|---|
+| `flight_sessions_created` | none: a new session's first save |
+| `flight_sessions_regenerated` | none: sign-in, sign-out, `regenerate()` |
+| `flight_sessions_store_failures` | `operation` (`load`, `save`, `delete`): each one is a 503 to someone |
+| `flight_sessions_revoked` | none: counted per session ended, not per call |
+| `flight_sessions_revocation_failures` | none, including a store that can't revoke |
+
+These go through swift-metrics to whatever backend the application
+bootstraps. `SessionRuntime(metrics:)` takes a factory for tests.
 
 ## One-time links
 

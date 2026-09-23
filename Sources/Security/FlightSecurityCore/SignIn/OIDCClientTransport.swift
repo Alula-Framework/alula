@@ -11,6 +11,7 @@ struct OIDCProviderMetadata: Decodable, Sendable, Equatable {
     let authorizationEndpoint: URL
     let tokenEndpoint: URL
     let endSessionEndpoint: URL?
+    let userinfoEndpoint: URL?
     let codeChallengeMethodsSupported: [String]?
 
     enum CodingKeys: String, CodingKey {
@@ -18,6 +19,7 @@ struct OIDCProviderMetadata: Decodable, Sendable, Equatable {
         case authorizationEndpoint = "authorization_endpoint"
         case tokenEndpoint = "token_endpoint"
         case endSessionEndpoint = "end_session_endpoint"
+        case userinfoEndpoint = "userinfo_endpoint"
         case codeChallengeMethodsSupported = "code_challenge_methods_supported"
     }
 }
@@ -57,6 +59,10 @@ final class OIDCMetadataSource: Sendable {
             if let endSession = metadata.endSessionEndpoint {
                 try policy.validate(endSession, what: "the end-session endpoint")
             }
+            if let userinfo = metadata.userinfoEndpoint {
+                // It receives the access token.
+                try policy.validate(userinfo, what: "the UserInfo endpoint")
+            }
             cached.withLock { $0 = metadata }
             return metadata
         } catch let error as OIDCSignInError {
@@ -71,12 +77,15 @@ final class OIDCMetadataSource: Sendable {
     }
 }
 
-/// Posts a form and returns the answer — the token exchange's one HTTP call.
+/// The two calls a sign-in makes with credentials: the token exchange, and
+/// the one UserInfo request the access token is spent on.
 protocol HTTPFormPosting: Sendable {
     func postForm(
         _ url: URL, fields: [(String, String)],
         basicAuthorization: (user: String, password: String)?
     ) async throws -> (status: Int, body: Data)
+
+    func getWithBearer(_ url: URL, token: String) async throws -> (status: Int, body: Data)
 }
 
 struct AsyncHTTPFormPoster: HTTPFormPosting {
@@ -111,6 +120,22 @@ struct AsyncHTTPFormPoster: HTTPFormPosting {
                 throw OIDCSignInError.tokenExchange("unparseable redirect target")
             }
             try policy.validate(hopURL, what: "a redirect during the token exchange")
+        }
+        let body = try await response.body.collect(upTo: Self.maxResponseBytes)
+        return (Int(response.status.code), Data(buffer: body))
+    }
+
+    func getWithBearer(_ url: URL, token: String) async throws -> (status: Int, body: Data) {
+        try policy.validate(url, what: "the UserInfo endpoint")
+        var request = HTTPClientRequest(url: url.absoluteString)
+        request.headers.add(name: "Authorization", value: "Bearer \(token)")
+        request.headers.add(name: "Accept", value: "application/json")
+        let response = try await HTTPClient.shared.execute(request, timeout: TimeAmount(timeout))
+        for hop in response.history {
+            guard let hopURL = URL(string: hop.request.url) else {
+                throw OIDCSignInError.userInfo("unparseable redirect target")
+            }
+            try policy.validate(hopURL, what: "a redirect during the UserInfo request")
         }
         let body = try await response.body.collect(upTo: Self.maxResponseBytes)
         return (Int(response.status.code), Data(buffer: body))

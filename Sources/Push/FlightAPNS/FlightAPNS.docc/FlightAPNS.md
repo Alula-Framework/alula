@@ -14,11 +14,13 @@ gateway's answer into an ``APNSReceipt`` or an ``APNSError``:
 struct Notifier {
     @Inject var apns: APNSClient
 
-    func remind(_ token: DeviceToken) async throws {
+    func remind(_ token: DeviceToken, registeredAt: Date) async throws {
         do {
             _ = try await apns.send(.alert(title: "Standup", body: "in 5 minutes"), to: token)
-        } catch let error as APNSError where error.deviceTokenIsInvalid {
-            try await tokens.forget(token)      // Apple said so; sending again gets you throttled
+        } catch let error as APNSError
+            where error.shouldForgetDeviceToken(registeredAt: registeredAt)
+        {
+            try await tokens.forget(token)      // it died, and has not registered again since
         }
     }
 }
@@ -31,9 +33,12 @@ unparseable one fails composition.
 What is deliberately absent: a queue, batching, and a retry policy beyond
 the one the protocol asks for (a fresh provider token after
 `ExpiredProviderToken`, once). Fan-out and backoff belong to the
-application, which knows what the pushes are. ``APNSError/isRetryable``
-says whether trying again could help; ``APNSError/deviceTokenIsInvalid``
-says the token is dead.
+application, which knows what the pushes are. ``APNSError/retryAdvice``
+says how trying again could help. ``APNSError/shouldForgetDeviceToken(registeredAt:)``
+says when to delete a stored token: only on a `410`, and only if the device
+has not registered again since. A `BadDeviceToken` or
+`DeviceTokenNotForTopic` is what every token returns under a misconfigured
+environment or topic, so those never delete.
 
 `FlightAPNSTesting`'s `RecordingAPNSTransport` stands in for the gateway.
 
@@ -49,6 +54,7 @@ says the token is dead.
 - ``PushPriority``
 - ``APNSReceipt``
 - ``APNSError``
+- ``APNSMetrics``
 
 ### Hosting
 

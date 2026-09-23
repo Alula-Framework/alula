@@ -146,6 +146,11 @@ let package = Package(
         // adds nothing to resolve; FlightWeb's own SHA256 is a content
         // checksum, deliberately not used for anything security-relevant.
         .package(url: "https://github.com/apple/swift-crypto.git", from: "4.1.0"),
+        // The metrics facade — the SSWG one — for the counters sessions,
+        // sign-in, one-time tokens and APNs emit. Resolved already under Web
+        // through Hummingbird, at the same floor; nothing here picks a
+        // backend, the application bootstraps one.
+        .package(url: "https://github.com/apple/swift-metrics.git", from: "2.9.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
     ],
     targets: [
@@ -260,6 +265,7 @@ let package = Package(
         .target(
             name: "FlightWeb",
             dependencies: [
+                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebMacrosImpl", condition: .when(traits: ["Web"])),
                 "FlightCore",
                 "FlightSessions",
@@ -501,6 +507,7 @@ let package = Package(
         .target(
             name: "FlightSecurityCore",
             dependencies: [
+                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Security"])),
                 "FlightCore", "FlightSessions", "FlightRateLimit",
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .product(
@@ -549,6 +556,7 @@ let package = Package(
         .target(
             name: "FlightAPNS",
             dependencies: [
+                .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["APNS"])),
                 "FlightCore",
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
                 .product(
@@ -618,6 +626,7 @@ let package = Package(
         .testTarget(
             name: "FlightWebTests",
             dependencies: [
+                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",
                 "FlightSessions", "FlightSessionsTesting",
@@ -768,6 +777,7 @@ let package = Package(
         .testTarget(
             name: "FlightAPNSTests",
             dependencies: [
+                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["APNS"])),
                 .target(name: "FlightAPNS", condition: .when(traits: ["APNS"])),
                 .target(name: "FlightAPNSTesting", condition: .when(traits: ["APNS"])),
                 "FlightCore",
@@ -779,6 +789,7 @@ let package = Package(
         .testTarget(
             name: "FlightSecurityCoreTests",
             dependencies: [
+                .product(name: "MetricsTestKit", package: "swift-metrics", condition: .when(traits: ["Security"])),
                 .target(name: "FlightSecurityCore", condition: .when(traits: ["Security"])),
                 .target(name: "FlightWeb", condition: .when(traits: ["Web"])),
                 .target(name: "FlightWebTesting", condition: .when(traits: ["Web"])), "FlightCore",

@@ -1,3 +1,4 @@
+import CoreMetrics
 import FlightSessions
 import Foundation
 import HTTPTypes
@@ -17,21 +18,44 @@ public final class SessionRuntime: Sendable {
     /// everywhere else" after a password change, or everywhere when an
     /// account is disabled. Returns how many ended.
     ///
+    /// **Point-in-time, not a fence.** It ends the sessions that exist when
+    /// it runs. A sign-in that verified the old password a moment before the
+    /// change can finish a moment after this scan, and that session
+    /// survives. Change the credential first and revoke after, so the window
+    /// is only the length of one in-flight sign-in. The authenticated
+    /// lifetime (`sessions.authenticated-lifetime`) bounds whatever slips
+    /// through. A stronger guarantee means a per-account version checked on
+    /// every request, which is a store read per request. D40 records why
+    /// that isn't the default.
+    ///
     /// Throws `SessionRevocationUnsupported` when the store does not index
     /// by owner. The in-memory store does; flight-data's Valkey store does
     /// from the release that follows this one.
     @discardableResult
-    public func revokeSessions(ownedBy owner: String, keeping: SessionID? = nil) async throws -> Int {
+    public func revokeSessions(ownedBy owner: String, keeping: SessionID? = nil) async throws -> Int
+    {
         guard let indexed = store as? any OwnerIndexedSessionStore else {
+            SessionMetrics.revocationFailure(metrics)
             throw SessionRevocationUnsupported(storeType: String(describing: type(of: store)))
         }
-        return try await indexed.deleteSessions(ownedBy: owner, keeping: keeping)
+        do {
+            let ended = try await indexed.deleteSessions(ownedBy: owner, keeping: keeping)
+            Counter(label: SessionMetrics.revoked, factory: metrics).increment(by: ended)
+            return ended
+        } catch {
+            SessionMetrics.revocationFailure(metrics)
+            throw error
+        }
     }
 
     public let store: any SessionStore
     public let settings: SessionSettings
     let coding: Session.Coding
-    let now: @Sendable () -> Date
+    /// The clock expiry, renewal and the authenticated lifetime are measured on.
+    public let now: @Sendable () -> Date
+    /// Where the session counters go (``SessionMetrics``): the process-wide
+    /// `MetricsSystem` unless a test hands in its own.
+    public let metrics: any MetricsFactory
 
     /// - Parameters:
     ///   - store: Where sessions live.
@@ -40,16 +64,19 @@ public final class SessionRuntime: Sendable {
     ///     it is not the wire's `WebCoders`, and on purpose — see
     ///     ``FlightSessionsModule/init(configuration:store:)``.
     ///   - now: The clock, injectable so expiry and renewal are testable.
+    ///   - metrics: Where counters go; the bootstrapped `MetricsSystem` when nil.
     public init(
         store: any SessionStore,
         settings: SessionSettings,
         coding: Session.Coding = .json,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        metrics: (any MetricsFactory)? = nil
     ) {
         self.store = store
         self.settings = settings
         self.coding = coding
         self.now = now
+        self.metrics = metrics ?? MetricsSystem.factory
     }
 }
 
@@ -103,6 +130,7 @@ public struct Sessions: Middleware {
         downstream.session = session
         let response = try await next(downstream)
 
+        let wasNew = session.isNew
         switch session.commit(now: runtime.now(), ttl: settings.ttl) {
         case .nothing:
             return response
@@ -117,11 +145,15 @@ public struct Sessions: Middleware {
                 }
                 if let replacing {
                     try await runtime.store.delete(replacing)
+                    Counter(label: SessionMetrics.regenerated, factory: runtime.metrics).increment()
+                } else if wasNew {
+                    Counter(label: SessionMetrics.created, factory: runtime.metrics).increment()
                 }
             } catch {
                 context.logger.error(
                     "session store failed; refusing the request",
                     metadata: ["operation": "save", "reason": "\(error)"])
+                SessionMetrics.storeFailure("save", runtime.metrics)
                 throw SessionUnavailableError(operation: .save)
             }
             return response.settingCookie(cookie(for: id))
@@ -133,15 +165,17 @@ public struct Sessions: Middleware {
                 context.logger.error(
                     "session store failed; refusing the request",
                     metadata: ["operation": "delete", "reason": "\(error)"])
+                SessionMetrics.storeFailure("delete", runtime.metrics)
                 throw SessionUnavailableError(operation: .delete)
             }
             return response.expiringCookie(
-                settings.cookieName, path: settings.cookiePath, domain: settings.cookieDomain)
+                settings.effectiveCookieName, path: settings.cookiePath,
+                domain: settings.cookieDomain)
         }
     }
 
     private func load(_ context: RequestContext) async throws -> Session {
-        guard let value = context.request.cookie(runtime.settings.cookieName),
+        guard let value = context.request.cookie(runtime.settings.effectiveCookieName),
             let id = SessionID(cookieValue: value)
         else {
             return Session(coding: runtime.coding)
@@ -153,6 +187,7 @@ public struct Sessions: Middleware {
             context.logger.error(
                 "session store failed; refusing the request",
                 metadata: ["operation": "load", "reason": "\(error)"])
+            SessionMetrics.storeFailure("load", runtime.metrics)
             throw SessionUnavailableError(operation: .load)
         }
         guard let data else {
@@ -176,7 +211,7 @@ public struct Sessions: Middleware {
     private func cookie(for id: SessionID) -> Cookie {
         let settings = runtime.settings
         return Cookie(
-            name: settings.cookieName,
+            name: settings.effectiveCookieName,
             value: id.cookieValue,
             path: settings.cookiePath,
             domain: settings.cookieDomain,
@@ -237,5 +272,33 @@ extension RequestContext {
     public func requireSession() throws -> Session {
         guard let session else { throw SessionNotConfiguredError() }
         return session
+    }
+}
+
+/// The session counters, by label. Dimensions are closed sets — an
+/// operation name — never an id, a subject or a path, so a metrics backend's
+/// series count stays fixed however many users there are.
+public enum SessionMetrics {
+    /// A new session persisted for the first time.
+    public static let created = "flight_sessions_created"
+    /// A session moved to a new id — sign-in, sign-out, `regenerate()`.
+    public static let regenerated = "flight_sessions_regenerated"
+    /// The store failed; `operation` is `load`, `save` or `delete`. Each is
+    /// a 503 to someone.
+    public static let storeFailures = "flight_sessions_store_failures"
+    /// Sessions ended by `revokeSessions(ownedBy:keeping:)`, counted by
+    /// session, not by call.
+    public static let revoked = "flight_sessions_revoked"
+    /// A revocation that threw — including one against a store that cannot
+    /// revoke.
+    public static let revocationFailures = "flight_sessions_revocation_failures"
+
+    static func storeFailure(_ operation: String, _ factory: any MetricsFactory) {
+        Counter(label: storeFailures, dimensions: [("operation", operation)], factory: factory)
+            .increment()
+    }
+
+    static func revocationFailure(_ factory: any MetricsFactory) {
+        Counter(label: revocationFailures, factory: factory).increment()
     }
 }

@@ -1,6 +1,8 @@
+import CoreMetrics
 import FlightCore
 import FlightSessions
 import FlightWeb
+import Foundation
 import HTTPTypes
 
 /// Extracts the bearer token, validates it, and writes the resulting
@@ -41,10 +43,34 @@ public struct Authentication: Sendable, SessionReading {
     // FlightSecurityModule (or the application's own module), never scanned.
     @Inject var validator: (any TokenValidator)
 
+    /// How long a session-backed sign-in lasts from the moment it happened,
+    /// however active the session. Nil checks nothing — what a bearer-only
+    /// stack, or a hand-built one, gets.
+    private var authenticatedLifetime: Duration? = nil
+    private var now: @Sendable () -> Date = Date.init
+    private var metrics: any MetricsFactory = MetricsSystem.factory
+
     /// For manual wiring or tests, where `@Inject` has nothing to
     /// resolve from.
-    public init(validator: any TokenValidator) {
+    ///
+    /// - Parameters:
+    ///   - validator: How a bearer token is checked.
+    ///   - authenticatedLifetime: The absolute lifetime of a session-backed
+    ///     sign-in. `FlightSecurityModule` passes
+    ///     `sessions.authenticated-lifetime`.
+    ///   - now: The clock the lifetime is measured on.
+    ///   - metrics: Where `flight_sign_in_expired` goes; the bootstrapped
+    ///     `MetricsSystem` when nil.
+    public init(
+        validator: any TokenValidator,
+        authenticatedLifetime: Duration? = nil,
+        now: @escaping @Sendable () -> Date = Date.init,
+        metrics: (any MetricsFactory)? = nil
+    ) {
         self.validator = validator
+        self.authenticatedLifetime = authenticatedLifetime
+        self.now = now
+        self.metrics = metrics ?? MetricsSystem.factory
     }
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
@@ -53,6 +79,18 @@ public struct Authentication: Sendable, SessionReading {
             if let session = context.session {
                 do {
                     if let principal = try session.principal() {
+                        guard try isWithinLifetime(session) else {
+                            // Past the absolute lifetime: signed out here, the
+                            // rest of the session kept, and the request goes on
+                            // anonymous — a protected route answers 401 and the
+                            // browser signs in again.
+                            context.logger.info(
+                                "session sign-in past its absolute lifetime; signing out",
+                                metadata: ["subject": "\(principal.subject)"])
+                            session.signOut()
+                            Counter(label: SignInMetrics.expired, factory: metrics).increment()
+                            return try await next(context)
+                        }
                         return try await next(context.authenticated(as: principal))
                     }
                 } catch {
@@ -83,6 +121,30 @@ public struct Authentication: Sendable, SessionReading {
             rejected.identity = .invalidCredential
             return try await next(rejected)
         }
+    }
+}
+
+extension Authentication {
+    /// Whether the session's sign-in is still inside the absolute lifetime.
+    ///
+    /// A sign-in recorded before the time was kept has none; it is stamped
+    /// now, once, rather than signed out — every browser signed in before an
+    /// upgrade would otherwise be signed out at once. It gets one full
+    /// lifetime from here, which is still a bound.
+    fileprivate func isWithinLifetime(_ session: Session) throws -> Bool {
+        guard let authenticatedLifetime else { return true }
+        let now = now()
+        guard let signedInAt = try session.authenticatedAt() else {
+            try session.set(Session.authenticatedAtKey, now)
+            return true
+        }
+        return now.timeIntervalSince(signedInAt) < authenticatedLifetime.timeIntervalValue
+    }
+}
+
+extension Duration {
+    fileprivate var timeIntervalValue: TimeInterval {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }
 

@@ -7,6 +7,51 @@ wrong, say so and it changes.
 
 ---
 
+## D41 — Answering the 0.32 security review: what changed, and the one thing that did not
+
+**Context.** An independent review of the security stack found no P0. It
+made eight findings. Each was checked before acting: NIST SP 800-63B-4 and
+OIDC Core were read directly, and every code claim was read against the
+source. All eight held.
+
+**Changed.**
+1. **Absolute authenticated lifetime** (P1). Stored as a sign-in timestamp
+   in the session, checked by `Authentication`, and configured in
+   `sessions.*` because `FlightSecurityModule` already takes the session
+   runtime. No signature changed. Legacy sign-ins are grandfathered with a
+   stamp rather than all signed out at upgrade.
+2. **NFC** (P1). The fallback to the legacy form is a second Argon2
+   verification, which only a real account would pay. That's a timing
+   signal the review didn't mention, so the unknown-account path pays it
+   too.
+3. **UserInfo** (P1). The review's sequence was followed exactly, including
+   an exact `sub` match. A failing UserInfo fails the sign-in rather than
+   degrading to ID-token claims, because an application may be making
+   authorization decisions on `email_verified`.
+4. **APNs invalidation** (P2) was more serious than rated. Following the old
+   guide, a sandbox/production mix-up would have deleted every stored
+   device token, because `BadDeviceToken` is what every token returns then.
+   The new API never deletes on misconfiguration-shaped answers.
+5. **Retry advice** (P2), **`__Host-`** (P3, opt-in: automatic would rename
+   the cookie and sign everyone out), and **metrics** (P3, swift-metrics,
+   closed-set dimensions, injectable factories).
+
+**Not changed: revocation stays point-in-time** (P1/P2). The review allowed
+documenting this as the minimum. The stronger model is a per-account
+version stamped into every session and checked on every authenticated
+request. That's a store read per request, forever, to close a window of
+milliseconds around a rare operation. With the new absolute lifetime
+bounding whatever slips through, the cost isn't justified as a default.
+The guarantee is now stated where it's used, with the ordering that keeps
+the window to one in-flight sign-in.
+
+**Not done: independent hostile review.** The review's closing advice was
+that a second adversarial reviewer is now worth more than more features.
+That's not something code can do. It's recorded here, and in the release
+notes, as the recommended next step.
+
+---
+
 ## D40 — Sign-out-everywhere is a store capability; one-time tokens store digests beside sessions
 
 **Context.** Flows the sign-in work leads to need two primitives. A password
@@ -34,6 +79,19 @@ is packaging, not taste. flight-data depends on flight with no traits, so a
 seam inside Security-gated `FlightSecurityCore` would force the Security
 trait's dependencies on every flight-data user just to ship a Valkey
 implementation.
+
+**Point-in-time, stated (0.33.0).** Revocation ends the sessions that exist
+when it runs. A sign-in that verified the old password just before a change
+can save its session just after the scan and survive. An independent review
+asked for the guarantee to be named rather than implied. It is named now,
+in the API docs and `Docs/sessions.md`, with the ordering that keeps the
+window to one in-flight sign-in (change the credential, then revoke). The
+authenticated lifetime added in 0.33.0 bounds anything that slips through.
+The linearizable alternative is a per-account version stamped into every
+session and checked on every authenticated request. That costs a store
+read per request forever, to close a window of milliseconds on a rare
+operation. It isn't the default, and an application that needs it can
+build it on `CredentialStore` without anything here changing.
 
 **Why binding rather than an index.** "Void all outstanding reset links"
 could be an index by subject, like sessions. Binding to the password hash
@@ -86,8 +144,11 @@ calls inside that:
 3. **The authenticator owns the invariants.** It throttles per identifier and
    per address before hashing, runs a dummy verification for unknown accounts,
    gives one answer for every wrong guess, reports a disabled account only
-   after its password verifies, NFKC-normalizes passwords (SP 800-63B) and
-   rehashes at sign-in.
+   after its password verifies, normalizes passwords, and rehashes at
+   sign-in. *(Corrected in 0.33.0: this shipped with NFKC and called it
+   SP 800-63B's recommendation, which it was in revision 3. SP 800-63B-4
+   says NFC. New hashes use NFC, and an NFKC-form hash is verified and then
+   rehashed on its owner's next sign-in. An independent review caught it.)*
 4. **The sign-in throttle fails closed**, the reverse of the `RateLimiting`
    middleware's D33. That middleware protects capacity, where an outage
    letting traffic through is the lesser harm. This one is the brute-force

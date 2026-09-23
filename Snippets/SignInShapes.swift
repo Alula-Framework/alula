@@ -101,3 +101,14 @@ func oneTimeShapes(
     try await sessions.revokeSessions(ownedBy: subject, keeping: context.requireSession().id)
     try await sessions.revokeSessions(ownedBy: subject)
 }
+
+// The 0.33 session settings, and a metrics factory for tests.
+func sessionHardeningShapes(store: any SessionStore) throws {
+    let settings = try SessionSettings(
+        ttl: .seconds(14 * 24 * 3600), authenticatedLifetime: .seconds(12 * 3600),
+        cookieHostPrefix: true)
+    _ = settings.effectiveCookieName  // "__Host-session"
+    _ = SessionRuntime(store: store, settings: settings)
+    _ = SessionMetrics.created
+    _ = SignInMetrics.attempts
+}

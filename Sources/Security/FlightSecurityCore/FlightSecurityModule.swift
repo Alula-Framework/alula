@@ -1,6 +1,7 @@
 import FlightCore
 import FlightSessions
 import FlightWeb
+import Foundation
 import Logging
 import ServiceLifecycle
 
@@ -90,7 +91,11 @@ public struct FlightSecurityModule: FlightModule {
             ever be authenticated. List FlightOIDCModule (or provide `any TokenValidator`) for \
             bearer tokens, and/or FlightSessionsModule with a sign-in module for browsers.
             """)
-        let authentication = Authentication(validator: validator ?? RejectingTokenValidator())
+        let authentication = Authentication(
+            validator: validator ?? RejectingTokenValidator(),
+            authenticatedLifetime: sessions?.settings.authenticatedLifetime,
+            now: sessions?.now ?? Date.init,
+            metrics: sessions?.metrics)
         let require = RequireAuthentication()
         let session: [any Middleware] = sessions.map { [Sessions(runtime: $0)] } ?? []
         self.middleware =

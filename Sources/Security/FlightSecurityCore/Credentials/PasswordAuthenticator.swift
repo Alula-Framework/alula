@@ -1,3 +1,4 @@
+import CoreMetrics
 import FlightRateLimit
 import FlightWeb
 import Foundation
@@ -30,10 +31,14 @@ import Synchronization
 /// - **One answer for every wrong guess.** Unknown account, no password,
 ///   wrong password: all ``PasswordAuthenticationError/invalidCredentials``.
 ///   A disabled account is only reported once its password has verified.
-/// - **Normalized input.** The identifier is trimmed and NFC-normalized; the
-///   password is NFKC-normalized, as NIST SP 800-63B recommends, so the same
-///   password typed on two keyboards hashes the same. ASCII is unchanged by
-///   both, so hashes made before normalization still verify.
+/// - **Normalized input.** The identifier is trimmed and NFC-normalized; so
+///   is the password, as NIST SP 800-63B-4 §3.1.1.2 recommends, so the same
+///   password typed on two keyboards hashes the same. 0.31 and 0.32
+///   normalized passwords with NFKC, following the earlier revision; a
+///   password whose NFKC form differs from its NFC form (compatibility
+///   characters: ligatures, full-width forms) is verified against the old
+///   form when the new one fails, and rehashed under NFC when it matches.
+///   ASCII is unchanged by either form.
 /// - **Stronger hashes over time.** A stored hash made under weaker
 ///   parameters is replaced after a successful sign-in — the only moment the
 ///   plaintext is available.
@@ -73,6 +78,7 @@ public struct PasswordAuthenticator: Sendable {
     private let issuer: String
     private let logger: Logger
     private let dummyHash: DummyHash
+    private let metrics: any MetricsFactory
 
     /// - Parameters:
     ///   - store: Where accounts are looked up.
@@ -88,14 +94,18 @@ public struct PasswordAuthenticator: Sendable {
     ///   - throttle: The two budgets. ``Throttle/default`` unless given one.
     ///   - logger: Where store and throttle failures, and failed hash
     ///     upgrades, are reported. Never the password or the hash.
+    ///   - metrics: Where ``SignInMetrics`` counters go; the bootstrapped
+    ///     `MetricsSystem` when nil.
     public init(
         store: any CredentialStore,
         issuer: String,
         hasher: any PasswordHashing = Argon2idHashing(),
         limiter: RateLimiter,
         throttle: Throttle = .default,
-        logger: Logger = Logger(label: "flight.security.password")
+        logger: Logger = Logger(label: "flight.security.password"),
+        metrics: (any MetricsFactory)? = nil
     ) {
+        self.metrics = metrics ?? MetricsSystem.factory
         self.store = store
         self.issuer = issuer
         self.hasher = hasher
@@ -110,12 +120,26 @@ public struct PasswordAuthenticator: Sendable {
     /// - Parameters:
     ///   - rawIdentifier: What the user typed to name their account; trimmed
     ///     and NFC-normalized before the store sees it.
-    ///   - password: What they typed as the password; NFKC-normalized.
+    ///   - password: What they typed as the password; NFC-normalized.
     ///   - clientAddress: Where the attempt came from —
     ///     `context.clientAddress?.host`. Nil skips the per-address budget;
     ///     the per-identifier one always applies.
     /// - Throws: ``PasswordAuthenticationError``, and nothing else.
     public func authenticate(
+        identifier rawIdentifier: String, password: String, clientAddress: String?
+    ) async throws -> Principal {
+        do {
+            let principal = try await authenticateUncounted(
+                identifier: rawIdentifier, password: password, clientAddress: clientAddress)
+            SignInMetrics.attempt("password", "success", metrics)
+            return principal
+        } catch let error as PasswordAuthenticationError {
+            SignInMetrics.attempt("password", error.metricOutcome, metrics)
+            throw error
+        }
+    }
+
+    private func authenticateUncounted(
         identifier rawIdentifier: String, password: String, clientAddress: String?
     ) async throws -> Principal {
         let identifier = Self.normalizedIdentifier(rawIdentifier)
@@ -131,19 +155,36 @@ public struct PasswordAuthenticator: Sendable {
         }
 
         let normalized = Self.normalizedPassword(password)
+        // The pre-0.33 form, when it differs: tried only if the NFC one fails.
+        let legacy = Self.legacyNormalizedPassword(password)
+        let legacyForm = legacy == normalized ? nil : legacy
+
         guard let credential, let stored = credential.passwordHash else {
-            // Spend what a real verification would, then refuse.
-            if let dummy = dummyHash.value { _ = hasher.verify(normalized, against: dummy) }
+            // Spend what a real verification would — including the legacy
+            // retry, when this password would get one — then refuse. Two
+            // verifications for a real account and one for a missing one
+            // would say which accounts exist.
+            if let dummy = dummyHash.value {
+                _ = hasher.verify(normalized, against: dummy)
+                if let legacyForm { _ = hasher.verify(legacyForm, against: dummy) }
+            }
             throw PasswordAuthenticationError.invalidCredentials
         }
-        guard hasher.verify(normalized, against: stored) else {
-            throw PasswordAuthenticationError.invalidCredentials
+        var verifiedLegacyForm = false
+        if !hasher.verify(normalized, against: stored) {
+            guard let legacyForm, hasher.verify(legacyForm, against: stored) else {
+                throw PasswordAuthenticationError.invalidCredentials
+            }
+            verifiedLegacyForm = true
         }
         guard !credential.isDisabled else {
             throw PasswordAuthenticationError.accountDisabled
         }
 
-        if hasher.needsRehash(stored) {
+        // A legacy-form match is always rehashed: the stored hash is of a
+        // form this version no longer produces.
+        if verifiedLegacyForm || hasher.needsRehash(stored) {
+            Counter(label: SignInMetrics.passwordRehashes, factory: metrics).increment()
             do {
                 try await store.updatePasswordHash(
                     hasher.hash(normalized), forSubject: credential.subject)
@@ -201,7 +242,14 @@ public struct PasswordAuthenticator: Sendable {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
     }
 
+    /// NFC — SP 800-63B-4 §3.1.1.2.
     static func normalizedPassword(_ raw: String) -> String {
+        raw.precomposedStringWithCanonicalMapping
+    }
+
+    /// NFKC — what 0.31 and 0.32 hashed. Only ever used to verify, never to
+    /// hash.
+    static func legacyNormalizedPassword(_ raw: String) -> String {
         raw.precomposedStringWithCompatibilityMapping
     }
 }

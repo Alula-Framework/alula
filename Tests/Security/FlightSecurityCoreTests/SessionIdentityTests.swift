@@ -279,7 +279,9 @@ struct SessionIdentityTests {
         #expect(session.owner == nil)
     }
 
-    @Test("sign out everywhere else: other sessions of the same person end, this one and others' do not")
+    @Test(
+        "sign out everywhere else: other sessions of the same person end, this one and others' do not"
+    )
     func revokeOthers() async throws {
         let client = try revocationClient(store)
         let laptop = try await signIn(client, as: "ada")
@@ -319,9 +321,101 @@ struct SessionIdentityTests {
     @Test("a store that cannot index by owner says so rather than ending nothing")
     func unsupportedStore() async throws {
         let runtime = SessionRuntime(
-            store: PlainStore(), settings: try SessionSettings(ttl: .seconds(60), cookieSecure: false))
+            store: PlainStore(),
+            settings: try SessionSettings(ttl: .seconds(60), cookieSecure: false))
         await #expect(throws: SessionRevocationUnsupported.self) {
             try await runtime.revokeSessions(ownedBy: "ada")
         }
+    }
+
+    // MARK: Absolute authenticated lifetime
+
+    /// Sessions and the security lanes on a movable clock, with a one-hour
+    /// authenticated lifetime and a much longer sliding TTL.
+    private func lifetimeClient(_ clock: TestClock, store: RecordingSessionStore) throws
+        -> TestClient
+    {
+        let runtime = SessionRuntime(
+            store: store,
+            settings: try SessionSettings(
+                ttl: .seconds(14 * 24 * 3600), cookieSecure: false,
+                authenticatedLifetime: .seconds(3600)),
+            now: clock.nowProvider)
+        let routes = [
+            RouteRegistration(method: .post, path: "/login", source: "test") { context in
+                let session = try context.requireSession()
+                try session.set("cart", 3)
+                try session.signIn(testPrincipal(subject: "ada"), at: clock.now)
+                return .status(.noContent)
+            },
+            RouteRegistration(method: .get, path: "/cart", source: "test") { context in
+                .text("\(try context.requireSession().get("cart", as: Int.self) ?? 0)")
+            },
+            RouteRegistration(
+                method: .get, path: "/whoami", source: "test", pipelines: [.authenticated]
+            ) { context in
+                .text(try context.requirePrincipal().subject)
+            },
+        ]
+        return try TestClient(
+            routes: routes,
+            middleware: MiddlewareRegistration.lane(.default, [Sessions(runtime: runtime)])
+                + FlightSecurityModule(validator: nil, sessions: runtime).middleware)
+    }
+
+    /// The session cookie a response set, if it set one — most requests do
+    /// not, and that is not a failure.
+    private func newCookie(_ response: Response) -> String? {
+        response.headerValues("Set-Cookie").compactMap { $0.split(separator: ";").first }
+            .first { $0.hasPrefix("session=") }.map(String.init)
+    }
+
+    private func cookie(_ response: Response) throws -> String {
+        try #require(newCookie(response))
+    }
+
+    @Test("a sign-in ends at its absolute lifetime however active the session stays")
+    func absoluteLifetime() async throws {
+        let clock = TestClock()
+        let client = try lifetimeClient(clock, store: RecordingSessionStore())
+        var session = try cookie(await client.post("/login"))
+
+        // Used every twenty minutes — the sliding TTL would never idle out.
+        for _ in 0..<2 {
+            clock.advance(by: 20 * 60)
+            let response = await client.get("/whoami", headers: [.cookie: session])
+            #expect(response.status == .ok)
+            session = newCookie(response) ?? session
+        }
+        clock.advance(by: 21 * 60)  // 61 minutes after signing in
+        let expired = await client.get("/whoami", headers: [.cookie: session])
+        #expect(expired.status == .unauthorized)
+        session = newCookie(expired) ?? session
+
+        // Signed out, not wiped: the rest of the session is still there.
+        #expect(await client.get("/cart", headers: [.cookie: session]).bodyText == "3")
+        #expect(await client.get("/whoami", headers: [.cookie: session]).status == .unauthorized)
+    }
+
+    @Test("a sign-in recorded before the time was kept is stamped once, not signed out")
+    func legacySignInIsStamped() async throws {
+        let clock = TestClock()
+        let store = RecordingSessionStore()
+        let client = try lifetimeClient(clock, store: store)
+        // A session as 0.32.0 wrote it: a principal and no sign-in time.
+        let id = SessionID.generate()
+        let principal = try JSONEncoder().encode(testPrincipal(subject: "ada"))
+        try store.seed(
+            id,
+            record: SessionRecord(
+                values: [Session.principalKey: principal], createdAt: clock.now,
+                expiresAt: clock.now.addingTimeInterval(86_400), owner: "ada"))
+        let legacy = "session=\(id.cookieValue)"
+
+        #expect(await client.get("/whoami", headers: [.cookie: legacy]).status == .ok)
+        clock.advance(by: 3601)
+        #expect(
+            await client.get("/whoami", headers: [.cookie: legacy]).status == .unauthorized,
+            "it had one full lifetime from the stamp, and no more")
     }
 }

@@ -152,15 +152,12 @@ extension CoreTests {
                         state.lateCalls.add(1, ordering: .relaxed)
                     }
                 }
-                let emitters = Task.detached {
-                    await withTaskGroup(of: Void.self) { group in
-                        for _ in 0..<4 {
-                            group.addTask {
-                                while !state.stop.load(ordering: .relaxed) {
-                                    Telemetry.emit(PingE.self)
-                                }
-                            }
-                        }
+                // Emitters on their own threads: busy loops on the cooperative
+                // pool took every pool thread of a 2-core runner, and this task
+                // — the one that detaches — never ran again.
+                async let emitters: Void = onThreads(4) { _ in
+                    while !state.stop.load(ordering: .relaxed) {
+                        Telemetry.emit(PingE.self)
                     }
                 }
                 while state.calls.load(ordering: .relaxed) < 10 { await Task.yield() }
@@ -168,7 +165,7 @@ extension CoreTests {
                 state.detached.store(true, ordering: .sequentiallyConsistent)
                 try await Task.sleep(for: .milliseconds(2))
                 state.stop.store(true, ordering: .relaxed)
-                await emitters.value
+                await emitters
                 #expect(state.lateCalls.load(ordering: .relaxed) == 0)
             }
         }

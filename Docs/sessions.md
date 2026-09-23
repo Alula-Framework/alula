@@ -32,7 +32,7 @@ Three pieces, and you name one of them:
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.34.0", traits: ["Web"]),
+        from: "0.35.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

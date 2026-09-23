@@ -92,6 +92,26 @@ enum ErasedOther: TelemetryEvent {
     static let _slot = HandlerSlot<ErasedOther>()
 }
 
+/// Two types claiming one name: whichever is touched first owns it.
+enum ConflictOwner: TelemetryEvent {
+    static let name: EventName = "test.conflict"
+    static let _slot = HandlerSlot<ConflictOwner>()
+}
+enum ConflictImpostor: TelemetryEvent {
+    static let name: EventName = "test.conflict"
+    static let _slot = HandlerSlot<ConflictImpostor>()
+}
+
+enum ReclaimEvent: TelemetryEvent {
+    static let name: EventName = "test.reclaim"
+    static let _slot = HandlerSlot<ReclaimEvent>()
+}
+
+enum LateEvent: TelemetryEvent {
+    static let name: EventName = "latetest.event"
+    static let _slot = HandlerSlot<LateEvent>()
+}
+
 /// Flags shared between a test and the tasks it spawns.
 final class RaceState: Sendable {
     let detached = Atomic<Bool>(false)
@@ -166,7 +186,7 @@ enum Load: SpanEvent {
     typealias Metadata = LoadMetadata
     typealias StopMetadata = LoadStop
     static let name: EventName = "test.load"
-    static let _spanFlags = SpanFlags()
+    static let _spanFlags = SpanFlags(name: "test.load")
 
     enum Start: TelemetryEvent {
         typealias Measurements = SpanStartMeasurements

@@ -12,7 +12,10 @@ import PackageDescription
 let package = Package(
     name: "flight-benchmarks",
     platforms: [.macOS(.v15)],
-    dependencies: [.package(path: "..")],
+    dependencies: [
+        .package(path: ".."),
+        .package(url: "https://github.com/apple/swift-service-context.git", from: "1.1.0"),
+    ],
     targets: [
         // Counts allocations on the calling thread. glibc only: it wraps
         // malloc and friends around __libc_malloc. Elsewhere it reports
@@ -22,6 +25,7 @@ let package = Package(
             name: "TelemetryBenchmarks",
             dependencies: [
                 .product(name: "FlightTelemetry", package: "flight"),
+                .product(name: "ServiceContextModule", package: "swift-service-context"),
                 "CAllocationCounter",
             ],
             path: "Sources/TelemetryBenchmarks",

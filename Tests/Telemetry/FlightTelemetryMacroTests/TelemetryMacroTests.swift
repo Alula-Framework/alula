@@ -195,7 +195,7 @@ struct TelemetryMacroExpansionTests {
 
                     static let name: FlightTelemetry.EventName = "hangar.query"
 
-                    static let _spanFlags = FlightTelemetry.SpanFlags()
+                    static let _spanFlags = FlightTelemetry.SpanFlags(name: "hangar.query")
 
                     static var kind: FlightTelemetry.TelemetrySpanKind {
                         .client

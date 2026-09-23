@@ -35,3 +35,8 @@ This target needs the `Telemetry` trait, which `Web` and `APNS` imply.
 - ``SwiftMetricsReporter``
 - ``TracingObserver``
 - ``LogBridge``
+
+### Slow consumers
+
+- ``TelemetrySubscription``
+- ``TelemetryStreamOverflow``

@@ -4,6 +4,7 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
+import CoreMetrics
 import FlightCore
 import FlightSecurityCore
 import FlightTelemetry
@@ -30,6 +31,23 @@ enum PoolStats {
     struct Measurements { var idle: Int }
 }
 struct SlowQueries: Sendable { func record(_ table: String) {} }
+struct Pager: Sendable { func notify(_ message: String) async {} }
+let pager = Pager()
+typealias PrometheusMetricsFactory = TestStandInFactory
+final class TestStandInFactory: MetricsFactory {
+    func makeCounter(label: String, dimensions: [(String, String)]) -> any CounterHandler {
+        NOOPMetricsHandler.instance
+    }
+    func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool)
+        -> any RecorderHandler
+    { NOOPMetricsHandler.instance }
+    func makeTimer(label: String, dimensions: [(String, String)]) -> any TimerHandler {
+        NOOPMetricsHandler.instance
+    }
+    func destroyCounter(_ handler: any CounterHandler) {}
+    func destroyRecorder(_ handler: any RecorderHandler) {}
+    func destroyTimer(_ handler: any TimerHandler) {}
+}
 let slowQueries = SlowQueries()
 // snippet.show
 
@@ -148,4 +166,19 @@ func testing(authenticator: PasswordAuthenticator) async throws {
             identifier: "ada", password: "wrong", clientAddress: nil)
     }
     precondition(attempts.map(\.metadata.outcome) == ["invalid_credentials"])
+}
+
+// MARK: Choosing the backend explicitly
+
+struct MetricsModule: FlightModule {
+    let metricsFactory: any MetricsFactory = PrometheusMetricsFactory()
+}
+
+// MARK: Slow consumers
+
+func slowConsumers() async throws {
+    let failures = try Telemetry.stream(SessionEvents.StoreFailed.self, id: "pager", capacity: 256)
+    for await failure in failures.events {
+        await pager.notify("session store \(failure.metadata.operation) failed")
+    }
 }

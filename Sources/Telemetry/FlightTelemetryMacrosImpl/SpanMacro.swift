@@ -33,7 +33,7 @@ public struct TelemetrySpanMacro: MemberMacro, MemberAttributeMacro, ExtensionMa
         let typeName = enumDecl.name.text
         var decls: [DeclSyntax] = [
             "\(raw: access)static let name: FlightTelemetry.EventName = \(literal: name)",
-            "\(raw: access)static let _spanFlags = FlightTelemetry.SpanFlags()",
+            "\(raw: access)static let _spanFlags = FlightTelemetry.SpanFlags(name: \(literal: name))",
         ]
         if let kind = kindArgument(of: node) {
             decls.append("\(raw: access)static var kind: FlightTelemetry.TelemetrySpanKind { \(raw: kind) }")

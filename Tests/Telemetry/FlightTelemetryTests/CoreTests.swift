@@ -127,6 +127,50 @@ extension CoreTests {
         }
 
         @Test(
+            "a second type claiming a taken name is refused: attaching throws, its emits go nowhere"
+        )
+        func nameConflict() throws {
+            _ = ConflictOwner._slot  // touched first: owns "test.conflict"
+            #expect(throws: AttachError.self) {
+                _ = try Telemetry.attach(ConflictImpostor.self, id: "x") { _, _, _ in }
+            }
+            do {
+                _ = try Telemetry.attach(ConflictImpostor.self, id: "x") { _, _, _ in }
+            } catch {
+                guard case .nameConflict(let name, let owner) = error else {
+                    Issue.record("expected nameConflict, got \(error)")
+                    return
+                }
+                #expect(name == "test.conflict")
+                #expect(owner.hasSuffix("ConflictOwner"))
+            }
+            let seen = Recorder<String>()
+            let erased = try Telemetry.attach(prefix: "test.conflict", id: "both") { event in
+                seen.append(event.name.description)
+            }
+            Telemetry.emit(ConflictOwner.self)
+            Telemetry.emit(ConflictImpostor.self)
+            #expect(seen.count == 1, "only the owner's events carry the name")
+            #expect(!Telemetry.isEnabled(ConflictImpostor.self))
+            _ = consume erased
+        }
+
+        @Test("a list retired from inside a dispatch is freed when the dispatch ends, not never")
+        func deferredReclaim() throws {
+            struct Boom: Error {}
+            // A throwing handler is detached from inside its own dispatch,
+            // where waiting for a grace period could deadlock, so the old
+            // list is retired rather than freed. With no later attach or
+            // detach on this event type, nothing used to free it.
+            let token = try Telemetry.attach(ReclaimEvent.self, id: "fails") { _, _, _ in
+                throw Boom()
+            }
+            Telemetry.emit(ReclaimEvent.self)
+            #expect(ReclaimEvent._slot.retiredCount == 0)
+            _ = consume token
+        }
+
+        @Test(
             "a handler that emits its own event is cut off at the depth cap instead of recursing forever"
         )
         func depthCap() throws {
@@ -197,11 +241,46 @@ extension CoreTests {
             _ = consume token
         }
 
-        @Test("an erased prefix enables the fast path for events that have no typed handler")
-        func enablesFastPath() throws {
-            let token = try Telemetry.attach(prefix: "erasedtest.enable", id: "x") { _ in }
-            #expect(Telemetry.isEnabled(ErasedOther.self), "the erased check is global, by design")
+        @Test("a prefix switches on only the events beneath it; the rest stay on the one-load path")
+        func prefixIsScoped() throws {
+            #expect(!Telemetry.isEnabled(ErasedOne.self) && !Telemetry.isEnabled(ErasedOther.self))
+            let token = try Telemetry.attach(prefix: "erasedtest.db", id: "scoped") { _ in }
+            #expect(Telemetry.isEnabled(ErasedOne.self), "erasedtest.db.query is beneath it")
+            #expect(!Telemetry.isEnabled(ErasedOther.self), "erasedtest.dbx.query is not")
+            token.detach()
+            #expect(!Telemetry.isEnabled(ErasedOne.self), "detaching clears the bit")
+        }
+
+        @Test("an event type first touched after the prefix was attached still takes its bit")
+        func lateSlotTakesBit() throws {
+            let token = try Telemetry.attach(prefix: "latetest", id: "late") { _ in }
+            // LateEvent's slot does not exist until this line touches it.
+            #expect(Telemetry.isEnabled(LateEvent.self))
+            let everything = try Telemetry.attach(prefix: .all, id: "all") { _ in }
+            #expect(Telemetry.isEnabled(ErasedOther.self), "EventName.all matches everything")
             _ = consume token
+            _ = consume everything
+        }
+
+        @Test("a span observer's prefix marks only the spans beneath it as observed")
+        func observerIsScoped() throws {
+            struct Noop: SpanObserver {
+                func start(_ span: borrowing SpanStart, context: inout ServiceContext) {}
+                func stop(_ span: borrowing SpanStop, state: consuming ()) {}
+                func exception(_ span: borrowing SpanFailure, state: consuming ()) {}
+            }
+            #expect(!Telemetry.isObserved(Load.self))
+            let elsewhere = try Telemetry.observeSpans(prefix: "elsewhere", id: "o", Noop())
+            #expect(!Telemetry.isObserved(Load.self), "test.load is not beneath elsewhere")
+            let here = try Telemetry.observeSpans(prefix: "test", id: "o", Noop())
+            #expect(Telemetry.isObserved(Load.self))
+            _ = consume here
+            #expect(!Telemetry.isObserved(Load.self))
+            // An erased handler on one phase observes the span too.
+            let stops = try Telemetry.attach(prefix: "test.load.stop", id: "e") { _ in }
+            #expect(Telemetry.isObserved(Load.self))
+            _ = consume stops
+            _ = consume elsewhere
         }
     }
 

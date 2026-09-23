@@ -82,36 +82,68 @@ public struct FlightTelemetryModule: FlightModule {
     ///   - configuration: `telemetry.*` is read from here.
     ///   - metrics: Every included module's `[TelemetryMetric]`, gathered
     ///     by composition.
-    ///   - metricsFactory: Where instruments are made; the bootstrapped
-    ///     `MetricsSystem.factory` unless a test passes its own.
+    ///   - metricsFactory: Where instruments are made. Provide one from a
+    ///     module (`let metricsFactory: any MetricsFactory`) to choose the
+    ///     backend explicitly; otherwise it is `MetricsSystem.factory`,
+    ///     read when each instrument is first made.
     public init(
         configuration: Configuration,
         metrics: [TelemetryMetric] = [],
         metricsFactory: (any MetricsFactory)? = nil
     ) throws {
+        try self.init(
+            configuration: configuration, metrics: metrics, metricsFactory: metricsFactory,
+            backends: .bootstrapped)
+    }
+
+    /// Whether a metrics backend and a tracer are there to report to — the
+    /// bootstrapped systems, or a test's stand-in.
+    package struct Backends: Sendable {
+        package var metrics: @Sendable () -> Bool
+        package var tracing: @Sendable () -> Bool
+
+        package init(
+            metrics: @escaping @Sendable () -> Bool, tracing: @escaping @Sendable () -> Bool
+        ) {
+            self.metrics = metrics
+            self.tracing = tracing
+        }
+
+        static let bootstrapped = Backends(
+            metrics: { !(MetricsSystem.factory is NOOPMetricsHandler) },
+            tracing: { !(InstrumentationSystem.tracer is NoOpTracer) })
+    }
+
+    package init(
+        configuration: Configuration,
+        metrics: [TelemetryMetric],
+        metricsFactory: (any MetricsFactory)?,
+        backends: Backends
+    ) throws {
         let settings = try TelemetrySettings(configuration: configuration)
         self.settings = settings
-        self.metrics = metrics + Self.ownMetrics
-        let factory = metricsFactory ?? MetricsSystem.factory
-        self.metricsEnabled = settings.metricsEnabled ?? !(factory is NOOPMetricsHandler)
-        self.tracingEnabled =
-            settings.tracingEnabled ?? !(InstrumentationSystem.tracer is NoOpTracer)
+        let reported = metrics + Self.ownMetrics
+        self.metrics = reported
+        self.metricsEnabled =
+            settings.metricsEnabled
+            ?? (metricsFactory.map { !($0 is NOOPMetricsHandler) } ?? backends.metrics())
+        self.tracingEnabled = settings.tracingEnabled ?? backends.tracing()
 
         // Checked whether or not metrics are on: a clash is a mistake in the
         // definitions, and should not wait for the day a backend is added.
-        try Self.checkNames(self.metrics)
+        try Self.checkNames(reported)
 
+        let limit = settings.cardinalityLimit
+        let tracingPrefix = settings.tracingPrefix
         var tokens = HandlerTokens()
         if metricsEnabled {
-            let reporter = SwiftMetricsReporter(
-                factory: factory, cardinalityLimit: settings.cardinalityLimit)
-            tokens.append(contentsOf: try reporter.attach(self.metrics))
+            let reporter = SwiftMetricsReporter(factory: metricsFactory, cardinalityLimit: limit)
+            tokens.append(contentsOf: try reporter.attach(reported))
         }
         if tracingEnabled {
             tokens.append(
                 try Telemetry.observeSpans(
-                    prefix: settings.tracingPrefix, id: "flight.telemetry.tracing",
-                    TracingObserver()))
+                    prefix: tracingPrefix, id: "flight.telemetry.tracing", TracingObserver()))
         }
         if let prefix = settings.logPrefix {
             tokens.append(
@@ -119,7 +151,34 @@ public struct FlightTelemetryModule: FlightModule {
                     .log(prefix: prefix, level: settings.logLevel)
                     .attach())
         }
-        self.service = TelemetryAttachments(tokens)
+
+        // A backend bootstrapped *after* composition — from another module's
+        // initializer, say — would otherwise be missed for good: the decision
+        // above ran before it existed. Where the decision was automatic and
+        // came out "off", look again when this module's service starts, by
+        // which time every module has been built.
+        let recheckMetrics =
+            settings.metricsEnabled == nil && metricsFactory == nil && !metricsEnabled
+        let recheckTracing = settings.tracingEnabled == nil && !tracingEnabled
+        var late: (@Sendable () throws -> HandlerTokens)?
+        if recheckMetrics || recheckTracing {
+            late = { @Sendable () throws -> HandlerTokens in
+                var tokens = HandlerTokens()
+                if recheckMetrics, backends.metrics() {
+                    tokens.append(
+                        contentsOf: try SwiftMetricsReporter(cardinalityLimit: limit).attach(
+                            reported))
+                }
+                if recheckTracing, backends.tracing() {
+                    tokens.append(
+                        try Telemetry.observeSpans(
+                            prefix: tracingPrefix, id: "flight.telemetry.tracing", TracingObserver()
+                        ))
+                }
+                return tokens
+            }
+        }
+        self.service = TelemetryAttachments(tokens, late: late)
     }
 
     public init() {
@@ -153,15 +212,31 @@ public struct FlightTelemetryModule: FlightModule {
 }
 
 /// Holds the module's attachments for the application's life, and detaches
-/// them at shutdown.
+/// them at shutdown — attaching late what composition could not, when a
+/// backend was bootstrapped after it.
 final class TelemetryAttachments: Service, Sendable {
     private let tokens: Lock<HandlerTokens?>
+    private let late: (@Sendable () throws -> HandlerTokens)?
 
-    init(_ tokens: consuming HandlerTokens) {
+    init(_ tokens: consuming HandlerTokens, late: (@Sendable () throws -> HandlerTokens)?) {
         self.tokens = Lock(tokens)
+        self.late = late
     }
 
     func run() async throws {
+        if let late {
+            let attached = try tokens.withLock { held -> Int in
+                let more = try late()
+                let count = more.count
+                held?.append(contentsOf: more)
+                return count
+            }
+            if attached > 0 {
+                Logger(label: "flight.telemetry").notice(
+                    "a metrics backend or tracer was bootstrapped after composition; reporting from now",
+                    metadata: ["attached": "\(attached)"])
+            }
+        }
         try? await gracefulShutdown()
         let held = tokens.withLock { tokens in tokens.take() }
         held?.detach()

@@ -69,7 +69,6 @@ public enum Telemetry {
         _: E.Type, _ measurements: E.Measurements, _ metadata: E.Metadata
     ) {
         let slot = E._slot
-        if !slot.registered.load(ordering: .relaxed) { _register(E.self) }
         let thread = DispatchThread.current
         guard thread.pointee.depth < DispatchThread.limit else {
             _depthExceeded(E.self)
@@ -82,6 +81,9 @@ public enum Telemetry {
         defer {
             slot.exitRead(parity)
             thread.pointee.depth -= 1
+            if thread.pointee.depth == 0, thread.pointee.reclaimDeferred {
+                Registry.reclaimDeferred(thread)
+            }
         }
         guard let published else { return }
         var frame = EventContext.Frame()
@@ -108,13 +110,6 @@ public enum Telemetry {
                 }
             }
         }
-    }
-
-    /// Checks `E`'s name against every other type's, once.
-    @usableFromInline @inline(never)
-    static func _register<E: TelemetryEvent>(_: E.Type) {
-        Registry.register(E.name, E.self)
-        E._slot.registered.store(true, ordering: .relaxed)
     }
 
     /// A handler emitting, whose handler emits, and so on: past the cap the
@@ -169,7 +164,6 @@ public enum Telemetry {
     public static func attach<E: TelemetryEvent>(
         _: E.Type, id: HandlerID, _ handler: @escaping TelemetryHandler<E>
     ) throws(AttachError) -> HandlerToken {
-        _register(E.self)
         try E._slot.attach(_TypedHandler(id: id, body: handler))
         return HandlerToken { E._slot.detach(id) }
     }

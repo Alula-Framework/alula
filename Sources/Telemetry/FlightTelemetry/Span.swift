@@ -71,10 +71,29 @@ extension SpanEvent where StopMetadata == NoFields {
 /// registry's shared bits for erased handlers and span observers.
 public final class SpanFlags: Sendable, EnrolledSlot {
     @usableFromInline let flags = Atomic<UInt8>(0)
+    let name: EventName?
 
-    public init() {
+    /// For the span named `name` — what the macro writes. Only erased
+    /// handlers and observers whose prefix matches it mark the span observed.
+    public init(name: EventName) {
+        self.name = name
         Registry.enroll(self)
     }
+
+    /// For a span whose name is not given: any erased handler or observer
+    /// marks it observed, which is correct and costs the fast path whenever
+    /// one is attached anywhere. Prefer ``init(name:)``.
+    public init() {
+        self.name = nil
+        Registry.enroll(self)
+    }
+
+    var eventNames: [EventName] {
+        guard let name else { return [.all] }
+        return [name.appending("start"), name.appending("stop"), name.appending("exception")]
+    }
+
+    var spanName: EventName? { name ?? .all }
 
     func setGlobal(_ bit: UInt8, _ on: Bool) {
         if on {
@@ -466,6 +485,11 @@ struct SpanRunState<E: SpanEvent> {
 private func asHandler(_ body: () -> Void) {
     let thread = DispatchThread.current
     thread.pointee.depth += 1
-    defer { thread.pointee.depth -= 1 }
+    defer {
+        thread.pointee.depth -= 1
+        if thread.pointee.depth == 0, thread.pointee.reclaimDeferred {
+            Registry.reclaimDeferred(thread)
+        }
+    }
     body()
 }

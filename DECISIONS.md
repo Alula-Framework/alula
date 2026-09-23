@@ -7,6 +7,90 @@ wrong, say so and it changes.
 
 ---
 
+## D43 — Answering the 0.34 telemetry audit
+
+**Context.** An external audit of the 0.34 telemetry work found no P0. It
+raised seven findings and an architectural question. Each finding was
+checked against the code before anything changed. Where a finding was
+measurable, it was measured first: the benchmarks gained the two scenarios
+the audit asked for, and the retention and name-conflict findings each got
+a test that failed before the fix.
+
+**Changed.**
+
+1. **A narrow prefix put unrelated telemetry on the slow path** (P1). The
+   audit was right, and understated it.
+
+   | With a narrow prefix attached | Before | After |
+   | --- | --- | --- |
+   | unrelated event | 16.8 ns, against a 1.7 ns fast path | 1.9 ns |
+   | unrelated span | 908 ns and 3 allocations | 2.0 ns, no allocations |
+
+   The span case ran the whole observed-span path: context binding, span
+   ids and the clock. The cause was that the erased and observer bits were
+   global, mirrored into every slot. Now each slot names the events it
+   answers to, a span's flags name its phases, and the registry sets the
+   bits only where a live prefix matches. A new slot takes its bits from
+   the current prefixes when it enrolls. The fast path is still one load.
+   Law 4 in `Docs/telemetry.md` states the rule.
+2. **Backend bootstrap order** (P1/P2).
+   - The reporter resolves `MetricsSystem.factory` when an instrument is
+     first made, not when the reporter is built.
+   - When reporting was automatically off at composition, the module looks
+     again when its service starts. A backend bootstrapped from another
+     module's initializer is picked up then, and a notice says so.
+   - The docs state the rule (bootstrap before `Flight.run`) and show the
+     explicit alternative: a module holding `let metricsFactory: any
+     MetricsFactory`, which composition passes in.
+3. **`MetricBuckets` does nothing through swift-metrics** (P2). This is
+   true: swift-metrics has no API for histogram boundaries. I took the
+   audit's option B and documented it at the type, the definition and the
+   reporter. Removing the type (option A) would have taken the hint away
+   from a future OpenTelemetry reporter, which can honor it.
+4. **A retired handler list could be kept forever** (P2). This was
+   confirmed by a test: a throwing handler is detached inside its own
+   dispatch, and with no later attach or detach the list stayed retired.
+   Now a deferred reclaim marks the thread, and the outermost dispatch
+   frees the list on its way out. That costs one branch, on the slow path
+   only.
+5. **Duplicate event names only warned** (P2). A slot now claims its name
+   when it's created: on first touch, and off the fast path. The first type
+   owns the name. Another type with the same name is refused: attaching to
+   it throws `AttachError.nameConflict`, and its emits go nowhere, with a
+   warning naming both types. Metric definitions attach at composition, so
+   a clash involving one fails startup. The debug-only assertion is gone:
+   the refusal is stronger, and it can be tested.
+6. **`telemetry.span_id` looked global** (P3). It is renamed
+   `telemetry.local_span_id`, and the parent key to
+   `telemetry.local_parent_span_id`, with a pointer to the tracer's own
+   metadata provider for trace-wide ids. It is a breaking rename of a log
+   key one release old.
+7. **No bounded async bridge** (P3). `Telemetry.stream(E.self)` and
+   `stream(prefix:)` now exist. They use a bounded `AsyncStream`, drop the
+   oldest (or the newest) events when full, count the drops, and detach and
+   finish when the subscription is dropped. The testing module's record
+   types moved into the core as `EventRecord` and `AnyEventRecord`, which
+   the stream shares; the testing names are typealiases.
+
+**Stated: the laws.** `Docs/telemetry.md` now opens with the audit's rule
+that telemetry is observational only: removing every handler must not
+change what the application does. It carries the five laws, including that
+a domain event, such as an order placed, is not telemetry.
+
+**Not changed yet: extraction** (the architecture finding). The audit is
+right that a library outside Flight, Hangar first, shouldn't depend on the
+flight package to emit. D42 already named this as the trigger. It hasn't
+fired, because nothing outside Flight emits today.
+
+Extracting means a new repository and package: a telemetry core, a macro
+product separate from the core so hand-written events need no swift-syntax,
+and testing. Flight would depend on it and keep the bridges and the module.
+That's a new published repository and a new dependency for every Flight
+consumer, so it's the user's call rather than a finding to fix. The
+recommendation stands: extract before Hangar adopts.
+
+---
+
 ## D42 — Telemetry: typed events in the core, reporting as a module, and where it departs from the spec
 
 **Context.** The swift-telemetry design spec (typed events after Elixir's

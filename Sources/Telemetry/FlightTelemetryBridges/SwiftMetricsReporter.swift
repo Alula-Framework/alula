@@ -17,6 +17,9 @@ import Synchronization
 /// | distribution of a `Duration` | `Timer.recordNanoseconds` |
 /// | distribution of a number | `Recorder(aggregate: true).record` |
 ///
+/// Bucket hints (`MetricBuckets`) are not passed on: swift-metrics has no
+/// API for them, and the backend configures its own histogram boundaries.
+///
 /// Names become labels with the dots replaced — `flight.sessions.created`
 /// is `flight_sessions_created` — and tags become dimensions. The reporter
 /// translates and never aggregates; the backend does.
@@ -27,17 +30,20 @@ import Synchronization
 /// metric: the totals stay right, and a label nobody meant to be unbounded
 /// cannot take the backend down with it.
 public struct SwiftMetricsReporter: Sendable {
-    public let factory: any MetricsFactory
+    /// Where instruments are made; nil means `MetricsSystem.factory`, read
+    /// when each instrument is first made rather than when the reporter is.
+    public let factory: (any MetricsFactory)?
     public let cardinalityLimit: Int
 
     /// - Parameters:
-    ///   - factory: Where instruments are made. `MetricsSystem.factory` —
-    ///     the application's bootstrapped backend — unless a test passes
-    ///     its own.
+    ///   - factory: Where instruments are made. Unless given, the
+    ///     application's bootstrapped `MetricsSystem.factory` — looked up at
+    ///     each instrument's first use, so a reporter attached before the
+    ///     backend was bootstrapped still reports to it.
     ///   - cardinalityLimit: Tag combinations kept per metric.
     public init(factory: (any MetricsFactory)? = nil, cardinalityLimit: Int = 1000) {
         precondition(cardinalityLimit > 0, "cardinalityLimit must be positive")
-        self.factory = factory ?? MetricsSystem.factory
+        self.factory = factory
         self.cardinalityLimit = cardinalityLimit
     }
 
@@ -86,15 +92,15 @@ final class SwiftMetricsRecorder: MetricRecorder {
 
     private let descriptor: MetricDescriptor
     private let label: String
-    private let factory: any MetricsFactory
+    private let explicitFactory: (any MetricsFactory)?
     private let limit: Int
     private let instruments = Lock<[[String]: Instrument]>([:])
     private let overflowReported = Atomic<Bool>(false)
 
-    init(descriptor: MetricDescriptor, factory: any MetricsFactory, limit: Int) {
+    init(descriptor: MetricDescriptor, factory: (any MetricsFactory)?, limit: Int) {
         self.descriptor = descriptor
         self.label = SwiftMetricsReporter.label(for: descriptor.name)
-        self.factory = factory
+        self.explicitFactory = factory
         self.limit = limit
     }
 
@@ -141,6 +147,7 @@ final class SwiftMetricsRecorder: MetricRecorder {
     /// The instrument a definition maps to, chosen on the first value: a
     /// sum of integers counts, a sum of anything else is fractional.
     private func make(for value: MeasurementValue, tags: [String]) -> Instrument {
+        let factory = explicitFactory ?? MetricsSystem.factory
         let dimensions = Array(zip(descriptor.tags, tags))
         switch descriptor.kind {
         case .counter:

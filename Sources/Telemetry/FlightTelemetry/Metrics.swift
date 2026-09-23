@@ -88,6 +88,9 @@ public struct TelemetryMetric: Sendable {
     }
 
     /// Records a measurement's distribution — a timer, for a `Duration`.
+    ///
+    /// `buckets` is a hint only some reporters honor; `SwiftMetricsReporter`
+    /// does not (see ``MetricBuckets``).
     public static func distribution<
         E: TelemetryEvent, Value: TelemetryMeasurement, each Tag: TagValue
     >(
@@ -241,7 +244,15 @@ public enum MetricUnit: String, Sendable, Hashable {
     }
 }
 
-/// Histogram bucket boundaries, for a backend that takes them.
+/// Histogram bucket boundaries — a hint for a reporter whose backend takes
+/// them.
+///
+/// **`SwiftMetricsReporter` does not honor them**: swift-metrics has no way
+/// to pass bucket boundaries to a backend, which configures its own (swift-
+/// prometheus, for instance, per factory). The hint is carried on the
+/// ``MetricDescriptor`` for a reporter that can use it — an OpenTelemetry
+/// one with explicit histogram boundaries — and ignored by one that
+/// cannot.
 public enum MetricBuckets: Sendable, Hashable {
     /// `start`, `start × factor`, … — `count` boundaries.
     case exponential(start: Double, factor: Double, count: Int)

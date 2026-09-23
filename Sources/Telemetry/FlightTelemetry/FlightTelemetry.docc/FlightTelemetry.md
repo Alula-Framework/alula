@@ -68,6 +68,9 @@ captures events in tests. The guide is `Docs/telemetry.md`.
 - ``SpanDurationMeasurements``
 - ``TelemetrySpanID``
 - ``TelemetrySpanContext``
+- ``SpanFlags``
+- ``SpanPhase``
+- ``HandlerSlot``
 
 ### Handlers
 
@@ -78,6 +81,8 @@ captures events in tests. The guide is `Docs/telemetry.md`.
 - ``AttachError``
 - ``EventContext``
 - ``AnyEvent``
+- ``EventRecord``
+- ``AnyEventRecord``
 - ``SpanObserver``
 - ``SpanStart``
 - ``SpanStop``

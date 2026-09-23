@@ -147,11 +147,17 @@ public enum AttachError: Error, Sendable, Equatable, CustomStringConvertible {
     /// A handler with this id is already attached to this event type or
     /// prefix — `:telemetry`'s `{:error, :already_exists}`.
     case duplicateID(HandlerID, EventName)
+    /// Another event type already owns this one's name. An event name is an
+    /// external identity — dashboards, alerts and log queries key on it —
+    /// so two schemas cannot share one; rename one of the types.
+    case nameConflict(EventName, owner: String)
 
     public var description: String {
         switch self {
         case .duplicateID(let id, let name):
             "a telemetry handler '\(id)' is already attached to \(name)"
+        case .nameConflict(let name, let owner):
+            "\(name) is already the name of \(owner); two event types cannot share one name"
         }
     }
 }

@@ -18,8 +18,8 @@ import ServiceContextModule
 /// anything is encoded, so a rule below the logger's level costs a handler
 /// call and a comparison.
 ///
-/// Trace and span ids on every log line — this bridge's and a plain
-/// `logger.info` inside a span alike — come from
+/// The local span id on every log line — this bridge's and a plain
+/// `logger.info` inside a span alike — comes from
 /// ``Logging/Logger/MetadataProvider/telemetry``.
 public struct LogBridge: Sendable {
     private let logger: Logger
@@ -94,21 +94,24 @@ public struct LogBridge: Sendable {
 }
 
 extension Logger.MetadataProvider {
-    /// The telemetry span a log line is written inside — `telemetry.span_id`
-    /// and `telemetry.parent_span_id` — for every logger, not only the
-    /// bridge's:
+    /// The telemetry span a log line is written inside —
+    /// `telemetry.local_span_id` and `telemetry.local_parent_span_id` — for
+    /// every logger, not only the bridge's:
     ///
     /// ```swift
     /// LoggingSystem.bootstrap(StreamLogHandler.standardOutput, metadataProvider: .telemetry)
     /// ```
     ///
-    /// Combine it with a tracer's provider, when there is one, with
+    /// **Local**: these ids are unique within one process, and repeat across
+    /// replicas, so in aggregated logs they mean something only beside the
+    /// instance that wrote them. For trace-wide correlation, multiplex with
+    /// the tracer's provider, which carries its own trace and span ids:
     /// `.multiplex([.telemetry, otelProvider])`.
     public static let telemetry = Logger.MetadataProvider {
         guard let span = ServiceContext.current?.telemetrySpan else { return [:] }
-        var metadata: Logger.Metadata = ["telemetry.span_id": "\(span.spanID)"]
+        var metadata: Logger.Metadata = ["telemetry.local_span_id": "\(span.spanID)"]
         if let parent = span.parentSpanID {
-            metadata["telemetry.parent_span_id"] = "\(parent)"
+            metadata["telemetry.local_parent_span_id"] = "\(parent)"
         }
         return metadata
     }

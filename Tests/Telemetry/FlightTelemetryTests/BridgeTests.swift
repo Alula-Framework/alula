@@ -145,6 +145,42 @@
             }
         }
 
+        @Suite("Telemetry streams")
+        struct StreamTests {
+            @Test(
+                "events reach async code in order, bounded, with drops counted; dropping ends the stream"
+            )
+            func bounded() async throws {
+                let events: AsyncStream<EventRecord<BridgeRequest>>
+                do {
+                    let subscription = try Telemetry.stream(
+                        BridgeRequest.self, id: "stream", capacity: 3)
+                    for route in ["/1", "/2", "/3", "/4", "/5"] { emitRequest(route) }
+                    let dropped = subscription.droppedCount
+                    #expect(dropped == 2, "a buffer of 3 held the newest three")
+                    events = subscription.events
+                }  // the subscription ends here: detached, and the stream finished
+                #expect(!Telemetry.isEnabled(BridgeRequest.self))
+                var routes: [String] = []
+                for await event in events { routes.append(event.metadata.route) }
+                #expect(routes == ["/3", "/4", "/5"], "what was buffered, then the end")
+            }
+
+            @Test("a prefix stream carries fields by name; drop-newest keeps the first")
+            func prefixed() async throws {
+                let subscription = try Telemetry.stream(
+                    prefix: "bridgetest", id: "prefix", capacity: 1, overflow: .dropNewest)
+                emitRequest("/first")
+                emitRequest("/second")
+                var iterator = subscription.events.makeAsyncIterator()
+                let first = await iterator.next()
+                #expect(first?[metadata: "route"] == "/first")
+                let dropped = subscription.droppedCount
+                #expect(dropped == 1)
+                _ = consume subscription
+            }
+        }
+
         @Suite("Log bridge")
         struct LogBridgeTests {
             @Test(
@@ -172,7 +208,7 @@
                 let inside = Telemetry.span(BridgeFetch.self, metadata: .init(key: "k")) { _ in
                     Logger.MetadataProvider.telemetry.get()
                 }
-                #expect(inside["telemetry.span_id"] != nil)
+                #expect(inside["telemetry.local_span_id"] != nil)
                 #expect(Logger.MetadataProvider.telemetry.get().isEmpty, "nothing outside a span")
                 _ = consume observed
             }
@@ -228,6 +264,32 @@
                     metricsFactory: NOOPMetricsHandler.instance)
                 #expect(forced.metricsEnabled)
                 #expect(Telemetry.isEnabled(BridgeRequest.self))
+            }
+
+            @Test("a backend bootstrapped after composition is reported to once the service starts")
+            func lateBackend() async throws {
+                let backend = Flag()
+                let module = try FlightTelemetryModule(
+                    configuration: Configuration(),
+                    metrics: [.counter(BridgeRequest.self, name: "bridgetest.late")],
+                    metricsFactory: nil,
+                    backends: .init(
+                        metrics: { backend.value.load(ordering: .relaxed) }, tracing: { false }))
+                #expect(!module.metricsEnabled)
+                #expect(!Telemetry.isEnabled(BridgeRequest.self), "nothing to report to yet")
+
+                backend.value.store(true, ordering: .relaxed)  // bootstrapped after composition
+                let service = try #require(module.service)
+                let run = Task { try await service.run() }
+                let deadline = ContinuousClock.now + .seconds(5)
+                while !Telemetry.isEnabled(BridgeRequest.self), ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                #expect(
+                    Telemetry.isEnabled(BridgeRequest.self), "attached when the service started")
+                run.cancel()
+                try? await run.value
+                #expect(!Telemetry.isEnabled(BridgeRequest.self), "and detached at shutdown")
             }
 
             @Test("settings: defaults, and bad values fail composition naming the key")

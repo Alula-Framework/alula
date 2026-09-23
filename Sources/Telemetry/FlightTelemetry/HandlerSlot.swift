@@ -18,12 +18,13 @@ import Synchronization
 /// A detach from *inside* a handler does not wait: this thread is itself a
 /// reader, and two threads each detaching the other's handler would wait on
 /// each other forever. It takes effect for every emit that starts after it,
-/// and the old list is freed by the next grace period.
-public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
+/// and the old list is freed when the outermost emit on that thread ends.
+public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot, DeferredReclaim {
     /// The whole fast path, in one load: whether typed handlers exist, and
-    /// whether any erased handler or span observer does anywhere — the
-    /// registry sets those two bits on every slot, so an emit never reads a
-    /// global. See ``SlotFlags``.
+    /// whether an erased handler's prefix matches this event — the registry
+    /// sets that bit only on slots a prefix matches, so an emit never reads
+    /// a global and a narrow prefix costs other events nothing. See
+    /// ``SlotFlags``.
     @usableFromInline let flags = Atomic<UInt8>(0)
 
     /// The published list: an `Unmanaged<_Handlers<E>>`, retained once, by
@@ -50,8 +51,9 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
     let grace = Lock(0)
     let observerCache = Lock<(generation: UInt64, entries: [ObserverEntry])>((UInt64.max, []))
 
-    /// Whether this type's name has been checked against the registry.
-    @usableFromInline let registered = Atomic<Bool>(false)
+    /// Set when another type already owned this type's name at creation:
+    /// nothing may attach, and the flags stay clear so every emit is dropped.
+    let disowned: (owner: String, name: EventName)?
     /// Whether a depth-cap drop has been reported for this type.
     let warnedDepth = Atomic<Bool>(false)
 
@@ -60,6 +62,7 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
 
     public init() {
         self.span = nil
+        self.disowned = Self.claim()
         Registry.enroll(self)
     }
 
@@ -67,10 +70,20 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
     /// so running the span checks one word, not three slots.
     public init(span: SpanFlags, phase: SpanPhase) {
         self.span = (span, phase.bit)
+        self.disowned = Self.claim()
         Registry.enroll(self)
     }
 
+    private static func claim() -> (owner: String, name: EventName)? {
+        let claim = Registry.register(E.name, E.self)
+        return claim.owns ? nil : (claim.owner, E.name)
+    }
+
+    var eventNames: [EventName] { [E.name] }
+    var spanName: EventName? { nil }
+
     func setGlobal(_ bit: UInt8, _ on: Bool) {
+        guard disowned == nil else { return }
         if on {
             flags.bitwiseOr(bit, ordering: .relaxed)
         } else {
@@ -121,6 +134,7 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
     // MARK: Writing
 
     func attach(_ handler: _TypedHandler<E>) throws(AttachError) {
+        if let disowned { throw .nameConflict(disowned.name, owner: disowned.owner) }
         let duplicate = writer.withLock { writer -> Bool in
             if writer.typed.contains(where: { $0.id == handler.id }) { return true }
             writer.typed.append(handler)
@@ -177,7 +191,13 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
     /// inside a dispatch, where waiting could deadlock; the next grace period
     /// frees them instead.
     private func reclaim() {
-        guard DispatchThread.current.pointee.depth == 0 else { return }
+        let thread = DispatchThread.current
+        guard thread.pointee.depth == 0 else {
+            // Inside a dispatch: the outermost one frees it on its way out.
+            Registry.deferredReclaims.withLock { $0.append(self) }
+            thread.pointee.reclaimDeferred = true
+            return
+        }
         grace.withLock { completed in
             defer { completed += 1 }
             let retired = writer.withLock { writer in
@@ -200,6 +220,12 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
         guard let pointer = UnsafeMutableRawPointer(bitPattern: list) else { return }
         Unmanaged<_Handlers<E>>.fromOpaque(pointer).release()
     }
+
+    func reclaimNow() { reclaim() }
+
+    /// Handler lists swapped out and not yet freed — for tests of
+    /// reclamation.
+    package var retiredCount: Int { writer.withLock { $0.retired.count } }
 
     private func readers(_ parity: Int) -> Int {
         parity == 0
@@ -227,14 +253,25 @@ public final class HandlerSlot<E: TelemetryEvent>: Sendable, EnrolledSlot {
 enum SlotFlags {
     /// This type has typed handlers.
     @usableFromInline static let typed: UInt8 = 1
-    /// Some erased handler is attached, anywhere.
+    /// An erased handler's prefix matches this slot's event.
     @usableFromInline static let erased: UInt8 = 2
-    /// Some span observer is attached, anywhere.
+    /// A span observer's prefix matches this slot's span.
     @usableFromInline static let observers: UInt8 = 4
 }
 
-/// A slot the registry can reach, to set the bits every slot shares.
+/// A slot whose retired lists a dispatch deferred freeing.
+protocol DeferredReclaim: AnyObject, Sendable {
+    func reclaimNow()
+}
+
+/// A slot the registry can reach, to set its erased and observer bits
+/// from the prefixes attached.
 protocol EnrolledSlot: AnyObject, Sendable {
+    /// The event names an erased handler's prefix is matched against.
+    var eventNames: [EventName] { get }
+    /// The span name a span observer's prefix is matched against; nil for
+    /// a slot that is not a span's.
+    var spanName: EventName? { get }
     func setGlobal(_ bit: UInt8, _ on: Bool)
 }
 

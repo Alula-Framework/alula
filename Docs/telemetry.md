@@ -9,6 +9,10 @@ handler can turn an event into a counter, a histogram, a tracing span, a
 log line, or an assertion in a test. Until something is attached, an emit
 is one atomic load and a branch.
 
+Telemetry is **observational only**. Removing every handler must not
+change what the application does. It reports facts that already happened
+and never commands anything; see [The laws](#the-laws).
+
 This is Elixir's `:telemetry`, typed. Events are Swift types, so a
 measurement that isn't a number, a metric tag that isn't a tag, or a tag
 taken from another event's fields fails to compile.
@@ -38,6 +42,19 @@ already. What it does depends on what you've bootstrapped:
 - **Neither.** Nothing is attached, and nothing is paid.
 
 `telemetry.*` overrides either decision; see [Configuration](#configuration).
+
+**Bootstrap before `Flight.run`.** The decision is made at composition. A
+backend bootstrapped later, say from another module's initializer, is still
+found when the module's service starts, but events emitted between
+composition and then are not reported. To choose the backend explicitly
+rather than through the global, provide it from a module, and composition
+passes it in:
+
+```swift
+struct MetricsModule: FlightModule {
+    let metricsFactory: any MetricsFactory = PrometheusMetricsFactory()
+}
+```
 
 ### What Flight reports
 
@@ -236,7 +253,10 @@ Two definitions with one name fail composition, naming both events.
 | distribution of a `Duration` | `Timer.recordNanoseconds`, displayed in `unit` |
 | distribution of a number | `Recorder(aggregate: true).record` |
 
-It translates and never aggregates; the backend does that. **Cardinality is
+It translates and never aggregates; the backend does that. For the same
+reason it doesn't pass on `buckets:`: swift-metrics has no way to hand
+histogram boundaries to a backend, which configures its own. The hint stays
+on the definition for a reporter that can use it. **Cardinality is
 capped**: each metric keeps at most 1,000 tag combinations
 (`telemetry.metrics.cardinality-limit`). Past that, values are recorded
 with every tag set to `_overflow`, and
@@ -269,6 +289,13 @@ can't leak one. `persist()` keeps it for the life of the process;
 `HandlerTokens` holds several. A second handler with the same `id` on the
 same event is refused (`AttachError.duplicateID`).
 
+**An event name belongs to one type.** It's an external identity: an erased
+exporter, a dashboard or a log query keys on it. The first type to be
+touched with a name owns it. Any other type claiming the same name is
+refused: attaching to it throws `AttachError.nameConflict` (at composition,
+for a metric definition), its emits go nowhere, and a warning names both
+types.
+
 ### The rules
 
 - **Handlers are synchronous.** They run on the emitting thread, in attach
@@ -276,7 +303,8 @@ same event is refused (`AttachError.duplicateID`).
   threads. Emitting is legal anywhere, even inside a lock, as long as the
   handler doesn't take that lock itself.
 - **Handlers are quick and don't block.** Nothing times them out; a slow
-  handler slows the emitter. Move heavy work to an `AsyncStream` consumer.
+  handler slows the emitter. Move heavy work behind `Telemetry.stream`
+  (below).
 - **A handler that throws is detached**, and `TelemetryHandlerFailed` is
   emitted naming the event, the handler and the error type. Other handlers
   still run. A handler that *traps* crashes the process, since Swift can't
@@ -294,7 +322,28 @@ finish, which is why handlers mustn't block.
 There's one exception. Detaching from *inside* a handler doesn't wait:
 that thread is itself mid-emit, and two threads each detaching the other's
 handler would wait on each other forever. It takes effect for every emit
-that starts afterwards.
+that starts afterwards, and the old handler list is freed as soon as the
+outermost emit on that thread finishes.
+
+### Slow consumers
+
+A handler runs on the emitting thread, so work that takes time (sending to
+a collector, writing a file, paging someone) belongs in async code.
+`Telemetry.stream` hands events over through a **bounded** buffer:
+
+```swift
+let failures = try Telemetry.stream(SessionEvents.StoreFailed.self, id: "pager", capacity: 256)
+for await failure in failures.events {
+    await pager.notify("session store \(failure.metadata.operation) failed")
+}
+```
+
+The handler copies the event and yields it, and nothing else runs on the
+emitter. When the buffer is full, the oldest events are dropped by default
+(`overflow: .dropNewest` keeps the first ones instead) and counted in
+`droppedCount`. A consumer that falls behind costs a fixed amount of memory
+and never slows the application. `stream(prefix:)` gives the erased form.
+Dropping the subscription detaches the handler and finishes the stream.
 
 ### The context
 
@@ -331,12 +380,18 @@ let tokens = try LogBridge(logger: Logger(label: "telemetry"))
     .attach()
 ```
 
-`Logger.MetadataProvider.telemetry` puts `telemetry.span_id` on every log
-line written inside a span, including plain `logger.info` calls:
+`Logger.MetadataProvider.telemetry` puts `telemetry.local_span_id` on every
+log line written inside a span, including plain `logger.info` calls:
 
 ```swift
 LoggingSystem.bootstrap(StreamLogHandler.standardOutput, metadataProvider: .telemetry)
 ```
+
+The id is *local*: unique within one process, repeated across replicas. In
+aggregated logs it means something only beside the instance that wrote it.
+For trace-wide correlation, multiplex with your tracer's provider, which
+carries the distributed trace and span ids:
+`.multiplex([.telemetry, otelProvider])`.
 
 A `SpanObserver` is the general form of the tracing bridge, for anything
 that must carry state from a span's start to its end, or change the
@@ -392,6 +447,8 @@ on x86_64 Linux:
 |---|---|---|---|
 | emit, nothing attached | ≤ 2 ns | ~1.7 ns | 0 |
 | span, nothing attached (overhead) | ≤ 5 ns | ~1.8 ns | 0 |
+| emit, unrelated to an attached prefix | ≤ 2 ns | ~1.9 ns | 0 |
+| span, unrelated to an observed prefix | ≤ 5 ns | ~2.0 ns | 0 |
 | emit, one typed no-op handler | ≤ 40 ns | ~23 ns | 0 |
 | emit, one erased no-op handler | ≤ 80 ns | ~53 ns | 0 |
 
@@ -406,9 +463,11 @@ before a release, on a quiet machine.
 How it gets there:
 
 - **One word on the fast path.** Each event type has a slot, and its
-  flags word says whether typed handlers exist, and whether any erased
-  handler or span observer exists anywhere. The registry keeps those last
-  two bits current on every slot.
+  flags word says whether typed handlers exist, and whether an erased
+  handler's prefix matches it. The registry sets that bit only on the slots
+  a prefix matches. A new slot takes its bit when it's created, so a log
+  bridge on `flight.sessions` costs `hangar.query` nothing. Spans work the
+  same way, through one word per span.
 - **No lock to read.** An emit reads the published handler list after one
   atomic increment and leaves with one decrement, however many handlers
   there are. Attaching and detaching swap the list and wait out a grace
@@ -418,6 +477,25 @@ How it gets there:
   handler asks.
 - **Specialized.** The dispatch loop is inlined at the emit, so handlers
   get the payload's concrete types with no generic copies.
+
+## The laws
+
+1. **Telemetry describes facts that already happened.** It doesn't
+   command behavior. An event is past tense: a session was created, a
+   query finished.
+2. **Application correctness never depends on a telemetry consumer.**
+   Removing every handler must not change what the application does. An
+   order being placed or an invoice being paid is a domain event, and it
+   belongs in your domain model, a queue or an outbox. It must not be
+   carried by a synchronous, global, best-effort observation mechanism that
+   drops events when a buffer is full.
+3. **Instrumented code doesn't choose the backend.** Libraries emit.
+   Applications decide.
+4. **A narrow observer imposes no global cost.** A prefix costs only the
+   events beneath it.
+5. **Emitting shouldn't require the framework.** A library outside Flight
+   should be able to emit without depending on Flight. Today
+   `FlightTelemetry` ships in the flight package; see D43.
 
 ## For library authors
 

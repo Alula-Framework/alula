@@ -4,6 +4,54 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Answers an external audit of the 0.34 telemetry work. D43 has the record.
+
+### Fixed
+
+- **A narrow prefix no longer slows unrelated telemetry.**
+  - An erased handler or a span observer on one prefix used to switch
+    every event and span in the process onto the slow path.
+  - With a narrow prefix attached, an unrelated event cost 16.8 ns instead
+    of 1.7 ns. An unrelated span cost 908 ns and 3 allocations.
+  - The bits are now set per slot, only where a prefix matches: 1.9 ns and
+    2.0 ns, with no allocations. Two new benchmark scenarios hold that line.
+- **A metrics backend bootstrapped after composition is found.**
+  `SwiftMetricsReporter` resolves `MetricsSystem.factory` when it makes each
+  instrument. `FlightTelemetryModule` looks again when its service starts,
+  if reporting was automatically off at composition.
+- **A handler list retired inside a dispatch is freed** when the outermost
+  dispatch ends. Before, it could be kept for the life of the process.
+
+### Added
+
+- `Telemetry.stream(E.self, id:capacity:)` and `stream(prefix:…)` hand
+  events to async code through a bounded buffer. When it's full, the
+  oldest (or newest) events are dropped and counted. The handler detaches
+  when the subscription is dropped.
+- `EventRecord` and `AnyEventRecord` are in `FlightTelemetry`.
+  `CapturedEvent` and `CapturedAnyEvent` are typealiases of them.
+- `SpanFlags(name:)`, which the span macro now writes, and which scopes a
+  span's observed bit to its own name.
+- The telemetry guide opens with the rule that telemetry is observational
+  only, and carries five laws.
+
+### Changed
+
+- **Breaking: event names belong to one type.** A second type claiming a
+  name is refused. Attaching to it throws the new
+  `AttachError.nameConflict`, and its emits go nowhere, with a warning.
+  This replaces a debug assertion and a release-mode warning.
+- **Breaking: the log keys are renamed.** `telemetry.span_id` is now
+  `telemetry.local_span_id`, and `telemetry.parent_span_id` is now
+  `telemetry.local_parent_span_id`. They're unique within one process, not
+  across replicas.
+- **`SwiftMetricsReporter.factory` is optional.** Nil means the
+  bootstrapped factory, read when each instrument is first made.
+- **`MetricBuckets` is documented as a hint** that `SwiftMetricsReporter`
+  doesn't honor. swift-metrics has no API for bucket boundaries.
+
 ## [0.34.0] - 2026-09-23
 
 Telemetry. Libraries emit typed events, and applications decide what

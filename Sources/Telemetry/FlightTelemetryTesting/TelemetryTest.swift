@@ -197,39 +197,10 @@ extension TaskLocal {
 }
 
 /// One emit, as a typed handler saw it.
-public struct CapturedEvent<E: TelemetryEvent>: Sendable {
-    public let measurements: E.Measurements
-    public let metadata: E.Metadata
-    public let context: EventContext.Snapshot
-}
+public typealias CapturedEvent<E: TelemetryEvent> = EventRecord<E>
 
 /// One emit, as an erased handler saw it: its name and its fields by name.
-public struct CapturedAnyEvent: Sendable, CustomStringConvertible {
-    public let name: EventName
-    public let context: EventContext.Snapshot
-    /// Measurements in declaration order.
-    public let measurements: [(name: String, value: any TelemetryMeasurement)]
-    /// Metadata in declaration order; absent optionals are not here.
-    public let metadata: [(name: String, value: any TelemetryValue)]
-
-    /// A measurement by field name.
-    public func measurement(_ name: String) -> (any TelemetryMeasurement)? {
-        measurements.first { $0.name == name }?.value
-    }
-
-    /// A metadata field's description by field name — `"users"`, `"3"`,
-    /// `"true"` — which is what a test usually compares.
-    public subscript(metadata name: String) -> String? {
-        metadata.first { $0.name == name }?.value.telemetryDescription
-    }
-
-    public var description: String {
-        let fields =
-            measurements.map { "\($0.name)=\($0.value.telemetryDescription)" }
-            + metadata.map { "\($0.name)=\($0.value.telemetryDescription)" }
-        return fields.isEmpty ? name.description : "\(name) " + fields.joined(separator: " ")
-    }
-}
+public typealias CapturedAnyEvent = AnyEventRecord
 
 /// The phases of the spans a capture saw.
 public struct CapturedSpans<S: SpanEvent>: Sendable {
@@ -280,14 +251,7 @@ final class Sink<Item: Sendable>: AnySink {
         guard let prefix, prefix == handlerPrefix, Item.self == CapturedAnyEvent.self else {
             return
         }
-        var measurements: [(name: String, value: any TelemetryMeasurement)] = []
-        var metadata: [(name: String, value: any TelemetryValue)] = []
-        event.forEachMeasurement { measurements.append(($0, $1)) }
-        event.forEachMetadata { metadata.append(($0, $1)) }
-        let captured = CapturedAnyEvent(
-            name: event.name, context: event.context.snapshot(), measurements: measurements,
-            metadata: metadata)
-        offer(captured)
+        offer(AnyEventRecord(event))
     }
 }
 
@@ -331,9 +295,7 @@ enum Shared {
             try Telemetry.attach(E.self, id: id) { measurements, metadata, context in
                 let sinks = Scopes.current()
                 guard !sinks.isEmpty else { return }
-                let captured = CapturedEvent<E>(
-                    measurements: copy measurements, metadata: copy metadata,
-                    context: context.snapshot())
+                let captured = EventRecord<E>(measurements, metadata, context)
                 for sink in sinks { sink.offer(captured) }
             }
         }

@@ -1,6 +1,7 @@
 import CAllocationCounter
 import FlightTelemetry
 import Foundation
+import ServiceContextModule
 
 // The performance targets from the telemetry spec, measured and enforced:
 //
@@ -35,6 +36,12 @@ enum Erased {
 @TelemetrySpan("bench.span")
 enum Load {
     struct Metadata { var key: String }
+}
+
+struct NoObserver: SpanObserver {
+    func start(_ span: borrowing SpanStart, context: inout ServiceContext) {}
+    func stop(_ span: borrowing SpanStop, state: consuming ()) {}
+    func exception(_ span: borrowing SpanFailure, state: consuming ()) {}
 }
 
 @inline(never)
@@ -100,7 +107,7 @@ func run(_ scenario: Scenario) {
     let latencyOK = nanoseconds <= scenario.latencyTarget
     let allocationsOK = allocations == 0
     print(
-        scenario.name.padding(toLength: 34, withPad: " ", startingAt: 0),
+        scenario.name.padding(toLength: 40, withPad: " ", startingAt: 0),
         String(format: "%7.2f ns (≤ %4.0f)  %@", nanoseconds, scenario.latencyTarget, latencyOK ? "ok" : "SLOW"),
         counting ? String(format: "  %5.2f allocs  %@", allocations, allocationsOK ? "ok" : "ALLOCATES") : "")
     if !allocationsOK {
@@ -131,6 +138,32 @@ run(
         counter &+= 1
         blackHole(Telemetry.span(Load.self, metadata: .init(key: "k")) { _ in counter })
     })
+
+// A narrow prefix must not cost unrelated telemetry anything: a log bridge
+// on `flight.sessions` or a tracer on `flight.http` leaves every other event
+// and span on the one-load path. (Before 0.35 the prefix set a global bit.)
+do {
+    let logger = try Telemetry.attach(prefix: "bench.elsewhere", id: "narrow") { _ in }
+    let tracer = try Telemetry.observeSpans(prefix: "bench.elsewhere", id: "narrow", NoObserver())
+    run(
+        Scenario(name: "emit, unrelated to an attached prefix", latencyTarget: 2, baseline: increment) {
+            counter &+= 1
+            Telemetry.emit(Nothing.self) { (.init(value: counter), .init(route: "/users/:id")) }
+        })
+    run(
+        Scenario(
+            name: "span, unrelated to an observed prefix", latencyTarget: 5,
+            baseline: {
+                counter &+= 1
+                blackHole(counter)
+            }
+        ) {
+            counter &+= 1
+            blackHole(Telemetry.span(Load.self, metadata: .init(key: "k")) { _ in counter })
+        })
+    logger.detach()
+    tracer.detach()
+}
 
 do {
     let token = try Telemetry.attach(Typed.self, id: "bench") { _, _, _ in }

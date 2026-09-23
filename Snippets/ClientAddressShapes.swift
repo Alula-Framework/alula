@@ -4,10 +4,10 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightTransport
-import FlightWeb
-import FlightWebTesting
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
+import AlulaWebTesting
 
 @Controller("/")
 private struct WhoAmIController {
@@ -23,7 +23,7 @@ func clientAddressShapes(configuration: Configuration, routes: [RouteRegistratio
     _ = context.clientAddress
 
     let proxies = try TrustedProxies(cidrs: ["10.0.0.0/8"])
-    let module = try FlightWebModule<FlightTransport>(
+    let module = try AlulaWebModule<AlulaTransport>(
         configuration: configuration, routes: routes, trustedProxies: proxies)
     _ = module
 

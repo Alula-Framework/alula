@@ -28,7 +28,7 @@ web:
 ```
 
 There is no permissive spelling of this setting. Every other safe-default in
-Flight has the identical shape — `Cookie`'s `httpOnly`/`sameSite`, `Sessions`'
+Alula has the identical shape — `Cookie`'s `httpOnly`/`sameSite`, `Sessions`'
 `cookie-secure`, `RateLimiting`'s required key — and this one is stricter
 than most, because trusting `X-Forwarded-For` from an unconfigured peer has
 no legitimate use at all. Any caller able to open a connection to your
@@ -41,13 +41,13 @@ is that it arrived through a hop you named.
 is allowed to set the header: your load balancer's subnet, your CDN's
 published edge ranges. Not the internet at large, and not your own service.
 A bad entry fails composition, naming it, the same as every other config
-value in Flight.
+value in Alula.
 
 Composing it directly, for a test or a hand-built application:
 
 ```swift
 let proxies = try TrustedProxies(cidrs: ["10.0.0.0/8"])
-let module = try FlightWebModule<FlightTransport>(
+let module = try AlulaWebModule<AlulaTransport>(
     configuration: configuration, routes: routes, trustedProxies: proxies)
 ```
 

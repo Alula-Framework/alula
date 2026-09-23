@@ -1,11 +1,11 @@
-# Flight Rate Limiting
+# Alula Rate Limiting
 
 A limiter for anything an application can name: requests per caller, login
 attempts per account, pushes per device. One algorithm, one store seam, and
 a middleware for the HTTP case.
 
-It is deliberately not only an HTTP feature. `FlightRateLimit` depends on
-`FlightCore` and nothing else, the way `FlightSessions` does, so a security
+It is deliberately not only an HTTP feature. `AlulaRateLimit` depends on
+`AlulaCore` and nothing else, the way `AlulaSessions` does, so a security
 module throttling sign-ins and a worker pacing an outbound API use the same
 limiter as the web layer without any of them needing an HTTP server.
 
@@ -13,29 +13,29 @@ limiter as the web layer without any of them needing an HTTP server.
 
 | | |
 |---|---|
-| **Trait** | none for `FlightRateLimit`; `Web` for the `RateLimiting` middleware |
-| **Products** | `FlightRateLimit`; `FlightRateLimitTesting` for tests |
-| **Module** | `FlightRateLimitModule.self` |
-| **Optional** | `FlightRateLimitValkeyModule.self` from flight-data, for more than one replica |
+| **Trait** | none for `AlulaRateLimit`; `Web` for the `RateLimiting` middleware |
+| **Products** | `AlulaRateLimit`; `AlulaRateLimitTesting` for tests |
+| **Module** | `AlulaRateLimitModule.self` |
+| **Optional** | `AlulaRateLimitValkeyModule.self` from alula-data, for more than one replica |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 ```
 
 ```swift
-await Flight.run(
+await Alula.run(
     configuration: try Configuration.load(),
     modules: [
-        FlightWebModule<FlightTransport>.self,
-        FlightRateLimitModule.self,
+        AlulaWebModule<AlulaTransport>.self,
+        AlulaRateLimitModule.self,
         AppModule.self,
     ],
-    composedBy: flightComposeModules)
+    composedBy: alulaComposeModules)
 ```
 
 The module provides a `RateLimiter`. Inject it anywhere, or hand its `store`
@@ -163,9 +163,9 @@ correct concurrent use of a split API, so the seam does not offer one.
 
 | Store | Where | For |
 |---|---|---|
-| `InMemoryRateLimitStore` | `FlightRateLimit`, the default | One replica, development, tests. Bounded |
-| `ValkeyRateLimitStore` | `FlightRateLimitValkey` in flight-data | More than one replica |
-| `RecordingRateLimitStore` | `FlightRateLimitTesting` | Asserting what was limited |
+| `InMemoryRateLimitStore` | `AlulaRateLimit`, the default | One replica, development, tests. Bounded |
+| `ValkeyRateLimitStore` | `AlulaRateLimitValkey` in alula-data | More than one replica |
+| `RecordingRateLimitStore` | `AlulaRateLimitTesting` | Asserting what was limited |
 
 **The in-memory store is per process.** Two replicas behind a load balancer
 each enforce the quota separately, so a client spreading calls across them
@@ -205,7 +205,7 @@ RateLimiting(store: store, quota: .perMinute(5), onStoreFailure: .deny) { … }
 | `rate-limit.memory.max-entries` | `100000` | The in-memory store's bound |
 
 Quotas are not here; see *Quotas* above. The Valkey adapter's own keys are
-in flight-data's guide.
+in alula-data's guide.
 
 ## Testing
 

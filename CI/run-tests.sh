@@ -23,7 +23,7 @@ echo ""
 echo "── summary"
 # Sum every bundle. `swift test` prints one "Test run with N tests" per test
 # bundle, so `tail -1` reports whichever bundle happened to finish last: it
-# printed 0 for hangar's 324-test run and 14 for a flight-data run of 434.
+# printed 0 for hangar's 324-test run and 14 for an alula-data run of 434.
 # This script exists so a number here cannot lie, and that number was lying.
 swifttesting=$(grep -oE "Test run with [0-9]+ tests" "$log" \
   | grep -oE "[0-9]+" \

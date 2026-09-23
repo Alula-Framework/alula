@@ -29,9 +29,9 @@ jobs:
       # --enable-all-traits: a root build compiles every target, but only
       # traits that are enabled bring their dependencies. Without this the
       # Security target would be built with JWTKit pruned and fail.
-      - name: Build (Flight's own warnings are errors)
+      - name: Build (Alula's own warnings are errors)
         env:
-          FLIGHT_STRICT_WARNINGS: "1"
+          ALULA_STRICT_WARNINGS: "1"
         run: swift build --enable-all-traits
 
       - name: Test
@@ -43,7 +43,7 @@ jobs:
       - name: Lean consumer resolves no gated dependency
         run: ./CI/check-lean-consumer.sh
 
-      # The lean check takes Flight by path, which SwiftPM exempts from the
+      # The lean check takes Alula by path, which SwiftPM exempts from the
       # rule that a version-resolved package may not depend on a revision- or
       # branch-pinned one. 0.28.0 and 0.29.0 broke exactly that way for every
       # consumer enabling Security, with this whole job green (D37). This one
@@ -69,27 +69,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Start Keycloak with the flight-test realm
+      - name: Start Keycloak with the alula-test realm
         run: ./CI/keycloak/start.sh
       - name: Sign-in suites against it
         run: |
           docker run --rm --network host -v "$PWD:/src" -w /src \
-            -e FLIGHT_TEST_KEYCLOAK_URL=http://localhost:8089 \
+            -e ALULA_TEST_KEYCLOAK_URL=http://localhost:8089 \
             swift:6.3.3 \
             swift test --enable-all-traits --scratch-path /tmp/build \
               --filter "KeycloakSignIn|OIDCSignIn|SignInContract"
 
-  # flight-data is this framework's largest consumer and nothing built it: a
+  # alula-data is this framework's largest consumer and nothing built it: a
   # source-breaking change shipped in 0.19.0 (a third associated value on
   # `ConfigError.missingKey`, which pattern matching does not default) and
-  # both sides stayed green — flight because it does not build flight-data,
-  # flight-data because its CI resolves the published tag. Same class as the
+  # both sides stayed green — alula because it does not build alula-data,
+  # alula-data because its CI resolves the published tag. Same class as the
   # templates job below, one repository over.
   data:
-    name: flight-data builds against this commit
-    uses: Flight-Framework/flight-data/.github/workflows/ci.yml@main
+    name: alula-data builds against this commit
+    uses: Alula-Framework/alula-data/.github/workflows/ci.yml@main
     with:
-      flight_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      alula_ref: ${{ github.event.pull_request.head.sha || github.sha }}
     secrets: inherit
 
   lint:
@@ -129,22 +129,22 @@ jobs:
       # that is wrong, which is worse than none.
       - name: Generate documentation
         env:
-          FLIGHT_BUILD_DOCS: "1"
+          ALULA_BUILD_DOCS: "1"
         run: |
           # The plugin *moves* its archive to --output-path, so the parent
           # has to exist first.
           mkdir -p ./docs
-          for target in FlightCore FlightConfig FlightConfigCore FlightWeb \
-                        FlightChannels FlightChannelsProtocol \
-                        FlightChannelsClient FlightChannelsTesting \
-                        FlightPubSub FlightPubSubTesting FlightPresence \
-                        FlightPresenceProtocol FlightPresenceClient \
-                        FlightActuator FlightSecurityCore FlightWebTesting \
-                        FlightTransport FlightScheduler \
-                        FlightSessions FlightSessionsTesting \
-                        FlightAPNS FlightAPNSTesting \
-                        FlightRateLimit FlightRateLimitTesting \
-                        FlightTelemetryBridges; do
+          for target in AlulaCore AlulaConfig AlulaConfigCore AlulaWeb \
+                        AlulaChannels AlulaChannelsProtocol \
+                        AlulaChannelsClient AlulaChannelsTesting \
+                        AlulaPubSub AlulaPubSubTesting AlulaPresence \
+                        AlulaPresenceProtocol AlulaPresenceClient \
+                        AlulaActuator AlulaSecurityCore AlulaWebTesting \
+                        AlulaTransport AlulaScheduler \
+                        AlulaSessions AlulaSessionsTesting \
+                        AlulaAPNS AlulaAPNSTesting \
+                        AlulaRateLimit AlulaRateLimitTesting \
+                        AlulaTelemetryBridges; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \
@@ -160,8 +160,8 @@ jobs:
     # Required, and green. Two blockers were stacked here, and neither was the
     # one this job spent four releases blaming.
     #
-    # The first was ours: `Duration.nanoseconds(Double)` in FlightConfigCore is
-    # macOS 26+, fixed in d35b350. It failed first because FlightConfigCore is
+    # The first was ours: `Duration.nanoseconds(Double)` in AlulaConfigCore is
+    # macOS 26+, fixed in d35b350. It failed first because AlulaConfigCore is
     # the dependency-free half of Config and compiles before
     # swift-configuration is reached, so its error was the only one in the log.
     #
@@ -194,16 +194,16 @@ jobs:
       - name: Build
         run: swift build --enable-all-traits
 
-  # The starter templates are built against *this* commit, in flight-cli's own
+  # The starter templates are built against *this* commit, in alula-cli's own
   # workflow. Its `workflow_call` trigger exists for this, and until now
   # nothing called it: five renamed or removed APIs reached the templates
-  # unnoticed, and `flight new` emitted a project that did not compile against
+  # unnoticed, and `alula new` emitted a project that did not compile against
   # the versions it resolved. A breaking change here should fail on the pull
   # request that causes it, not in a new user's first ten minutes.
   templates:
     name: Starter templates
-    uses: Flight-Framework/flight-cli/.github/workflows/ci.yml@main
+    uses: Alula-Framework/alula-cli/.github/workflows/ci.yml@main
     with:
-      caller: flight
-      flight_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      caller: alula
+      alula_ref: ${{ github.event.pull_request.head.sha || github.sha }}
     secrets: inherit

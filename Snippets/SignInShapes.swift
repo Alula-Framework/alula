@@ -1,11 +1,11 @@
 // Every shape Docs/sign-in.md claims, compiled. A rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightRateLimit
-import FlightSecurityCore
-import FlightSessions
-import FlightWeb
+import AlulaCore
+import AlulaRateLimit
+import AlulaSecurityCore
+import AlulaSessions
+import AlulaWeb
 import Foundation
 
 // The routes, written once against the seam.
@@ -77,7 +77,7 @@ func signInShapes(configuration: Configuration, store: any CredentialStore, limi
     let authenticator = PasswordAuthenticator(store: store, issuer: "local", limiter: limiter)
     _ = try authenticator.hashNewPassword("correct horse")
     let _: any SignInProvider = PasswordSignIn(authenticator: authenticator)
-    _ = try FlightPasswordSignInModule(configuration: configuration, store: store, limiter: limiter)
+    _ = try AlulaPasswordSignInModule(configuration: configuration, store: store, limiter: limiter)
 
     let oidc = try OIDCSignInConfiguration(
         issuer: "https://keycloak.example.com/realms/main", clientID: "my-app",

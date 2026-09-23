@@ -7,13 +7,79 @@ wrong, say so and it changes.
 
 ---
 
+## D45 — Flight is now Alula, and what kept the old name
+
+**Context.** "Flight" collided with the Flight School book series and with
+the PHP Flight framework. You renamed the GitHub organization to
+Alula-Framework and asked for the rename to land before more people
+adopted the old name. At 0.35.0 there are very few users, so the rename is
+one breaking release rather than a deprecation cycle.
+
+**Chosen.** Every brand spelling changes in one release, 0.36.0:
+
+- the package, `alula`, and its modules, such as `AlulaCore` and `AlulaWeb`;
+- the `Alula` entry point and the generated `alulaComposeModules`,
+  `alulaRoutes` and `_alulaRoute_…` names;
+- `alula.yaml`, `ALULA_*`, `alula:` wire events, `alula.*` telemetry and
+  metric names, and `// alula:hand-registered`;
+- the CLI (`alula`), alula-data, alula-cli and alula-channels-js with it.
+
+English uses of the word are not the brand and stay: "in flight",
+`inFlight`, `singleFlight`, `preflight`. The docs site keeps its name until
+a new one is chosen.
+
+**What kept the old name, and why.** A name that a running system has
+already written somewhere durable is data, not branding:
+
+- **alula-data's checksum domain stays `flight-migrate:v1`.** Every
+  recorded checksum was computed with it. Changing it would report every
+  applied migration in every database as drifted.
+- **The migration advisory-lock key stays the bytes of `FLIGHTMG`.** A
+  deploy running 0.36 and one still running 0.35 must contend on the
+  same lock, or both could migrate at once.
+- **The migrations ledger moves, with adoption.** The default is now
+  `alula_migrations`. Suppose the configured table is the default, it
+  doesn't exist, and `flight_migrations` does. Then `migrate`, `rollback`
+  and `repair` rename it in place while holding the advisory lock, and
+  `status` and the plans read it where it is. Leaving the old default
+  would have kept the brand in every new database. Changing it without
+  adoption would have re-run every migration against a populated schema.
+
+**Refused rather than ignored.** `ALULA_ENV` unset means `dev`, so a
+production deploy that still sets `FLIGHT_ENV=prod` would have started
+with dev settings and dev actuator exposure, and a `flight-prod.yaml`
+beside a renamed base file would never have been layered in.
+`Configuration.load` with the default prefix throws
+`ConfigLoadError.preRenameConfiguration` in either case, and names every
+`FLIGHT_*` variable present. `ConfigPrefix("flight")` keeps the old
+spellings on purpose.
+
+**Accepted breakage, documented rather than bridged.** These are
+transient state, and bridging them would carry both names indefinitely:
+
+- Valkey key prefixes (`alula-session:` and the others) and session
+  contents (`alula.principal`, `alula.csrf-token`) change, so everyone signs
+  in again once, and outstanding one-time links stop working.
+- Rate-limit windows reset.
+- Channel pub/sub prefixes and `alula:` wire events change, so the
+  JavaScript client and the server upgrade together, and replicas on
+  different versions don't see each other's broadcasts during a rolling
+  deploy.
+- The scheduler's default lease table becomes `alula_job_leases`, which
+  the application creates. Pass `table: "flight_job_leases"` to keep the
+  old one.
+
+**Cost of reversing.** Another rename, of the same size as this one.
+
+---
+
 ## D44 — The telemetry core is its own package
 
-**Context.** D42 kept telemetry inside Flight and named the trigger for
+**Context.** D42 kept telemetry inside Alula and named the trigger for
 moving it out: an independent library adopting it. The 0.34 audit (D43)
 argued for moving it before that happened, and you agreed.
 
-**Chosen.** [swift-telemetry](https://github.com/Flight-Framework/swift-telemetry)
+**Chosen.** [swift-telemetry](https://github.com/Alula-Framework/swift-telemetry)
 is a package of its own, in the org beside swift-changeset, with three
 modules:
 
@@ -30,18 +96,18 @@ type every call site writes breaks qualified lookup. swift-changeset is
 (T1–T4), CI (the TSan stress test, compile refusals, allocation-enforced
 benchmarks, docs, macOS), and the benchmarks.
 
-Flight keeps what is Flight's: `FlightTelemetryBridges`, meaning the
+Alula keeps what is Alula's: `AlulaTelemetryBridges`, meaning the
 swift-metrics reporter, the tracing observer, the log bridge and
-`FlightTelemetryModule`, plus the events its own subsystems emit. Every
-use of swift-telemetry in Flight is trait-gated, so the lean consumer
+`AlulaTelemetryModule`, plus the events its own subsystems emit. Every
+use of swift-telemetry in Alula is trait-gated, so the lean consumer
 resolves 7 packages again; 0.34 had made it 8.
 
 **Renamed in the move.** The runtime's own events,
-`flight.telemetry.handler_failed` and `flight.telemetry.cardinality_exceeded`,
-became `telemetry.*`. A neutral package shouldn't carry Flight's name, and
-nothing outside Flight used them yet.
+`alula.telemetry.handler_failed` and `alula.telemetry.cardinality_exceeded`,
+became `telemetry.*`. A neutral package shouldn't carry Alula's name, and
+nothing outside Alula used them yet.
 
-**Not moved.** The bridges stay in Flight. They are how Flight composes
+**Not moved.** The bridges stay in Alula. They are how Alula composes
 telemetry, and swift-metrics, swift-distributed-tracing and swift-log are
 reporting choices. Putting those in the core would give every library
 emitting an event those dependencies too, which is the coupling this move
@@ -49,7 +115,7 @@ exists to avoid.
 
 **Cost of reversing.** Folding it back in means one package dependency
 fewer and three module renames. Every independent adopter would then have
-to take on Flight.
+to take on Alula.
 
 ---
 
@@ -85,7 +151,7 @@ a test that failed before the fix.
    - When reporting was automatically off at composition, the module looks
      again when its service starts. A backend bootstrapped from another
      module's initializer is picked up then, and a notice says so.
-   - The docs state the rule (bootstrap before `Flight.run`) and show the
+   - The docs state the rule (bootstrap before `Alula.run`) and show the
      explicit alternative: a module holding `let metricsFactory: any
      MetricsFactory`, which composition passes in.
 3. **`MetricBuckets` does nothing through swift-metrics** (P2). This is
@@ -124,14 +190,14 @@ change what the application does. It carries the five laws, including that
 a domain event, such as an order placed, is not telemetry.
 
 **Not changed yet: extraction** (the architecture finding). The audit is
-right that a library outside Flight, Hangar first, shouldn't depend on the
-flight package to emit. D42 already named this as the trigger. It hasn't
-fired, because nothing outside Flight emits today.
+right that a library outside Alula, Hangar first, shouldn't depend on the
+alula package to emit. D42 already named this as the trigger. It hasn't
+fired, because nothing outside Alula emits today.
 
 Extracting means a new repository and package: a telemetry core, a macro
 product separate from the core so hand-written events need no swift-syntax,
-and testing. Flight would depend on it and keep the bridges and the module.
-That's a new published repository and a new dependency for every Flight
+and testing. Alula would depend on it and keep the bridges and the module.
+That's a new published repository and a new dependency for every Alula
 consumer, so it was the user's call rather than a finding to fix. The
 user agreed, and D44 records the move.
 
@@ -141,43 +207,43 @@ user agreed, and D44 records the move.
 
 **Context.** The swift-telemetry design spec (typed events after Elixir's
 `:telemetry`; spans; metric definitions; bridges; testing capture;
-performance targets) was to be brought into Flight "in the most library
+performance targets) was to be brought into Alula "in the most library
 cohesive way", maximizing performance, developer experience and
 ergonomics.
 
 **Chosen — placement.** One package, as everything else is. The spec's
 eight targets become three products and a macro plugin:
 
-- `FlightTelemetry` holds events, emit, spans, handlers, metric definitions
+- `AlulaTelemetry` holds events, emit, spans, handlers, metric definitions
   and the macros.
-- `FlightTelemetryTesting` holds capture.
-- `FlightTelemetryBridges` holds the swift-metrics reporter, the tracing
-  observer, the log bridge and `FlightTelemetryModule`.
+- `AlulaTelemetryTesting` holds capture.
+- `AlulaTelemetryBridges` holds the swift-metrics reporter, the tracing
+  observer, the log bridge and `AlulaTelemetryModule`.
 
 The core depends on swift-service-context alone and is **ungated**, so any
-target, FlightCore's lean ones included, can emit. That moves the lean
+target, AlulaCore's lean ones included, can emit. That moves the lean
 consumer from 7 resolved packages to 8, because SwiftPM resolves by
 package, not product. The alternative, gating the core behind a trait,
-would have left FlightSessions, FlightRateLimit and FlightScheduler unable
+would have left AlulaSessions, AlulaRateLimit and AlulaScheduler unable
 to emit. The bridges sit behind a new `Telemetry` trait, which `Web` and
 `APNS` imply. Both already bring swift-metrics and tracing, so neither
 resolves anything new.
 
-**Chosen — adoption.** Flight's own subsystems are the first emitters. The
+**Chosen — adoption.** Alula's own subsystems are the first emitters. The
 0.33 counters became events (`SessionEvents`, `SignInEvents`,
 `APNSEvents`), plus `HTTPEvents.RequestHandled` from dispatch: an event,
 not a span, because the request is already a tracing span. Each module
 contributes default metric definitions under the exact 0.33 names, through
-the D15 aggregate, so a package Flight has never heard of does it the same
+the D15 aggregate, so a package Alula has never heard of does it the same
 way. The `metrics:` factory parameters from 0.33 are gone; tests capture
 events instead.
 
-`FlightTelemetryModule` is a `dependencies` entry of the Web, Sessions,
+`AlulaTelemetryModule` is a `dependencies` entry of the Web, Sessions,
 Security and APNs modules ("naming one module names its stack"). Reporting
 is **on when a backend is bootstrapped**: metrics when `MetricsSystem` is
 not the no-op, tracing when `InstrumentationSystem` is not. Without this,
 an app upgrading from 0.33 with Prometheus bootstrapped would silently lose
-every Flight series. With it, an app with no backend attaches nothing and
+every Alula series. With it, an app with no backend attaches nothing and
 pays nothing.
 
 **Departures from the spec, each for a reason.**
@@ -202,7 +268,7 @@ pays nothing.
    and `SwiftMetricsReporter.attach` returns `HandlerTokens`.
 4. **A span's `start` measurement is `monotonicTime: Duration`** since a
    process reference. `ContinuousClock.Instant` is not a measurement.
-5. **`expectNoEmission` throws** rather than asserting. Flight's testing
+5. **`expectNoEmission` throws** rather than asserting. Alula's testing
    modules import no test framework, and a thrown error fails a test under
    any framework.
 6. **No `Poller`.** A `@Scheduled` job that emits is one. `@Instrumented`
@@ -288,7 +354,7 @@ lock's own storage, and TSan reports the overlap as a race.
 
 - **The composition generator's imports.** It never imported the Swift
   module of a module included only through another's `dependencies`. It was
-  latent until `FlightTelemetryModule` became the first such module, and
+  latent until `AlulaTelemetryModule` became the first such module, and
   wiring the demo found it; `composerImportsDependencyModules` pins it.
 - **A capture double-counting.** A prefix capture counted events twice when
   a broader capture elsewhere was live, because each shared erased handler
@@ -297,14 +363,14 @@ lock's own storage, and TSan reports the overlap as a race.
 **Alternatives.**
 
 - **A separate swift-telemetry package**, as the spec's layout assumes.
-  One package is how every other Flight subsystem ships. The core depends
+  One package is how every other Alula subsystem ships. The core depends
   only on swift-service-context and swift-syntax, so extracting it later is
   mechanical. That becomes the right call when Hangar adopts telemetry and
-  must stay light: it should not resolve Flight to emit.
+  must stay light: it should not resolve Alula to emit.
 - **Keep the 0.33 counters and add events beside them.** Two mechanisms
   for one fact, and the counters could not be captured in a test, traced
   or logged.
-- **Opt-in `FlightTelemetryModule`.** This silently drops 0.33's series on
+- **Opt-in `AlulaTelemetryModule`.** This silently drops 0.33's series on
   upgrade, as described under adoption.
 
 **Cost of reversing.**
@@ -327,7 +393,7 @@ source. All eight held.
 **Changed.**
 1. **Absolute authenticated lifetime** (P1). Stored as a sign-in timestamp
    in the session, checked by `Authentication`, and configured in
-   `sessions.*` because `FlightSecurityModule` already takes the session
+   `sessions.*` because `AlulaSecurityModule` already takes the session
    runtime. No signature changed. Legacy sign-ins are grandfathered with a
    stamp rather than all signed out at upgrade.
 2. **NFC** (P1). The fallback to the legacy form is a second Argon2
@@ -380,14 +446,14 @@ than ending nothing. An owner-less record encodes byte-identically to
 before, so existing sessions and the "same bytes, no write" optimisation
 are untouched.
 
-**Chosen, one-time tokens.** `OneTimeTokens` in FlightSecurityCore: 256
+**Chosen, one-time tokens.** `OneTimeTokens` in AlulaSecurityCore: 256
 random bits, SHA-256 digest as the store key, purpose-bound, redeemed by an
 atomic `take`, optionally bound to a value (a password hash) whose change
 voids the token. The store seam, `OneTimeTokenStore`, lives in
-dependency-free `FlightSessions` rather than beside the tokens. The reason
-is packaging, not taste. flight-data depends on flight with no traits, so a
-seam inside Security-gated `FlightSecurityCore` would force the Security
-trait's dependencies on every flight-data user just to ship a Valkey
+dependency-free `AlulaSessions` rather than beside the tokens. The reason
+is packaging, not taste. alula-data depends on alula with no traits, so a
+seam inside Security-gated `AlulaSecurityCore` would force the Security
+trait's dependencies on every alula-data user just to ship a Valkey
 implementation.
 
 **Point-in-time, stated (0.33.0).** Revocation ends the sessions that exist
@@ -413,7 +479,7 @@ every request (works with any store, but costs a store read per
 authenticated request forever, to serve a rare operation). Storing tokens
 raw (a leaked store would be a pile of working reset links). Get-then-delete
 redemption (a race redeems one link twice; the test has twenty requests
-race). A token-store seam in FlightSecurityCore (the packaging problem
+race). A token-store seam in AlulaSecurityCore (the packaging problem
 above).
 
 **Cost of reversing.** Everything is additive. `SessionRecord.owner` is
@@ -424,7 +490,7 @@ optional and omitted when nil.
 ## D39 — First-party sign-in, behind a seam an external provider also fits
 
 **Context.** "No first-party credential checking" was a stated non-goal:
-authentication was federated to an identity provider, and Flight validated
+authentication was federated to an identity provider, and Alula validated
 the tokens it issued. The user reversed it on purpose. An application should
 be able to start on its own accounts without running Keycloak, and switch to
 one later without rewriting its sign-in. Neither Vapor nor Hummingbird ships
@@ -464,7 +530,7 @@ calls inside that:
    letting traffic through is the lesser harm. This one is the brute-force
    defence, and a limiter outage is exactly when nothing else would notice a
    flood.
-5. **`FlightSecurityModule`'s validator became optional** when sessions are
+5. **`AlulaSecurityModule`'s validator became optional** when sessions are
    present, with a stand-in that turns any presented bearer token into an
    invalid credential. Otherwise a sessions-only application had to invent a
    validator it never used. With neither a validator nor sessions,
@@ -479,7 +545,7 @@ calls inside that:
 
 **Alternatives.** Protocols first with implementations later (rejected: an
 interface nobody has implemented twice is speculation). Tying the store to
-flight-data's persistence (rejected: most applications already have a users
+alula-data's persistence (rejected: most applications already have a users
 table). A generic `claims: [String: Any]` pass-through in the session
 (rejected: it was dropped on purpose, and the standard four are the ones
 that describe a person rather than a token). The password grant (ROPC) to
@@ -501,7 +567,7 @@ unbuilt only because they were not picked. The obvious shape was a
 middleware, three `settingHeader` calls.
 
 **Chosen.** A `SecurityHeaders` value on `WebRuntime`, read by
-`FlightWebModule` from `web.security-headers.*` and applied by Dispatch to
+`AlulaWebModule` from `web.security-headers.*` and applied by Dispatch to
 every response after the whole chain has run. `nosniff`, `DENY` and
 `strict-origin-when-cross-origin` are on by default; HSTS and CSP are off
 until configured. A header already on the response wins.
@@ -542,28 +608,28 @@ same way turning them on is.
 ## D37 — The Argon2 dependency is vendored, not depended on: a revision pin poisoned resolution
 
 **Context.** Wiring password hashing into a real downstream consumer — the
-`flight-cli` demo template, adding `Security` to its trait list the way any
+`alula-cli` demo template, adding `Security` to its trait list the way any
 application would — failed at `swift package resolve`, not at build:
 
 ```
-error: Dependencies could not be resolved because root depends on 'flight' 0.29.0..<1.0.0.
-'flight' >= 0.29.0 cannot be used because no versions of 'flight' match the
-requirement 0.29.1..<1.0.0 and package 'flight' is required using a
-stable-version but 'flight' depends on an unstable-version package
+error: Dependencies could not be resolved because root depends on 'alula' 0.29.0..<1.0.0.
+'alula' >= 0.29.0 cannot be used because no versions of 'alula' match the
+requirement 0.29.1..<1.0.0 and package 'alula' is required using a
+stable-version but 'alula' depends on an unstable-version package
 'phc-winner-argon2'.
 ```
 
 Reproduced in isolation, outside the demo's larger dependency graph, with
-nothing but a `.package(url: flight, from: "0.29.0", traits: ["Security"])`
+nothing but a `.package(url: alula, from: "0.29.0", traits: ["Security"])`
 and one product dependency. SwiftPM's rule: a package resolved by a version
 requirement (`from:`, `exact:`, a range) may not depend, even transitively
 and even behind a trait, on one resolved by `revision:` or `.branch(_:)` —
 "stable" and "unstable" requirements cannot mix in one resolution unless
 the *root* manifest is itself on an unstable requirement. D35's `revision:`
 pin on `phc-winner-argon2` — chosen because that repository carries no
-semver tags — made every one of Flight's own tagged releases with
+semver tags — made every one of Alula's own tagged releases with
 `Security` enabled (0.28.0 and 0.29.0, both already public) unresolvable
-by any consumer depending on Flight the ordinary way. `check-lean-consumer.sh`
+by any consumer depending on Alula the ordinary way. `check-lean-consumer.sh`
 never caught it: it proves a *lean* (`traits: []`) consumer stays lean, and
 never resolves a `Security`-trait consumer at all, let alone one using
 `from:` rather than a path dependency.
@@ -597,8 +663,8 @@ downstream consumer, on every tagged release, indefinitely, the update
 burden is the smaller cost by a wide margin.
 
 **Alternatives.** Leaving the `revision:` pin and telling consumers to
-depend on Flight with `revision:` too (rejected: forces every application
-using `Security` into an unversioned dependency on Flight itself, visible
+depend on Alula with `revision:` too (rejected: forces every application
+using `Security` into an unversioned dependency on Alula itself, visible
 only after a resolution failure with no obvious cause — precisely what
 broke the demo). A `.branch(_:)` reference instead of `.revision(_:)`
 (rejected: SwiftPM classifies both as non-version requirements identically;
@@ -696,12 +762,12 @@ that essentially every other language's Argon2 binding wraps. It ships its
 own SwiftPM manifest, building only the portable reference sources
 (`blake2b`, `argon2`, `core`, `encoding`, `ref`, `thread` — the
 SIMD-optimized path and the CLI/benchmark/test tooling excluded), dual
-CC0-1.0/Apache-2.0 licensed. `Argon2idHashing` in `FlightSecurityCore` is
+CC0-1.0/Apache-2.0 licensed. `Argon2idHashing` in `AlulaSecurityCore` is
 orchestration around it: UTF-8 encoding, salt generation via
 `SystemRandomNumberGenerator` (the same source `SessionID.generate()`
 uses), and parsing its own parameters back out of the PHC string it
 produces for `needsRehash`. No hand-rolled cryptography anywhere in this —
-the C source is untouched, and the parsing is of Flight's own output, not
+the C source is untouched, and the parsing is of Alula's own output, not
 of arbitrary input.
 
 **Pinned by `revision:`, not `from:`.** The repository carries no semver
@@ -731,10 +797,10 @@ top of this one, deliberately sequenced after it rather than alongside it.
 **Alternatives.** Any of the small third-party Swift Argon2 wrappers
 (inherits their own, thinner trust profile on top of the same C code, for
 no benefit over depending on the C code's own package directly). Vendoring
-the reference C source into Flight's own tree, as `CFlightZlib` vendors a
+the reference C source into Alula's own tree, as `CAlulaZlib` vendors a
 systemLibrary shim for zlib (rejected: zlib is preinstalled everywhere and
-`CFlightZlib` only wraps the system's own copy; Argon2 is not preinstalled
-anywhere, so vendoring it would mean Flight owning the update cadence of
+`CAlulaZlib` only wraps the system's own copy; Argon2 is not preinstalled
+anywhere, so vendoring it would mean Alula owning the update cadence of
 someone else's cryptographic C source, which is strictly worse than
 depending on the authors' own repository at a pinned commit). Waiting for
 swift-crypto (Apple's own maintainers already declined the addition; there
@@ -762,7 +828,7 @@ address, silently, with no error anywhere.
 
 **Chosen.** Four things.
 
-1. **`Request.remoteAddress`**, populated by `FlightTransport` from
+1. **`Request.remoteAddress`**, populated by `AlulaTransport` from
    `channel.remoteAddress`, is the kernel's answer and nothing else. It is
    never `X-Forwarded-For`, and reading it never involves that header.
 2. **`RequestContext.clientAddress`** is the policy-resolved value:
@@ -770,7 +836,7 @@ address, silently, with no error anywhere.
    carries it as a third citizen alongside `coders`/`errorMapper` — composed
    once, applied per request.
 3. **The default is `.none`**, no permissive spelling exists, and none was
-   added. Every other safe default in Flight (`Cookie`, `Sessions`,
+   added. Every other safe default in Alula (`Cookie`, `Sessions`,
    `RateLimiting`'s required key) at least has a documented narrow escape
    hatch for a legitimate case. This one does not get one, because there is
    no legitimate use for trusting an unconfigured forwarded header — unlike,
@@ -820,18 +886,18 @@ files that implement it.
 ## D33 — The limiter is its own target, its store decides and records in one call, and it fails open
 
 **Context.** Rate limiting was pinned in the 2026-09-19 web audit, stalled on
-a prerequisite: there is no client IP anywhere in flight, and keying a
+a prerequisite: there is no client IP anywhere in alula, and keying a
 limiter on a spoofable identifier is worse than not having one. Meanwhile a
 first-party password story needs login throttling, which is the same
 mechanism.
 
 **Chosen.** Four things.
 
-1. **`FlightRateLimit` is a dependency-free target**, below both `FlightWeb`
+1. **`AlulaRateLimit` is a dependency-free target**, below both `AlulaWeb`
    and anything in Security. The `RateLimiting` middleware is one consumer;
    a login throttle and a worker pacing an outbound API are others, and none
    of them should need an HTTP server for a limiter to exist. Same shape as
-   `FlightSessions` sitting below `FlightWeb` and `FlightSecurityCore`.
+   `AlulaSessions` sitting below `AlulaWeb` and `AlulaSecurityCore`.
 2. **`RateLimitStore` has one method.** `consume(key:cost:quota:)` decides
    and records together. A split API has no correct concurrent use: two
    callers read the same under-quota state before either writes, and both
@@ -858,7 +924,7 @@ already has: a subject, an API key, a login identifier, a path. Address
 keying becomes one more available key when the transport work lands, with
 nothing built here changing shape. The prerequisite was never the limiter.
 
-**Alternatives.** Put the limiter in `FlightWeb` (would have forced an HTTP
+**Alternatives.** Put the limiter in `AlulaWeb` (would have forced an HTTP
 dependency on the login throttle that motivated it). Default the key to the
 client address (the identifier that does not exist, and would be spoofable
 if it did). Fail closed for consistency with Sessions (rejected above).
@@ -880,7 +946,7 @@ of Apple's reason strings. APNSwift exists and does all three.
 as the table. One `send` is one delivery attempt; the client retries only
 on `ExpiredProviderToken`, once. `.p8` token authentication only.
 
-**Why.** The same reasoning as the JWKS fetch in Security Core: Flight owns
+**Why.** The same reasoning as the JWKS fetch in Security Core: Alula owns
 orchestration, the cryptography is delegated, and the HTTP is small enough
 that owning it is cheaper than depending on it — and the hermetic seam
 (`APNSTransport`) has to be this package's whichever way. APNSwift would
@@ -908,12 +974,12 @@ local change; the notification model would survive a move to any library.
 and neither depends on the other: an application may have sessions without
 security or security without sessions. D2 derives cross-module lane order
 from the module graph in scan order, which is deterministic but implicit —
-listing `FlightSecurityModule` before `FlightSessionsModule` in an
+listing `AlulaSecurityModule` before `AlulaSessionsModule` in an
 application's `dependencies` would silently sign nobody in.
 
 **Chosen.** Three things together:
 
-1. `FlightSecurityModule` takes `sessions: SessionRuntime?` by type and,
+1. `AlulaSecurityModule` takes `sessions: SessionRuntime?` by type and,
    when it has one, puts `Sessions` ahead of `Authentication` in every lane
    *it* declares, including its default-lane contribution. The lanes are its
    to order.
@@ -932,12 +998,12 @@ idempotence removes the double-listing cost that ownership creates; the
 check catches the one remaining way to get it wrong, an application's own
 lane, at startup rather than as a browser that never signs in.
 
-**Alternatives.** Make `FlightSecurityModule` depend on `FlightSessionsModule`
+**Alternatives.** Make `AlulaSecurityModule` depend on `AlulaSessionsModule`
 (forces sessions on every token-only API). Have `Authentication` load the
 session itself (a second store read per request, and two owners of one
 cookie). Rely on D2's scan order and document it (works until someone
 reorders a list nothing checks). A string-suffix check on middleware names
-instead of the protocol (couples FlightWeb to a type name in a package above
+instead of the protocol (couples AlulaWeb to a type name in a package above
 it).
 
 **Cost of reversing.** The marker protocol, two flags on
@@ -958,7 +1024,7 @@ that.
 **Why.** The bare cookie API cannot know its deployment. The session module
 knows exactly what its cookie is — a bearer credential for everything the
 session holds — and sending it over plaintext once is enough to lose it. A
-default that is safe in production and one line in `flight-dev.yaml` in
+default that is safe in production and one line in `alula-dev.yaml` in
 development is the right way round for that cookie specifically. Chrome and
 Firefox accept `Secure` cookies from `http://localhost`; Safari does not,
 which is what the dev-overlay line is for.
@@ -966,7 +1032,7 @@ which is what the dev-overlay line is for.
 **Alternatives.** Inherit `Cookie`'s false (safe development, unsafe
 production, the wrong way round). Decide from whether the transport has TLS
 configured (wrong behind a TLS-terminating proxy, which is the common
-deployment). Decide from `FLIGHT_ENV` (an allowlist of development names,
+deployment). Decide from `ALULA_ENV` (an allowlist of development names,
 the way Actuator gates its dashboard — defensible, but a second mechanism
 for a one-line setting, and one that would fail *open* on an unrecognised
 environment name unless it were also an allowlist).
@@ -997,9 +1063,9 @@ the context. The `PrincipalHolder` this resembles was removed because it was
 **Alternatives.** A task-local bound around `next` — works now that the
 chain is layered, and is what `Principal.current` is; it is second-class
 there for the same reason it would be here, that a value on the context is
-readable without an ambient lookup. A seam protocol in FlightWeb with the
-concrete type above it, D7's shape — unnecessary, because `FlightSessions`
-sits *below* FlightWeb and can be named directly.
+readable without an ambient lookup. A seam protocol in AlulaWeb with the
+concrete type above it, D7's shape — unnecessary, because `AlulaSessions`
+sits *below* AlulaWeb and can be named directly.
 
 **Cost of reversing.** The field, the accessor, and the commit call in the
 middleware.
@@ -1008,7 +1074,7 @@ middleware.
 
 ## D28 — The session store throws, and the middleware fails closed
 
-**Context.** flight-data's `Cache` never throws: a miss is normal, an
+**Context.** alula-data's `Cache` never throws: a miss is normal, an
 errored get is a miss, an errored set is dropped, because the correct
 answer to any cache failure is the real computation behind it. The obvious
 move was to reuse `any Cache` as the session store, or to copy its rule.
@@ -1044,7 +1110,7 @@ rejected alternatives are on the record rather than reconstructed afterwards.
 **Chosen.** Three changes, and the first is not optional:
 
 1. **Module identity keeps its generic arguments.** `moduleKey`
-   (`flight-registration-gen/main.swift:963`) strips everything from `<`
+   (`alula-registration-gen/main.swift:963`) strips everything from `<`
    onward, so `PostgresDataModule<PrimaryDataSource>` and
    `PostgresDataModule<Analytics>` share one key, get **one** binding, and both
    parameters receive it. Verified by probe — the composer emits
@@ -1058,19 +1124,19 @@ rejected alternatives are on the record rather than reconstructed afterwards.
    by module type, for the component that wants the non-default one.
 
 ```swift
-struct AppModule: FlightModule {
-    static var dependencies: [any FlightModule.Type] {
+struct AppModule: AlulaModule {
+    static var dependencies: [any AlulaModule.Type] {
         [PostgresDataModule<PrimaryDataSource>.self, PostgresDataModule<Analytics>.self]
     }
 
     /// What an unqualified `@Inject var pool: PostgresDataSource` means.
-    static var defaultProviders: [any FlightModule.Type] {
+    static var defaultProviders: [any AlulaModule.Type] {
         [PostgresDataModule<PrimaryDataSource>.self]
     }
 }
 ```
 
-**Why the generic-argument fix comes first.** flight-data is built on
+**Why the generic-argument fix comes first.** alula-data is built on
 `Module<Name>`-per-datasource — `PostgresDataModule`, `InMemoryDataModule`,
 `ValkeyDataModule` — and `Docs/data-core.md` documented composing two of them
 from the beginning. It has never worked. Nothing caught it because
@@ -1086,10 +1152,10 @@ compiling. The tax has to fall on the application with the unusual shape, not
 on every consumer in it.
 
 **Why the default is declared in the application.** It cannot live in
-flight-data: `PostgresDataModule<Name>` is a single declaration and cannot mark
+alula-data: `PostgresDataModule<Name>` is a single declaration and cannot mark
 one instantiation special. It cannot live on `PrimaryDataSource` either,
 because the build plugin scans only the application's own target and never sees
-flight-data's sources. Where the instantiations are named is the one place the
+alula-data's sources. Where the instantiations are named is the one place the
 generator can read it.
 
 **Why not "first in `modules:` wins".** That is F1 — service shutdown order came
@@ -1130,11 +1196,11 @@ block and the `@Inject(from:)` line to paste. Three constraints on it:
 - **One per ambiguous type, not per consumer.** Twelve repositories injecting
   the pool is one diagnostic listing twelve, not twelve diagnostics.
 - **Reported against the application's source.** Today `#error` surfaces at
-  `FlightRegistration.generated.swift`, which is nobody's code.
+  `AlulaRegistration.generated.swift`, which is nobody's code.
 
 This depends on a diagnostics fix landing first: a dependency the composer
 cannot resolve currently emits an editor placeholder into compiled output
-(`try FlightGraph(pool: <#nothing provides Pool#>)`, an
+(`try AlulaGraph(pool: <#nothing provides Pool#>)`, an
 `error: editor placeholder in source file`), *and* the correct ambiguity
 message, *and* a third error claiming nothing provides the type when two things
 do — because `provider(of:)` returns nil for both absence and ambiguity and the
@@ -1148,9 +1214,9 @@ asked for.
 
 **Landing order.** Diagnostics first, alone, since it is a bug fix and makes
 the rest debuggable. Then module identity, which is independently valuable and
-makes flight-data's documented shape work with no new API — a release could
+makes alula-data's documented shape work with no new API — a release could
 stop there. Then `defaultProviders` and `from:` together, since neither is
-useful without the other. flight-data's docs and Adversary's withdrawn
+useful without the other. alula-data's docs and Adversary's withdrawn
 `analytics` probe are restored last, and the restored probe is the end-to-end
 test.
 
@@ -1158,9 +1224,9 @@ test.
 
 ## D21 — Scheduled jobs are values, and the coordinator is an argument
 
-**Chosen.** `@Scheduler` generates `_flightScheduledJobs(_ make:)` beside its
-`_flightRegister`, the generator emits `flightScheduledJobs(_ graph:)`, and
-`FlightSchedulerModule(jobs:coordinator:)` takes both. `SchedulerService` takes
+**Chosen.** `@Scheduler` generates `_alulaScheduledJobs(_ make:)` beside its
+`_alulaRegister`, the generator emits `alulaScheduledJobs(_ graph:)`, and
+`AlulaSchedulerModule(jobs:coordinator:)` takes both. `SchedulerService` takes
 what it runs; its `Container` and `resolveCoordinator` are gone.
 
 **Why.** This was the module I said was blocked, and the graph move unblocked
@@ -1186,7 +1252,7 @@ correct rather than something misconfigured.
 
 ## D26 — Actuator lists what the build scanned, not what the container holds
 
-**Chosen.** The generator emits `flightComponentDescriptors()`, the composer
+**Chosen.** The generator emits `alulaComponentDescriptors()`, the composer
 passes it to `ActuatorModule(components:)`, and `ActuatorController` holds that
 list instead of a `Container`. Module health — genuinely runtime state — still
 comes from the tracker, through a `@Sendable () -> [ModuleStatus]` closure.
@@ -1220,12 +1286,12 @@ not what keeps `Container` alive — see below.
 
 ## D24 — A route terminal's own roots are not graph properties
 
-**Chosen.** `FlightGraph` stores only what a *component* needs. A dependency
-that only a controller has becomes a parameter of `flightRoutes(_:…)` instead.
+**Chosen.** `AlulaGraph` stores only what a *component* needs. A dependency
+that only a controller has becomes a parameter of `alulaRoutes(_:…)` instead.
 
 **Why.** This is what unblocked channels. A controller injecting
-`ChannelBroadcaster` made it a graph root, so `FlightGraph` depended on
-`FlightChannelsModule` — and `FlightChannelsModule` takes the channel list, so
+`ChannelBroadcaster` made it a graph root, so `AlulaGraph` depended on
+`AlulaChannelsModule` — and `AlulaChannelsModule` takes the channel list, so
 *nothing that builds channels from the graph could ever compose*. The build
 said so, by name, the moment I tried.
 
@@ -1248,7 +1314,7 @@ Everything else a channel needs is an ordinary value its declaring module
 closes over.
 
 **Why the split is exactly there.** A channel is declared by a module that
-`FlightChannelsModule` is *built from*, so it cannot depend on Channels at
+`AlulaChannelsModule` is *built from*, so it cannot depend on Channels at
 construction. At join time there is no such problem: the broadcaster has
 existed since composition. So the values Channels owns arrive per join, and
 everything else — repositories, services, presence — arrives by ordinary
@@ -1288,7 +1354,7 @@ and `teardown()` finishes the outbound queue — which wakes the writer, whose
 last act was `yield(.normal)`. Under contention the writer's `.normal` beat the
 violation the frame loop had *already decided on*, and the peer was told the
 socket closed normally. The `.binary` path had the identical shape, and the
-graceful `flight:close` path could lose its code and reason the same way.
+graceful `alula:close` path could lose its code and reason the same way.
 
 **Why the writer stays silent now.** Its queue finishing is a *consequence* of
 teardown, never a reason to close — and teardown always follows a decision made
@@ -1305,13 +1371,13 @@ the rate before was roughly one in six.
 ## D22 — A socket route injects the channels stack; the crash was a stale build
 
 **Chosen.** `ChannelSockets` bundles the router, the bus and the channels
-configuration as one injectable value. `FlightChannelsModule` builds it,
+configuration as one injectable value. `AlulaChannelsModule` builds it,
 provides it, and offers `socketRoute(_:)` built from it. A declared route
 injects it; `ChannelSocketHandler(context:)` survives as the imperative escape
 hatch with one lookup instead of three.
 
 **The crash, and what it actually was.** Adding `let sockets` to
-`FlightChannelsModule` segfaulted the channels client suite — SIGSEGV, frame 0
+`AlulaChannelsModule` segfaulted the channels client suite — SIGSEGV, frame 0
 a garbage address, frame 1 inside `TestContainer`'s module block. It reproduced
 with the stored property alone, nested or top-level, with and without the
 registration. It was **a stale incremental build**: changing a public struct's
@@ -1322,11 +1388,11 @@ layout. `rm -rf .build` and it passes.
 This cost a full revert of a correct design, and the lesson is worth stating
 plainly: **a SIGSEGV after changing stored properties in a library target is a
 stale build until proven otherwise.** Clean-build before concluding anything
-about the code. Nothing in Flight can guard against it; only the habit can.
+about the code. Nothing in Alula can guard against it; only the habit can.
 
 **What it exposed on the way.** Injecting `ChannelSockets` makes it a root of
 the component graph, so the build refused the composition by name:
-`AppModule`, `FlightChannelsModule`, `FlightGraph` and friends formed a cycle.
+`AppModule`, `AlulaChannelsModule`, `AlulaGraph` and friends formed a cycle.
 The rule this makes concrete — **a module that provides a graph root cannot
 also take the graph** — is the same one that split `DemoAuthModule` out, and it
 split the demo's channels into `DemoChannelsModule`. The cycle diagnostic from
@@ -1335,7 +1401,7 @@ failed to compile for an unrelated-looking reason.
 
 **And a real generator bug.** The graph emitted a component's dependencies as
 injected-then-acknowledged, while the generated initializer takes them in
-*declaration* order — so a `flight:hand-registered` property declared before an
+*declaration* order — so a `alula:hand-registered` property declared before an
 injected one produced `SocketController(sockets:validator:)` against
 `init(validator:sockets:)`. Invisible until a controller had both in that
 order. `ScannedComponent.dependencyOrder` records declaration order; there is a
@@ -1345,28 +1411,28 @@ regression test.
 
 ## D20 — Web takes the route table; the registries stop being container scans
 
-**Chosen.** `FlightWebModule(configuration:routes:middleware:assetMounts:coders:)`.
+**Chosen.** `AlulaWebModule(configuration:routes:middleware:assetMounts:coders:)`.
 `DispatchBuilder` gains a value-based `build(routes:middleware:assetMounts:container:)`,
 and the container overload delegates to it. The generator emits
-`flightRoutes(_ graph:) -> [RouteRegistration]` instead of registering routes,
+`alulaRoutes(_ graph:) -> [RouteRegistration]` instead of registering routes,
 and the composer folds it into the `[RouteRegistration]` aggregate alongside
 every module's own.
 
 **Why.** `DispatchBuilder.build(container:)` collected four registries
-post-`freeze()`, which is what forced `FlightWebModule` to stash a container
+post-`freeze()`, which is what forced `AlulaWebModule` to stash a container
 and build the table at its service's first breath. With routes and middleware
 as values the table is assembled during `configure`, so a conflicting route or
 an undeclared lane fails there rather than at start-up.
 
 **What moved with it.**
-- `FlightSecurityModule(validator:)` holds `Authentication` and
+- `AlulaSecurityModule(validator:)` holds `Authentication` and
   `RequireAuthentication` as instances and declares all three canonical lanes
   as `middleware`. It no longer registers middleware types, and
   `Authentication` is handed its validator once instead of resolving it per
   request.
 - `ActuatorModule.routes` is a stored property — §2.9a's conditional
   installation is now an ordinary `if` over the exposure, not four
-  `flight:hand-registered` calls.
+  `alula:hand-registered` calls.
 - `RouteRegistration.channelSocket(_:)` is the value form of
   `registerChannelSocket`.
 - `WebCoders` arrives as an optional parameter the composer fills by type. It
@@ -1382,26 +1448,26 @@ module's declared endpoints.
 
 **The one thing that got worse, and the fix.** Routes leaving the container
 means Actuator's dashboard cannot see them through `allRegistrations()`. So
-`FlightWebModule.configure` registers the routes it was composed with, for
+`AlulaWebModule.configure` registers the routes it was composed with, for
 introspection only — the table is already built. A controller that also
 registers its own routes now collides, which is the duplicate check working:
-the generated `flightRegisterAll` passes `includingRoutes: false`, and a
+the generated `alulaRegisterAll` passes `includingRoutes: false`, and a
 hand-written module must too.
 
 ---
 
 ## D18 — The composition root builds the component graph
 
-**Chosen.** The generated composer builds `FlightGraph`, wiring its roots from
+**Chosen.** The generated composer builds `AlulaGraph`, wiring its roots from
 module properties by the same type matching a module's own initializer
 parameters go through, and sorting it among the modules — after those providing
-its roots, before those registering from it. `flightRegisterAll` takes the
-graph (`flightRegisterAll(_:graph:)`) and projects from it;
-`container.register(FlightGraph.self) { _ in graph }` replaces
-`{ c in try makeFlightGraph(c) }`.
+its roots, before those registering from it. `alulaRegisterAll` takes the
+graph (`alulaRegisterAll(_:graph:)`) and projects from it;
+`container.register(AlulaGraph.self) { _ in graph }` replaces
+`{ c in try makeAlulaGraph(c) }`.
 
 **Why.** Components were *already* projected from the graph — the registration
-for each read `try c.resolve(FlightGraph.self).x` — so the graph was already
+for each read `try c.resolve(AlulaGraph.self).x` — so the graph was already
 the single construction point. Only the graph's own construction still happened
 at `freeze()`, from a container factory. Its roots are things modules provide
 (a pool, a token validator), which is exactly what D14's value flow matches now
@@ -1413,7 +1479,7 @@ components at *invocation* time; with the graph a composition value, they can
 capture it instead of resolving it.
 
 **Consequences.**
-- `flightRegisterAll` is internal rather than public, because `FlightGraph` is
+- `alulaRegisterAll` is internal rather than public, because `AlulaGraph` is
   internal — deliberately, since an application's components are internal by
   default and a public type cannot expose them. Nothing outside the target
   called it.
@@ -1425,9 +1491,9 @@ capture it instead of resolving it.
   `(any TokenValidator)` was registered inside `AppModule`, and splitting it
   into `DemoAuthModule` is the honest shape anyway — choosing how tokens are
   validated is a deployment decision, which is what "a real deployment lists
-  `FlightOIDCModule` instead" already said.
+  `AlulaOIDCModule` instead" already said.
 
-**Alternative — keep `makeFlightGraph(container)` and leave the graph at
+**Alternative — keep `makeAlulaGraph(container)` and leave the graph at
 freeze.** Zero churn, and it keeps three modules blocked forever: a container
 factory cannot see what the composition root knows.
 
@@ -1449,7 +1515,7 @@ earlier, and at the place that chose the URL.
 
 ## D17 — Presence takes its adapter and monitor as arguments, and its service loses the container
 
-**Chosen.** `FlightPresenceModule(configuration:localBus:gossipBus:adapter:membershipMonitor:)`.
+**Chosen.** `AlulaPresenceModule(configuration:localBus:gossipBus:adapter:membershipMonitor:)`.
 The module holds the tracker; `PresenceService` is built from it and its
 `Container` initializer is deleted, along with the `Source` enum that held
 either and the `optionalMonitor` probe.
@@ -1470,7 +1536,7 @@ that was "for direct embedding and tests" became the only one.
 
 **Consequence worth noting.** Two dead helpers fell out immediately
 (`optionalMonitor`, the module's `optional(_:_:)`), and the value flow wires
-`localBus: flightPubSubModule.local, gossipBus: flightPubSubModule.bus` with no
+`localBus: alulaPubSubModule.local, gossipBus: alulaPubSubModule.bus` with no
 edge declared anywhere — the two buses are distinguished by type alone.
 
 ---
@@ -1487,7 +1553,7 @@ It is exactly wrong for a *contribution*. Channels, routes and scheduled jobs
 are all "every module that has one, please", and refusing the second provider
 would mean only one module in an application could ever declare a channel.
 
-This is the whole extension seam. A package flight has never heard of writes
+This is the whole extension seam. A package alula has never heard of writes
 `public let channels: [ChannelRegistration]` and is wired in without the
 application enumerating it — the same openness `container.registerChannel`
 gave, minus the container and minus the post-`freeze()` collection that made
@@ -1496,13 +1562,13 @@ it a cycle.
 **Cost of reversing.** The rule is four lines in the composer; the cost is in
 what depends on it — routes and scheduled jobs are meant to follow.
 
-**Alternative — one provider, and let the app merge them.** `FlightChannelsModule(channels: a.channels + b.channels)` written by hand in the composition root. Honest, and it makes adding an extension an edit to the application rather than adding a package. That is the property that matters most for extensions, so it loses.
+**Alternative — one provider, and let the app merge them.** `AlulaChannelsModule(channels: a.channels + b.channels)` written by hand in the composition root. Honest, and it makes adding an extension an edit to the application rather than adding a package. That is the property that matters most for extensions, so it loses.
 
 ---
 
 ## D16 — Channels' cycle was module granularity, not values
 
-**Chosen.** `ChannelRegistration` is a value a module holds, `FlightChannelsModule(bus:configuration:channels:)` builds the router in `init`, and the factory takes the `RequestContext` the socket was upgraded from. `Container.registerChannel` and `collectChannelRegistrations` are gone.
+**Chosen.** `ChannelRegistration` is a value a module holds, `AlulaChannelsModule(bus:configuration:channels:)` builds the router in `init`, and the factory takes the `RequestContext` the socket was upgraded from. `Container.registerChannel` and `collectChannelRegistrations` are gone.
 
 **Why.** The reported cycle was: a module declaring a channel needs the `ChannelBroadcaster` that Channels provides, and Channels needs the declarations that module contributes. But the *values* form a chain — `bus -> ChannelBroadcaster -> RoomChannel` — with nothing circular in it. The cycle existed only because one module both provided the broadcaster and aggregated the declarations. Declaring a channel does not require having a broadcaster; *creating* one does, and that happens per join. Splitting those two moments dissolves it, with no phase system and no laziness.
 
@@ -1518,13 +1584,13 @@ socket's life is safe because ``Lifetime`` has exactly one case: every
 component is a singleton, so resolving later is the same lookup.
 
 **Why the pattern is parsed by `ChannelRouter`, not at the declaration.**
-`FlightModule` requires a *non-throwing* `init()`, so a module that had to
+`AlulaModule` requires a *non-throwing* `init()`, so a module that had to
 `try` to state its own channels could not conform. Parsing in the router keeps
 declaration non-throwing and puts every pattern failure in one pass at
 composition.
 
 **What `dependencies` means now.** Inclusion, not ordering. `AppModule` still
-lists `FlightChannelsModule` — that is what pulls Channels into the
+lists `AlulaChannelsModule` — that is what pulls Channels into the
 application — while the composer builds `AppModule` *first*, because Channels
 takes its channels. The two meanings the property used to conflate are now
 separate, and only the composer needs to know the second.
@@ -1535,15 +1601,15 @@ separate, and only the composer needs to know the second.
 
 **Chosen.** A module's public stored properties are what it *provides*. The
 generated composer matches a module's initializer parameters against those
-properties by type — emitting `flightPubSubValkeyModule.adapter` for
-`FlightPubSubModule(configuration:adapter:)` — and topologically orders the
+properties by type — emitting `alulaPubSubValkeyModule.adapter` for
+`AlulaPubSubModule(configuration:adapter:)` — and topologically orders the
 modules by the edges that match creates, on top of the declared-dependency
 order.
 
 **Why.** Inverting the adapter direction left an edge that `dependencies`
-structurally cannot express: `FlightPubSubValkeyModule` must be built and
-configured before `FlightPubSubModule`, but flight cannot declare a dependency
-on flight-data, and flight-data declaring the reverse is exactly the coupling
+structurally cannot express: `AlulaPubSubValkeyModule` must be built and
+configured before `AlulaPubSubModule`, but alula cannot declare a dependency
+on alula-data, and alula-data declaring the reverse is exactly the coupling
 the inversion removed. Something had to carry that ordering, and the value flow
 already does — B takes a property of A, therefore A first. That is the real
 edge; `dependencies` was always an approximation of it, hand-maintained.
@@ -1555,7 +1621,7 @@ the failure would have said "you configured Valkey and did not load its
 module" to someone who had loaded it.
 
 **Consequences.** Neither module names the other; the type is the whole
-connection, which is what lets an adapter live in a package flight has never
+connection, which is what lets an adapter live in a package alula has never
 heard of. Two modules providing the same type is refused rather than guessed
 at, and a cycle is reported — both as `#error` in the generated file, so the
 consumer's compiler points at the reason instead of at a downstream type error.
@@ -1566,11 +1632,11 @@ candidate for its own parameter, and the composer emitted
 fixtures did not catch it; building the demo template did. There is now a test.
 
 **Alternative — declare the edge in `dependencies` after all.** Would mean
-either flight depending on flight-data, or the adapter module depending on
+either alula depending on alula-data, or the adapter module depending on
 PubSub, which is the coupling this whole change removes.
 
 **Alternative — match by conformance rather than by written type.** Would let
-`FlightPubSubValkeyModule` expose the concrete `ValkeyPubSubAdapter`. Rejected:
+`AlulaPubSubValkeyModule` expose the concrete `ValkeyPubSubAdapter`. Rejected:
 the generator scans source text and its conformance map only covers scanned
 `@Component` types, so a plain adapter struct is invisible to it. Requiring the
 provider to publish the existential is one word in the declaration and states
@@ -1581,16 +1647,16 @@ the contract — "provides an adapter", not "provides a Valkey adapter".
 ## D13 — A converted module says it cannot be built from its type; the walk refuses
 
 **Status: superseded.** Nothing in this decision survives. `isTypeConstructible`,
-`Flight.instantiateModules` and `TestContainer` are all gone, and so is
+`Alula.instantiateModules` and `TestContainer` are all gone, and so is
 `BootstrapError.moduleRequiresConstruction` — because the walk this refuses
 does not exist any more. Modules are constructed by the generated composer,
 so there is no runtime path that builds one from its type and nothing to
 refuse. Kept for the record of why the trap was replaced.
 
-**Chosen.** `FlightModule` gains `static var isTypeConstructible: Bool`,
+**Chosen.** `AlulaModule` gains `static var isTypeConstructible: Bool`,
 defaulting true. A module that takes what it provides sets it false, and every
-path that builds a module from a type — `Flight.assemble(modules:)`,
-`TestContainer.build`, both through the new `Flight.instantiateModules` —
+path that builds a module from a type — `Alula.assemble(modules:)`,
+`TestContainer.build`, both through the new `Alula.instantiateModules` —
 checks it and throws `BootstrapError.moduleRequiresConstruction`, naming the
 module and saying to pass the built instance or `composedBy:`.
 
@@ -1599,7 +1665,7 @@ was the only honest option: returning a misconfigured module is worse. But the
 trap fires from wherever the dependency walk happens to reach it, and the walk
 reaches a converted module most often as a **transitive** dependency the
 caller never named. The demo's `BootstrapTests` lists `AppModule`,
-`FlightSecurityModule`, `ActuatorModule` — none of them PubSub — and got a
+`AlulaSecurityModule`, `ActuatorModule` — none of them PubSub — and got a
 `preconditionFailure` from `PubSubModule.swift:91` with no indication of which
 of its three modules pulled PubSub in. A crash is also unrecoverable, so a
 test suite cannot assert on it and CI reports a signal rather than a failure.
@@ -1618,10 +1684,10 @@ enforces at runtime.
 Then the walk could build every module, since the configuration is always in
 hand, and `BootstrapTests` would need no change at all. Rejected because it
 only defers the problem by one module: D11 says a module holds what it
-provides, so `FlightChannelsModule` will take a bus, `FlightPresenceModule` a
+provides, so `AlulaChannelsModule` will take a bus, `AlulaPresenceModule` a
 store — values no configuration can supply. The requirement would break again
 at the next conversion, having cost an explicit `init(configuration:)` on
-every module in flight, flight-data, and every template.
+every module in alula, alula-data, and every template.
 
 **Alternative — let it trap.** Free, and what shipped for one afternoon. The
 demo's failure above is the argument against it.
@@ -1635,7 +1701,7 @@ framework module looked mechanical: take inputs in `init`, hold components as
 properties, have `configure` project them. Both mechanisms stay live, so each
 conversion is local and non-breaking.
 
-**What happened.** I converted `FlightPubSubModule` — the best candidate: no
+**What happened.** I converted `AlulaPubSubModule` — the best candidate: no
 service, no held container, two components, and a doc comment that names the
 exact constraint D11 removes ("they used to be `init` parameters, which meant
 they did not exist"). The conversion itself was clean and the module reads
@@ -1645,10 +1711,10 @@ incidental.
 **The finding: converting a module inverts its dependency direction, and the
 inversions are mutual.**
 
-`FlightPubSubModule` composes by *presence* today: its `(any PubSub)` factory
+`AlulaPubSubModule` composes by *presence* today: its `(any PubSub)` factory
 runs at `freeze()` and asks the container whether anyone registered a
 `DistributedPubSubAdapter`. An adapter module therefore declares
-`FlightPubSubModule` as a *dependency*, registers its adapter, and exposes
+`AlulaPubSubModule` as a *dependency*, registers its adapter, and exposes
 `PubSubRelayService(container:)` as its service.
 
 Taking the adapter as an initializer parameter inverts that: the adapter must
@@ -1692,7 +1758,7 @@ someone outside this repository may already have built against.
 
 ## D11 — A module is a value that holds what it provides
 
-**The question.** `FlightModule.configure(_ container: Container)` is the last
+**The question.** `AlulaModule.configure(_ container: Container)` is the last
 thing keeping `Container` alive: 15 imperative registrations, the 7 framework
 `context.resolve` sites that depend on them, and everything on §3's list that
 those hold up. What replaces it, such that an optional subsystem's components
@@ -1703,8 +1769,8 @@ It declares what it needs as initializer parameters and what it provides as
 stored properties:
 
 ```swift
-public struct FlightChannelsModule: FlightModule {
-    public static var dependencies: [any FlightModule.Type] { [FlightPubSubModule.self] }
+public struct AlulaChannelsModule: AlulaModule {
+    public static var dependencies: [any AlulaModule.Type] { [AlulaPubSubModule.self] }
 
     public let router: ChannelRouter
     public let broadcaster: ChannelBroadcaster
@@ -1717,7 +1783,7 @@ public struct FlightChannelsModule: FlightModule {
 }
 ```
 
-`FlightGraph` then holds the modules the application listed, and reaching a
+`AlulaGraph` then holds the modules the application listed, and reaching a
 framework component is `graph.channels.broadcaster` — two field loads, no
 dictionary, no lock. Modules are nodes in the same graph as components,
 ordered by the same `dependencies` DAG the runtime already resolves, taking
@@ -1736,7 +1802,7 @@ It also deletes rather than adds:
   list is a literal in the application's own source, which the generator
   already scans, and the `dependencies` DAG is already resolved there for
   lane ordering. A module the app did not list is simply not a property.
-  That is what `flight:module-registered` exists to work around, and the
+  That is what `alula:module-registered` exists to work around, and the
   marker goes with it.
 - **The `service` timing workaround dissolves.** Modules hold a container
   today *only* because `service` is read before `freeze()`, so resolution has
@@ -1752,13 +1818,13 @@ It also deletes rather than adds:
 **Alternatives.**
 
 - *Annotate framework components with their module* (`@Component(module:
-  FlightChannelsModule.self)`). Smaller change, keeps `configure`. Rejected:
+  AlulaChannelsModule.self)`). Smaller change, keeps `configure`. Rejected:
   it adds a concept — a back-reference from component to module — to preserve
   a mechanism we are trying to remove, and it does not touch the `service`
   workaround or the container-scan branches.
 - *Attribute components by the Swift module they are declared in.* Needs no
-  syntax at all and is tempting, but FlightSecurityCore declares both
-  `FlightSecurityModule` and `FlightOIDCModule`; an app including only the
+  syntax at all and is tempting, but AlulaSecurityCore declares both
+  `AlulaSecurityModule` and `AlulaOIDCModule`; an app including only the
   first would get an OIDC validator built with no configuration. Too coarse
   by exactly the case §2.8 was built around.
 - *Scan each `configure` body and transplant its registrations into the
@@ -1768,13 +1834,13 @@ It also deletes rather than adds:
   genuinely lost" case §2.6 already identified, dressed up as automation.
 
 **What it costs.** `init()` becomes an initializer with parameters, so
-`Flight.bootstrap(modules: [Type.self])` cannot instantiate modules itself —
+`Alula.bootstrap(modules: [Type.self])` cannot instantiate modules itself —
 the generated composition root does, which is the same shift §2.8 declined to
 make for the token validator alone and is now paid for once, for everything.
 That is a breaking change to the first thing a new user encounters, and it is
 the reason this is a decision rather than a refactor.
 
-**Actuator's `FLIGHT_ENV` is a separate half, and stays separate.** The
+**Actuator's `ALULA_ENV` is a separate half, and stays separate.** The
 module holding an `ActuatorController` is unconditional; whether its *routes*
 install is the runtime question. That is §2.9a's install predicate — static
 manifest entry, boolean evaluated once at boot — and it keeps the property
@@ -1806,7 +1872,7 @@ lookup wearing the same shape.
 construction moves. Shipping the lifetime change first would be measurable
 cost for no behaviour, and would have to be undone.
 
-**What shipped instead.** `makeFlightGraph(_:)` — the graph is now
+**What shipped instead.** `makeAlulaGraph(_:)` — the graph is now
 *constructible*, not merely compilable, with its root parameters resolved
 from the container. A function rather than a registration, because every
 component is built eagerly at freeze and registering the graph would make a
@@ -1815,10 +1881,10 @@ a value nothing calls yet.
 
 **The open decision**, recorded in §7 step 6 with trade-offs: how the
 generated terminal gets graph values when `@Controller` expands in the
-application's module and cannot know `FlightGraph` exists. My recommendation
+application's module and cannot know `AlulaGraph` exists. My recommendation
 is the macro emitting a per-route factory that takes a `make` closure, with
 the generator supplying it — it keeps the handler thunk where it is, so the
-drift `FlightRouteScan` was extracted to prevent stays prevented.
+drift `AlulaRouteScan` was extracted to prevent stays prevented.
 
 ---
 
@@ -1876,10 +1942,10 @@ their own state and shut down gracefully while telling the client.
   stream nobody reads. Now pinned by a test; it was the one load-bearing
   property here with no coverage.
 
-**The honest boundary.** Flight has no generic "server going away" *message*
+**The honest boundary.** Alula has no generic "server going away" *message*
 for a byte stream. WebSocket has close codes; `.streaming` is opaque bytes
 and SSE has no standard goodbye, so an application that wants to say
-something on the way out sends it itself — it owns the writer. Flight's
+something on the way out sends it itself — it owns the writer. Alula's
 guarantee is that the producer is stopped and nothing leaks, not that the
 client is told why.
 
@@ -1889,21 +1955,21 @@ outliving dispatch is ordinary Swift lifetime and needs no scope.
 
 ---
 
-## D7 — The request's identity is a seam protocol in Flight Web
+## D7 — The request's identity is a seam protocol in Alula Web
 
 **Context.** Step 3 moves the principal onto `RequestContext` as a typed
-field. But `RequestContext` lives in FlightWeb and `Principal` lives in
-FlightSecurityCore, which *depends on* FlightWeb — so the field cannot name
+field. But `RequestContext` lives in AlulaWeb and `Principal` lives in
+AlulaSecurityCore, which *depends on* AlulaWeb — so the field cannot name
 the type. This is the real reason the principal travelled as a `.scoped`
 component: the container inverted a dependency the type system would not
 allow directly. The stale "the middleware chain is flat" story was a second
 reason, and the smaller one.
 
-**Chosen.** FlightWeb owns `RequestPrincipal` — a two-member seam (`subject`,
+**Chosen.** AlulaWeb owns `RequestPrincipal` — a two-member seam (`subject`,
 `hasRole`) — and `RequestIdentity`, a three-case enum stored on the context.
-`FlightSecurityCore.Principal` conforms.
+`AlulaSecurityCore.Principal` conforms.
 
-**Why.** FlightChannels already solved the identical problem this way, and its
+**Why.** AlulaChannels already solved the identical problem this way, and its
 `ChannelPrincipal` doc argues the case: the package that needs to *read* an
 identity owns a minimal protocol and depends on no particular identity
 implementation. Using the same shape twice is cheaper to explain than two
@@ -1912,13 +1978,13 @@ mechanisms. It also keeps §2.5's "named fields, closed set, no
 
 **Alternatives.**
 
-- *Move `Principal` down into FlightWeb or FlightCore.* Ends the cycle
+- *Move `Principal` down into AlulaWeb or AlulaCore.* Ends the cycle
   outright, but puts JWT-shaped identity in the web layer and makes every app
   that never authenticates carry it.
 - *A typed side-table*, like the `ServiceContext` the context already holds.
   Works, and §6 concedes the "bags are wrong" premise was mistaken — but it
   reintroduces a `get(Key.self)` surface for one entry.
-- *An opaque `any Sendable` slot* with typed accessors in FlightSecurityCore.
+- *An opaque `any Sendable` slot* with typed accessors in AlulaSecurityCore.
   Smallest change; a one-entry untyped bag wearing a field's clothes.
 
 **Cost of reversing.** Contained: the protocol, the enum, one field, and the
@@ -1960,7 +2026,7 @@ costs the bytes.
 ## D5 — `AuthenticationState` kept, as a derived view
 
 **Context.** With identity stored as `any RequestPrincipal`,
-FlightSecurityCore's `AuthenticationState` (which carries a concrete
+AlulaSecurityCore's `AuthenticationState` (which carries a concrete
 `Principal`) is no longer the storage.
 
 **Chosen.** Keep it as a public type, computed from `RequestIdentity` on
@@ -1983,7 +2049,7 @@ suspected negligible against a request, but it is the one wart here.
 
 ## D4 — The generator scans routes silently
 
-**Chosen.** `flight-registration-gen` runs the shared route scanner with a
+**Chosen.** `alula-registration-gen` runs the shared route scanner with a
 diagnostics sink that discards everything.
 
 **Why.** `@Controller` already diagnoses non-literal paths, static handlers,
@@ -2001,7 +2067,7 @@ and a build tool's do not.
 
 **Chosen.** `assets(at:)`, `uploads(at:)` and `registerChannelSocket` are
 recorded as *mounts* from their call site. Direct `registerRoute` calls warn
-unless marked `// flight:hand-registered`, and are named in the generated
+unless marked `// alula:hand-registered`, and are named in the generated
 file either way.
 
 **Why.** A mount's call site carries the prefix the framework derives routes
@@ -2031,7 +2097,7 @@ where none does.
 **Mitigation.** The scanned edges are emitted as `moduleGraph`, so a consumer
 holding the real bootstrap list can redo the sort correctly.
 
-**Alternative.** Scan the `Flight.bootstrap(modules:)` call for the roots.
+**Alternative.** Scan the `Alula.bootstrap(modules:)` call for the roots.
 Exact, and brittle: several call sites, test harnesses among them.
 
 ---

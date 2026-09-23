@@ -1,4 +1,4 @@
-# Flight Scheduler
+# Alula Scheduler
 
 Cron and interval jobs as annotated methods, with the schedule checked by the
 build.
@@ -30,27 +30,27 @@ a stub service and call the method.
 | | |
 |---|---|
 | **Trait** | none |
-| **Products** | `FlightScheduler` |
-| **Module** | `FlightSchedulerModule.self` |
+| **Products** | `AlulaScheduler` |
+| **Module** | `AlulaSchedulerModule.self` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0"),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0"),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightScheduler", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaScheduler", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -58,16 +58,16 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightCore
-import FlightScheduler
+import AlulaCore
+import AlulaScheduler
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
-            modules: [FlightSchedulerModule.self, AppModule.self],
-            composedBy: flightComposeModules)
+            modules: [AlulaSchedulerModule.self, AppModule.self],
+            composedBy: alulaComposeModules)
     }
 }
 ```
@@ -88,7 +88,7 @@ dependency DAG. A module you write can declare framework modules in its own
 
 Worth trusting only if the build and the runtime agree about the grammar, so
 they are not two parsers kept in step by discipline. The macro plugin imports
-`CronExpression` from `FlightCronCore` — the same target the scheduler runs —
+`CronExpression` from `AlulaCronCore` — the same target the scheduler runs —
 and validates with it. There is no second implementation to drift.
 
 The time zone is checked the same way, against Foundation's own database: a
@@ -209,7 +209,7 @@ there would make every app that wants `/actuator/health` link the scheduler.
 
 ## Testing without sleeping
 
-`SchedulerClock` is a seam and `FlightSchedulerTesting` ships a clock that
+`SchedulerClock` is a seam and `AlulaSchedulerTesting` ships a clock that
 jumps straight to each instant, so a year of firings runs in microseconds.
 `StubJobCoordinator.refusing` exercises the "another process took this
 firing" path, which is otherwise reachable only by running two servers.

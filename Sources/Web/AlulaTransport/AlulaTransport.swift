@@ -1,0 +1,570 @@
+import AlulaWeb
+import Foundation
+import HTTPTypes
+import HummingbirdCore
+import HummingbirdTLS
+import HummingbirdWebSocket
+import Logging
+import NIOCore
+import NIOPosix
+import NIOWebSocket
+import ServiceLifecycle
+import WSCore
+
+/// The default `ServerTransport` (§5.2): wraps HummingbirdCore — a mature,
+/// versioned low-level HTTP transport — rather than hand-rolling byte-level
+/// HTTP. HTTP/1.1 parsing correctness, keep-alive, pipelining, and the
+/// WebSocket protocol machinery are commodity infrastructure (§10);
+/// Alula's differentiation is compile-time DI and the unified registration
+/// pipeline, all of which run *inside* the `dispatch` closure this struct
+/// is handed.
+///
+/// This is the ONLY place in all of Alula where the wrapped library's
+/// types appear (§5.6). Routing, middleware, `RequestContext`, and the
+/// macros are built on HTTPTypes with zero knowledge that HummingbirdCore
+/// exists — swapping it for raw NIO, an in-memory test transport, or
+/// anything else changes this one target and nothing above it.
+///
+/// The `dispatch` boundary is structured `async` (§5.5); streaming
+/// responses are written chunk-by-chunk as produced, never buffered (§6.2);
+/// `.upgrade` responses drive the 101 handshake and hand the frame stream
+/// to the handler (§6.1).
+public struct AlulaTransport: ServerTransport {
+    public typealias Configuration = AlulaTransportConfiguration
+
+    let configuration: AlulaTransportConfiguration
+    let dispatch: Dispatch
+    let logger = Logger(label: "alula.web.transport")
+
+    public init(configuration: AlulaTransportConfiguration, dispatch: Dispatch) {
+        self.configuration = configuration
+        self.dispatch = dispatch
+    }
+
+    // MARK: - Service (§5.3: suspends until shutdown)
+
+    public func run() async throws {
+        let dispatch = self.dispatch
+        let configuration = self.configuration
+        let logger = self.logger
+
+        let idleTimeout: TimeAmount? = configuration.idleTimeout.map {
+            .nanoseconds(
+                $0.components.seconds * 1_000_000_000
+                    + $0.components.attoseconds / 1_000_000_000)
+        }
+
+        let shouldUpgrade:
+            @Sendable (HTTPRequest, any Channel, Logger) async throws ->
+                ShouldUpgradeResult<WebSocketDataHandler<HTTP1WebSocketUpgradeChannel.Context>> = {
+                    (head: HTTPRequest, channel: any Channel, _: Logger) async throws
+                        -> ShouldUpgradeResult<
+                            WebSocketDataHandler<HTTP1WebSocketUpgradeChannel.Context>
+                        > in
+                    // Upgrade requests carry no body by construction (RFC 6455 §4.1).
+                    let request = Request(
+                        head: head, body: Data(), remoteAddress: Self.peerAddress(of: channel))
+
+                    // Ask the route table first. Dispatching every upgrade-shaped
+                    // request would run ordinary HTTP handlers — their writes,
+                    // their side effects — and then discard the response, since no
+                    // upgrade can be performed at a route that never offered one.
+                    // That made any GET route reachable by an unauthenticated
+                    // client willing to attach upgrade headers.
+                    guard dispatch.acceptsUpgrade(request) else {
+                        logger.debug(
+                            "websocket upgrade refused: not an upgrade route",
+                            metadata: [
+                                "path": "\(head.path ?? "/")"
+                            ])
+                        return .dontUpgrade
+                    }
+
+                    // The upgrade decision needs the *routed* answer, middleware
+                    // included, so the pipeline runs for genuine upgrade routes.
+                    let routed = await dispatch(request)
+                    guard case .upgrade(let upgrade) = routed else {
+                        // HummingbirdCore answers every refused upgrade with its
+                        // own 400 + connection close; the routed status is the
+                        // in-process truth (TestClient surfaces it) but is not
+                        // writable through this seam — see design delta 8.
+                        logger.debug(
+                            "websocket upgrade refused",
+                            metadata: [
+                                "path": "\(head.path ?? "/")",
+                                "status": "\(routed.status.code)",
+                            ])
+                        return .dontUpgrade
+                    }
+                    // Switched over `UpgradeResponse` itself, with no catch-all.
+                    // `UpgradeResponse`'s own doc promises "every transport fails
+                    // to compile" when a kind is added — and the one transport
+                    // that exists defeated it: a `case let refused` after
+                    // `.upgrade(.webSocket)` swallowed a future
+                    // `.upgrade(.webTransport)` and logged it as refused with
+                    // status 101. Now a new kind really does break this build,
+                    // which is the seam working.
+                    switch upgrade {
+                    case .webSocket(let webSocketUpgrade):
+                        return .upgrade([:]) { inbound, outbound, _ in
+                            try await Self.runUpgradedConnection(
+                                webSocketUpgrade,
+                                inbound: inbound,
+                                outbound: outbound,
+                                maxMessageBytes: configuration.maxWebSocketFrameBytes,
+                                readAhead: configuration.webSocketReadAhead,
+                                logger: logger
+                            )
+                        }
+                    }
+                }
+
+        // Built by hand rather than through `HTTPServerBuilder
+        // .http1WebSocketUpgrade`, so the header-read timeout can be added
+        // *in front of* the upgrade channel. Hummingbird's own idle handler
+        // is installed from that channel's not-upgrading completion handler,
+        // which does not run until a head has decoded — see
+        // `RequestHeaderTimeoutHandler` for why the window before that needs
+        // its own bound.
+        let plain = HTTPServerBuilder { responder in
+            let upgrade = HTTP1WebSocketUpgradeChannel(
+                responder: responder,
+                configuration: .init(
+                    http1: .init(idleTimeout: idleTimeout),
+                    ws: WebSocketServerConfiguration(
+                        maxFrameSize: configuration.maxWebSocketFrameBytes,
+                        validateUTF8: true
+                    )
+                ),
+                shouldUpgrade: shouldUpgrade
+            )
+            guard let idleTimeout else { return upgrade }
+            return HeaderTimeoutChildChannel(wrapped: upgrade, timeout: idleTimeout)
+        }
+
+        // TLS wraps whatever channel the builder produced, so the upgrade
+        // path above is unchanged by it — `wss://` is `ws://` inside TLS.
+        let builder =
+            try configuration.tls.map {
+                try HTTPServerBuilder.tls(plain, tlsConfiguration: $0.nioConfiguration())
+            } ?? plain
+
+        let server =
+            try builder
+            .buildServer(
+                configuration: ServerConfiguration(
+                    address: .hostname(configuration.host, port: configuration.port),
+                    serverName: "AlulaWeb",
+                    backlog: configuration.backlog,
+                    reuseAddress: true
+                ),
+                eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
+                logger: logger,
+                responder: { request, responseWriter, channel in
+                    try await respond(to: request, writer: responseWriter, channel: channel)
+                },
+                onServerRunning: { channel in
+                    let port = channel.localAddress?.port ?? configuration.port
+                    logger.info(
+                        "alula transport listening",
+                        metadata: [
+                            "host": "\(configuration.host)",
+                            "port": "\(port)",
+                        ])
+                    configuration.onBound?(port)
+                }
+            )
+
+        try await server.run()
+        logger.info("alula transport stopped")
+    }
+
+    // MARK: - HTTP responder
+
+    /// The §5.6 containment point: HummingbirdCore's request in, Alula's
+    /// `dispatch` in the middle, HummingbirdCore's response writer out.
+    private func respond(
+        to request: HummingbirdCore.Request,
+        writer: consuming ResponseWriter,
+        channel: any Channel
+    ) async throws {
+        let isHeadRequest = request.head.method == .head
+        let remoteAddress = Self.peerAddress(of: channel)
+
+        // Expect: 100-continue — answer the interim response before the
+        // client will send the body.
+        if request.headers[.expect]?.lowercased() == "100-continue" {
+            try await writer.writeInformationalHead(HTTPResponse(status: .continue))
+        }
+
+        let response: AlulaWeb.Response
+        // The route table decides how this body is delivered — asked before
+        // any of it is read, the same shape as the upgrade check.
+        switch dispatch.bodyMode(Request(head: request.head)) {
+        case .streaming(let routeCap):
+            response = await Self.dispatchStreaming(
+                request: request,
+                dispatch: dispatch,
+                byteCap: routeCap ?? configuration.maxRequestBodyBytes,
+                remoteAddress: remoteAddress)
+        case .buffered(let routeCap):
+            do {
+                var collected = try await request.body.collect(
+                    upTo: routeCap ?? configuration.maxRequestBodyBytes)
+                let body = collected.readData(length: collected.readableBytes) ?? Data()
+                response = await dispatch(
+                    Request(head: request.head, body: body, remoteAddress: remoteAddress))
+            } catch is NIOTooManyBytesError {
+                // Bounded before dispatch ever runs. HummingbirdCore drains
+                // the remainder; `connection: close` hints the client to stop.
+                let problem = AlulaWeb.Response.problem(
+                    status: .contentTooLarge, message: "Content Too Large"
+                )
+                var head = HTTPResponse(status: problem.status)
+                head.headerFields = problem.headers
+                head.headerFields[.connection] = "close"
+                head.headerFields[.contentLength] = "\(problem.bodyData?.count ?? 0)"
+                try await writer.write(
+                    response: head,
+                    body: .init(byteBuffer: ByteBuffer(bytes: problem.bodyData ?? Data()))
+                )
+                return
+            }
+        }
+
+        switch response {
+        case .fixed(let status, let headers, let bodyData):
+            var head = HTTPResponse(status: status)
+            head.headerFields = headers
+            if Self.statusAllowsBody(status) {
+                head.headerFields[.contentLength] = "\(bodyData.count)"
+            }
+            if isHeadRequest || bodyData.isEmpty || !Self.statusAllowsBody(status) {
+                // Head (and end) only — correct for HEAD, 204, and empty bodies.
+                try await writer.writeResponse(head)
+            } else {
+                try await writer.write(
+                    response: head,
+                    body: .init(byteBuffer: ByteBuffer(bytes: bodyData))
+                )
+            }
+
+        case .file(let file):
+            var head = HTTPResponse(status: file.status)
+            head.headerFields = file.headers
+            // serveContent always sets Content-Length; this is the safety
+            // net for a hand-built FileResponse, because a sized body with
+            // no declared length silently downgrades to chunked coding —
+            // losing exactly the property .file exists to provide.
+            if Self.statusAllowsBody(file.status), head.headerFields[.contentLength] == nil {
+                head.headerFields[.contentLength] = "\(file.range.count)"
+            }
+            if isHeadRequest || file.range.isEmpty || !Self.statusAllowsBody(file.status) {
+                // HEAD carries the full header set — Content-Length and
+                // Content-Range included — with no read ever issued against
+                // the source: the descriptor just closes unread.
+                try await writer.writeResponse(head)
+            } else {
+                var bodyWriter = try await writer.writeHead(head)
+                // A mid-stream throw (source truncated under us, disk error)
+                // propagates out and tears the connection down with the body
+                // short of its declared length — the client sees a broken
+                // transfer, never a silently complete-looking wrong one.
+                for try await chunk in file.source.chunks(
+                    in: file.range, chunkSize: file.chunkSize)
+                {
+                    guard !chunk.isEmpty else { continue }
+                    try await bodyWriter.write(ByteBuffer(bytes: chunk))
+                }
+                try await bodyWriter.finish(nil)
+            }
+
+        case .streaming(let status, let headers, let bodyStream):
+            var head = HTTPResponse(status: status)
+            head.headerFields = headers
+            if isHeadRequest {
+                try await writer.writeResponse(head)
+                return
+            }
+            // No content-length → HummingbirdCore emits chunked transfer
+            // coding and writes each chunk as produced, never buffering
+            // (§6.2). A failed write (client gone) throws out of this loop,
+            // dropping the stream — which cancels the producer.
+            var bodyWriter = try await writer.writeHead(head)
+            for await chunk in bodyStream {
+                guard !chunk.isEmpty else { continue }
+                try await bodyWriter.write(ByteBuffer(bytes: chunk))
+            }
+            try await bodyWriter.finish(nil)
+
+        case .upgrade:
+            // An upgrade route matched a request that never asked to
+            // upgrade (no WebSocket handshake headers).
+            let problem = AlulaWeb.Response.problem(
+                status: .upgradeRequired, message: "Upgrade Required"
+            )
+            var head = HTTPResponse(status: .upgradeRequired)
+            head.headerFields = problem.headers
+            head.headerFields[.upgrade] = "websocket"
+            head.headerFields[.contentLength] = "\(problem.bodyData?.count ?? 0)"
+            try await writer.write(
+                response: head,
+                body: .init(byteBuffer: ByteBuffer(bytes: problem.bodyData ?? Data()))
+            )
+        }
+    }
+
+    /// 1xx/204/304 responses carry neither body nor content-length.
+    private static func statusAllowsBody(_ status: HTTPResponse.Status) -> Bool {
+        switch status.code {
+        case 100..<200, 204, 304: return false
+        default: return true
+        }
+    }
+
+    /// The TCP peer NIO reports for this connection, as `AlulaWeb` sees
+    /// it. `nil` for anything that is not `.v4`/`.v6` — a Unix domain
+    /// socket has no IP to report, and this is the one place in Alula
+    /// that touches `NIOCore.SocketAddress` (§5.6): everything above this
+    /// target works with ``AlulaWeb/PeerAddress`` instead.
+    private static func peerAddress(of channel: any Channel) -> AlulaWeb.PeerAddress? {
+        guard let socketAddress = channel.remoteAddress, let host = socketAddress.ipAddress else {
+            return nil
+        }
+        return AlulaWeb.PeerAddress(host: host, port: socketAddress.port)
+    }
+
+    // MARK: - WebSocket bridge (§6.1)
+
+    /// Bridges WSCore's (inbound, outbound) pair to AlulaWeb's
+    /// `UpgradedConnection` and runs the routed handler. Frame-level
+    /// protocol work — masking, fragmentation reassembly, ping auto-reply,
+    /// UTF-8 validation, the close handshake — is HummingbirdCore's (§6.1:
+    /// "leaving frame-level protocol handling to the transport").
+    /// Streams the request body through to the handler as it arrives.
+    ///
+    /// **Pull-based on purpose.** The obvious shape — a task feeding an
+    /// `AsyncThrowingStream` — is wrong here, because that stream's buffer
+    /// is *unbounded*: the feeder would race ahead reading a multi-gigabyte
+    /// upload entirely into memory while the API claimed to stream it,
+    /// which is precisely the property streaming exists to provide. Pulling
+    /// one chunk per consumer demand instead makes backpressure flow from
+    /// the handler through to the socket, so a slow handler slows the
+    /// client rather than filling the server's RAM.
+    static func dispatchStreaming(
+        request: HummingbirdCore.Request,
+        dispatch: Dispatch,
+        byteCap: Int,
+        remoteAddress: AlulaWeb.PeerAddress? = nil
+    ) async -> AlulaWeb.Response {
+        let contentLength = request.headers[.contentLength].flatMap { Int64($0) }
+        let puller = BodyPuller(request.body, byteCap: byteCap)
+        var streamed = AlulaWeb.Request(head: request.head, remoteAddress: remoteAddress)
+        streamed.bodyStream = RequestBodyStream(
+            expectedBytes: contentLength,
+            chunks: AsyncThrowingStream { try await puller.next() })
+        return await dispatch(streamed)
+    }
+
+    /// Drives one upgraded connection: a credit-gated pump on one side, the
+    /// handler on the other.
+    ///
+    /// **The pump only reads when the handler has asked for more.** It used
+    /// to read as fast as the peer sent, into an `AsyncStream` built with
+    /// `makeStream()` — whose buffer is unbounded. `maxMessageBytes` caps each
+    /// message and says nothing about how many are queued, so a peer that
+    /// sent faster than the handler worked grew this process's memory with no
+    /// limit at all. The comment on `dispatchStreaming`, thirty lines up, had
+    /// been making exactly this argument about request bodies the whole time.
+    ///
+    /// `readAhead` credits are issued up front and one more each time the
+    /// handler takes a frame, so at most that many messages are ever
+    /// outstanding: the bound is `readAhead × maxMessageBytes` per connection
+    /// rather than "whatever arrives". One credit is the default, which keeps
+    /// the pump parked in `nextMessage` — reading the *next* message while
+    /// the handler works on the current one — so a peer's close is still
+    /// noticed promptly whenever the handler is keeping up. When it is not
+    /// keeping up, the socket goes undrained and TCP slows the peer down,
+    /// which is the entire point.
+    static func runUpgradedConnection(
+        _ upgrade: WebSocketUpgrade,
+        inbound: WebSocketInboundStream,
+        outbound: WebSocketOutboundWriter,
+        maxMessageBytes: Int,
+        readAhead: Int,
+        logger: Logger
+    ) async throws {
+        let (frames, continuation) = AsyncStream<AlulaWeb.WebSocketFrame>.makeStream()
+        let (credits, creditContinuation) = AsyncStream<Void>.makeStream()
+        for _ in 0..<max(1, readAhead) { creditContinuation.yield(()) }
+        let handoff = InboundFrameHandoff(
+            frames.makeAsyncIterator(), credits: creditContinuation)
+
+        let connection = WebSocketConnection(
+            frames: WebSocketFrames(pulling: { await handoff.next() }),
+            send: { frame in
+                do {
+                    switch frame {
+                    case .text(let text):
+                        try await outbound.write(.text(text))
+                    case .binary(let data):
+                        try await outbound.write(.binary(ByteBuffer(bytes: data)))
+                    case .ping(let data):
+                        try await outbound.write(
+                            .custom(.init(fin: true, opcode: .ping, data: ByteBuffer(bytes: data)))
+                        )
+                    case .pong(let data):
+                        try await outbound.write(
+                            .custom(.init(fin: true, opcode: .pong, data: ByteBuffer(bytes: data)))
+                        )
+                    case .close(let code, let reason):
+                        try await outbound.close(
+                            .init(codeNumber: Int(code.rawValue)), reason: reason)
+                    }
+                } catch is CancellationError {
+                    throw WebSocketError.connectionClosed
+                } catch let error as NIOCore.ChannelError where error == .ioOnClosedChannel {
+                    throw WebSocketError.connectionClosed
+                }
+            },
+            close: { code, reason in
+                try? await outbound.close(.init(codeNumber: Int(code.rawValue)), reason: reason)
+            }
+        )
+
+        await withTaskGroup(of: Void.self) { group in
+            // Pump: complete messages (reassembled, validated) → AlulaWeb
+            // frames. The stream finishing is the definitive close signal; a
+            // synthesized `.close` frame precedes it so handlers written
+            // against the in-memory transport behave identically here.
+            group.addTask {
+                var iterator = inbound.makeAsyncIterator()
+                // `try?` used to swallow *why* the stream ended, so a peer
+                // closing, an oversized message and a protocol error were all
+                // indistinguishable to the handler: each synthesized
+                // `.close(code: .noStatus, reason: "")`. The in-memory
+                // transport delivers the test's real close code verbatim, so
+                // a handler branching on the code passed its tests and did
+                // something else in production — the opposite of "handlers
+                // behave identically on the in-memory transport and the wire".
+                //
+                // The peer's own close code is still not recoverable here:
+                // WSCore consumes the close frame in its state machine and
+                // this stream simply ends, so a clean end honestly reports
+                // "no status". What changed is that an *abnormal* end no
+                // longer pretends to be a clean one.
+                var creditIterator = credits.makeAsyncIterator()
+                do {
+                    // One read per credit. Awaiting here rather than in
+                    // `nextMessage` is what leaves bytes in the socket buffer
+                    // for the kernel to push back on.
+                    while await creditIterator.next() != nil {
+                        guard
+                            let message = try await iterator.nextMessage(
+                                maxSize: maxMessageBytes)
+                        else {
+                            continuation.yield(.close(code: .noStatus, reason: ""))
+                            break
+                        }
+                        switch message {
+                        case .text(let text):
+                            continuation.yield(.text(text))
+                        case .binary(let buffer):
+                            continuation.yield(.binary(Data(buffer: buffer)))
+                        }
+                    }
+                } catch is CancellationError {
+                    continuation.yield(.close(code: .goingAway, reason: "server shutting down"))
+                } catch {
+                    // WSCore's own error type is `package`, so the reason
+                    // travels as text rather than as a matched case — still
+                    // "message too large" or "protocol error" where it used
+                    // to be silence.
+                    logger.debug(
+                        "websocket inbound stream ended abnormally",
+                        metadata: ["error": "\(error)"])
+                    continuation.yield(.close(code: .protocolError, reason: "\(error)"))
+                }
+                continuation.finish()
+            }
+
+            // Handler: owns the connection for its lifetime (§6.1). When it
+            // returns, HummingbirdCore performs the close handshake.
+            group.addTask {
+                do {
+                    try await upgrade.run(connection)
+                } catch is CancellationError {
+                    // The other half of the group ended first; ordinary.
+                } catch {
+                    // Discarded with no log at all, so a handler that crashed
+                    // was invisible even at debug level — the connection just
+                    // closed and nothing anywhere said why.
+                    logger.debug(
+                        "websocket handler threw", metadata: ["error": "\(error)"])
+                }
+            }
+
+            // Either side finishing ends the session: a returned handler has
+            // said everything it will; a finished pump means the peer closed
+            // and the handler's frame iteration has ended.
+            await group.next()
+            group.cancelAll()
+            // Releases a pump parked on a credit that is never coming.
+            creditContinuation.finish()
+        }
+    }
+
+}
+
+/// Hands frames to the handler and pays the pump a credit for each one taken.
+///
+/// Outside any actor for the reason `BodyPuller` is: `next()` on a stream
+/// iterator is `mutating` and `async`. Access is serialized by
+/// ``WebSocketFrames``' single-consumer contract, which is what the
+/// `@unchecked` attests.
+final class InboundFrameHandoff: @unchecked Sendable {
+    private var iterator: AsyncStream<AlulaWeb.WebSocketFrame>.AsyncIterator
+    private let credits: AsyncStream<Void>.Continuation
+
+    init(
+        _ iterator: AsyncStream<AlulaWeb.WebSocketFrame>.AsyncIterator,
+        credits: AsyncStream<Void>.Continuation
+    ) {
+        self.iterator = iterator
+        self.credits = credits
+    }
+
+    func next() async -> AlulaWeb.WebSocketFrame? {
+        let frame = await iterator.next()
+        // After the take, not before: the pump then fetches the next message
+        // while the handler is still working on this one.
+        if frame != nil { credits.yield(()) }
+        return frame
+    }
+}
+
+/// One chunk of the request body per consumer demand, with the route's
+/// cumulative cap enforced as bytes pass. Holds the transport's body
+/// iterator outside any actor because `next()` is mutating and async;
+/// access is serialized by ``RequestBodyStream``'s single-consumer
+/// contract, which is what the `@unchecked` attests.
+final class BodyPuller: @unchecked Sendable {
+    private var iterator: HummingbirdCore.RequestBody.AsyncIterator
+    private let byteCap: Int
+    private var delivered = 0
+
+    init(_ body: HummingbirdCore.RequestBody, byteCap: Int) {
+        self.iterator = body.makeAsyncIterator()
+        self.byteCap = byteCap
+    }
+
+    func next() async throws -> Data? {
+        guard var buffer = try await iterator.next() else { return nil }
+        let data = buffer.readData(length: buffer.readableBytes) ?? Data()
+        delivered += data.count
+        guard delivered <= byteCap else {
+            throw BodyStreamLimitError(limit: byteCap)
+        }
+        return data
+    }
+}

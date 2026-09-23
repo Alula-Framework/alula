@@ -1,0 +1,207 @@
+import AlulaChannelsProtocol
+import AlulaPubSub
+import Logging
+import struct Foundation.UUID
+import struct Foundation.Data
+import class Foundation.JSONDecoder
+import class Foundation.JSONEncoder
+
+/// What one channel broadcast looks like inside a PubSub `Message` payload:
+/// the envelope minus what PubSub already carries (`topic` is the message's
+/// own topic) and what fan-out never has (`ref` — server pushes are
+/// uncorrelated).
+///
+/// Public because it *is* the seam contract: anything that publishes to a
+/// topic in this shape reaches every joined client — a channel handler via
+/// `ChannelBroadcaster`, a background job, or (later) Alula Presence and
+/// Alula Live.
+public struct BroadcastFrame: Sendable, Equatable, Codable {
+    public let event: String
+    public let payload: JSONValue
+
+    public init(event: String, payload: JSONValue) {
+        self.event = event
+        self.payload = payload
+    }
+
+    /// Decodes a PubSub message's payload; nil if the payload is not a
+    /// broadcast frame (foreign publisher on a shared topic — dropped, with
+    /// a log line, by the subscription pump).
+    public init?(message: Message) {
+        guard let frame = try? WireCoders.decoder.decode(BroadcastFrame.self, from: message.payload) else {
+            return nil
+        }
+        self = frame
+    }
+}
+
+/// The one way Channels hands fan-out to PubSub: encode `(event,
+/// payload)` into a `Message` and publish. Channels never implements
+/// fan-out itself — whether the other subscriber is on this node or another
+/// machine is PubSub's seam (step 3→4), invisible here.
+///
+/// Owned by `AlulaChannelsModule` and handed to each channel as it is
+/// created, in the `ChannelContext` — a channel closes over it rather than
+/// looking it up:
+///
+///     ChannelRegistration("room:*") { channel in
+///         RoomChannel(broadcaster: channel.broadcaster)
+///     }
+public struct ChannelBroadcaster: Sendable {
+    /// Metadata key carrying the originating socket's `id` for
+    /// `broadcast(..., excluding:)`. Namespaced like PubSub's own reserved
+    /// keys; application metadata must not use it.
+    public static let originMetadataKey = "alula.channels.origin"
+
+    /// Metadata key carrying the fully-encoded wire frame for this
+    /// broadcast — internal, deliberately not `public`.
+    ///
+    /// Every joined socket's final `Envelope` for a given broadcast is
+    /// byte-identical (same topic, same event, same payload, `ref: nil`).
+    /// `SocketSession.pump` used to rebuild and re-encode that Envelope once
+    /// per *subscriber*; at 200 subscribers that is 200 redundant decodes of
+    /// the same bytes plus 200 redundant re-encodes of the same result. This
+    /// key lets `publish` do that work exactly once, here, and hand every
+    /// pump the same `String` by reference.
+    ///
+    /// Purely additive: `data` below is still the real `BroadcastFrame`
+    /// payload, unchanged, so a publisher that isn't `ChannelBroadcaster`
+    /// (Presence hand-builds one directly) produces a `Message` with no such
+    /// key, and `pump` falls back to decoding it exactly as before. Nothing
+    /// depends on this key being present.
+    /// Named under ``ClusteredPubSub/localOnlyMetadataPrefix`` so the cluster
+    /// hop drops it: the frame is keyed to a process token no other node can
+    /// match, so sending it meant paying for the payload twice on every
+    /// clustered broadcast.
+    internal static let precomputedFrameMetadataKey = "alula.local.channels.frame"
+
+    /// Names the broadcaster instance that stamped a precomputed frame.
+    ///
+    /// Without it the key above is an unvalidated injection seam: any
+    /// in-process publisher that stamped `alula.local.channels.frame` on a
+    /// `Message` got that string forwarded verbatim to every joined socket,
+    /// *bypassing the reserved-event guard and valid-envelope framing* — so
+    /// app code that misused a reserved key could push a `alula:join` to
+    /// every subscriber. The token is per-instance and never leaves the
+    /// process, so only frames this broadcaster actually built are trusted;
+    /// anything else falls back to the decode path, which validates.
+    ///
+    /// The same shape `ClusteredPubSub` uses for echo suppression, and for
+    /// the same reason: an operator-supplied or guessable name is not a
+    /// capability.
+    internal static let frameTokenMetadataKey = "alula.local.channels.frame-token"
+
+    /// The value under ``frameTokenMetadataKey``.
+    ///
+    /// Process-wide rather than per-instance: the seam being closed is app
+    /// code stamping a reserved key, and every broadcaster in this process is
+    /// equally the framework. A per-instance token would additionally have to
+    /// be threaded down to every `SocketSession`, for no threat it stops.
+    /// It cannot be *used* on another node: a per-process UUID never matches
+    /// there, so a clustered frame takes the validating decode path, which is
+    /// correct.
+    ///
+    /// It no longer crosses the wire. Both this key and the frame it
+    /// validates live under ``ClusteredPubSub/localOnlyMetadataPrefix``, which
+    /// `ClusteredPubSub` strips before broadcasting, so a clustered publish
+    /// carries the payload once instead of twice — it was measured at 687
+    /// bytes against the 241 it needed, 2.85×. An earlier version of this
+    /// comment claimed it was never serialized; it was, for as long as the
+    /// keys sat outside that prefix.
+    internal static let frameToken = UUID().uuidString
+
+    private let pubsub: any PubSub
+    private let logger: Logger
+
+    public init(pubsub: any PubSub, logger: Logger = Logger(label: "alula.channels.broadcast")) {
+        self.pubsub = pubsub
+        self.logger = logger
+    }
+
+    /// Fan `event` out to every subscriber of `topic` — all joined sockets
+    /// on every node (PubSub), including the sender's, if joined.
+    public func broadcast(topic: String, event: String, payload: JSONValue = .object([:])) async {
+        await publish(topic: topic, event: event, payload: payload, metadata: [:])
+    }
+
+    /// Fan out to every subscriber *except* `socket` — the "tell everyone
+    /// else" shape a chat message wants when the sender already rendered
+    /// its own message optimistically.
+    public func broadcast(
+        topic: String,
+        event: String,
+        payload: JSONValue = .object([:]),
+        excluding socket: Socket
+    ) async {
+        await publish(
+            topic: topic,
+            event: event,
+            payload: payload,
+            metadata: [Self.originMetadataKey: socket.id]
+        )
+    }
+
+    /// The metadata that puts a framework-built **reserved** frame onto the
+    /// same encode-once path `broadcast` uses.
+    ///
+    /// `publish` below refuses `alula:`-namespaced events, because an
+    /// application must not be able to forge a lifecycle event. That left
+    /// the framework's own reserved publishers — Presence, which hand-builds
+    /// a `BroadcastFrame` and publishes it to the local bus — with no way
+    /// onto the fast path at all, so every presence diff was decoded and
+    /// re-encoded once per recipient socket. At 500 members that is 500
+    /// decodes and 500 re-encodes of bytes that are identical for everyone.
+    ///
+    /// This is the other half of the namespace: `publish` takes everything
+    /// that is *not* reserved, this takes only what *is*. Between them the
+    /// guard is unchanged — application code still cannot reach either the
+    /// reserved namespace or the token.
+    ///
+    /// Returns empty metadata if the event is not reserved or the envelope
+    /// will not encode; `SocketSession.pump` then takes the validating
+    /// decode path, exactly as before.
+    @_spi(AlulaInternal)
+    public static func reservedFrameMetadata(
+        topic: String, event: String, payload: JSONValue
+    ) -> [String: String] {
+        guard event.hasPrefix(ReservedEvent.prefix),
+            let text = try? Envelope(ref: nil, topic: topic, event: event, payload: payload)
+                .encodedText()
+        else { return [:] }
+        return [precomputedFrameMetadataKey: text, frameTokenMetadataKey: frameToken]
+    }
+
+    private func publish(topic: String, event: String, payload: JSONValue, metadata: [String: String]) async {
+        // Dropped and logged rather than asserted: a `precondition` here took
+        // the whole process down — every connected socket on this node —
+        // because one broadcast used a reserved name. See `Socket.push` for
+        // how a client-derived name reaches this.
+        guard !event.hasPrefix(ReservedEvent.prefix) else {
+            logger.error(
+                "refusing to broadcast an event in the reserved alula: namespace",
+                metadata: ["topic": "\(topic)", "event": "\(event)"]
+            )
+            return
+        }
+        let frame = BroadcastFrame(event: event, payload: payload)
+        // A two-field Codable struct of JSON-representable values cannot
+        // fail to encode.
+        guard let data = try? WireCoders.encoder.encode(frame) else { return }
+
+        // Precompute the one wire frame every local (and, once serialized
+        // for a clustered adapter, every remote) subscriber will send
+        // byte-for-byte identical — `ref` is always nil on a broadcast, and
+        // `topic` is this call's topic for every subscriber of it. One
+        // encode here replaces N decodes + N re-encodes at delivery.
+        var metadata = metadata
+        if let text = try? Envelope(ref: nil, topic: topic, event: event, payload: payload).encodedText() {
+            metadata[Self.precomputedFrameMetadataKey] = text
+            metadata[Self.frameTokenMetadataKey] = Self.frameToken
+        }
+        // Published under the channel bus prefix, not on the application's
+        // own topic string — see `ChannelProtocol.busTopic(_:)` for the
+        // collision that shared namespace caused in both directions.
+        await pubsub.publish(
+            Message(topic: ChannelProtocol.busTopic(topic), payload: data, metadata: metadata))
+    }
+}

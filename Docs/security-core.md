@@ -1,9 +1,9 @@
-# Flight Security Core
+# Alula Security Core
 
-Federated authentication for Flight, per
-Flight Web.
+Federated authentication for Alula, per
+Alula Web.
 
-Flight Security Core turns an externally issued identity token into a
+Alula Security Core turns an externally issued identity token into a
 `Principal`, makes that principal available on the request, and provides the
 enforcement point for authentication — plus the *seam* (not the engine) for
 authorization. Signing people in — against the application's own accounts
@@ -12,7 +12,7 @@ Account lifecycle (registration, recovery) is not built yet.
 
 What this package owns is narrow and standard: **validate a token**. Even
 that delegates its cryptographic core to [JWTKit](https://github.com/vapor/jwt-kit)
-(SSWG Graduated, SwiftCrypto-backed); Flight owns only the orchestration —
+(SSWG Graduated, SwiftCrypto-backed); Alula owns only the orchestration —
 JWKS fetching/rotation, claim policy, and error hygiene.
 
 ## Adding this module
@@ -20,30 +20,30 @@ JWKS fetching/rotation, claim policy, and error hygiene.
 | | |
 |---|---|
 | **Trait** | `Security` |
-| **Products** | `FlightSecurityCore` |
-| **Module** | `FlightOIDCModule.self` |
-| **Pulls in** | `FlightSecurityModule` |
+| **Products** | `AlulaSecurityCore` |
+| **Module** | `AlulaOIDCModule.self` |
+| **Pulls in** | `AlulaSecurityModule` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Security"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Security"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
-            .product(name: "FlightSecurityCore", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
+            .product(name: "AlulaSecurityCore", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -51,30 +51,30 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightCore
-import FlightTransport
-import FlightWeb
-import FlightSecurityCore
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
+import AlulaSecurityCore
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [
-                FlightWebModule<FlightTransport>.self,
-                FlightOIDCModule.self,
+                AlulaWebModule<AlulaTransport>.self,
+                AlulaOIDCModule.self,
                 AppModule.self,
             ],
-            composedBy: flightComposeModules)
+            composedBy: alulaComposeModules)
     }
 }
 ```
 
 `Security` enables `Web` — naming it is enough; you do not name both.
 
-`FlightOIDCModule` is the batteries-included path: it reads `security.oidc.*`
-and builds a validator. To bring your own, list `FlightSecurityModule` instead
+`AlulaOIDCModule` is the batteries-included path: it reads `security.oidc.*`
+and builds a validator. To bring your own, list `AlulaSecurityModule` instead
 and hand it a `TokenValidator`.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -84,27 +84,27 @@ dependency DAG. A module you write can declare framework modules in its own
 ## Quick start
 
 ```swift
-import FlightCore
-import FlightSecurityCore
-import FlightWeb
+import AlulaCore
+import AlulaSecurityCore
+import AlulaWeb
 
-await Flight.run(
+await Alula.run(
     configuration: try Configuration.load(),
     modules: [
-        FlightWebModule<FlightTransport>.self,
-        FlightOIDCModule.self,
+        AlulaWebModule<AlulaTransport>.self,
+        AlulaOIDCModule.self,
         AppModule.self,
     ],
-    composedBy: flightComposeModules
+    composedBy: alulaComposeModules
 )
 ```
 
 ```yaml
-# flight.yaml
+# alula.yaml
 security:
   oidc:
     issuer: "https://example.descope.com"   # or Keycloak realm URL, Auth0 domain, …
-    audience: "my-flight-app"
+    audience: "my-alula-app"
 ```
 
 That's the whole provider integration: OIDC-compliant IdPs are
@@ -157,8 +157,8 @@ Authentication and enforcement are separate concerns: `Authentication`
 continues whether or not a token was presented or valid, so public routes
 stay public. Reject where you choose to.
 
-`FlightSecurityModule` puts `Authentication` in the default lane and declares
-two more (Flight Web §"Middleware lanes"), so enforcement is a lane a
+`AlulaSecurityModule` puts `Authentication` in the default lane and declares
+two more (Alula Web §"Middleware lanes"), so enforcement is a lane a
 controller or route names:
 
 ```swift
@@ -217,7 +217,7 @@ principal can only ever reject. The full semantics are in `Docs/web.md`.
 
 ### Signing in with a session
 
-A browser has no bearer token; it has a cookie. With `FlightSessionsModule`
+A browser has no bearer token; it has a cookie. With `AlulaSessionsModule`
 listed, the credential check happens once — a password form, an OIDC
 callback, a magic link, whatever the application does — and the resulting
 `Principal` is stored in the session:
@@ -250,7 +250,7 @@ the session; `destroy()` is the stronger form. What is stored is the stable
 identity — subject, issuer, roles, scopes — and not the token's `claims`,
 which describe a token nobody has any more.
 
-**Nothing has to be ordered by hand.** `FlightSecurityModule` takes the
+**Nothing has to be ordered by hand.** `AlulaSecurityModule` takes the
 session runtime by type in composition, and when it has one, every lane it
 declares runs `Sessions` ahead of `Authentication`. `Sessions` is idempotent,
 so the default lane carrying it twice — once from each module — costs one
@@ -260,7 +260,7 @@ conforms to `SessionReading`, and dispatch checks every route's chain.
 
 `RequireAuthentication` still answers a bare 401 with a `Bearer` challenge.
 A browser application wants that to be a redirect to the login page, which
-is what the `ErrorMapper` that reads the request is for (Flight Web
+is what the `ErrorMapper` that reads the request is for (Alula Web
 §"Redirects").
 
 ### What a role cannot express, the handler still does
@@ -299,7 +299,7 @@ as generic 401/403.
 
 ## Configuration reference
 
-All keys live under `security.oidc.` (env-var form `FLIGHT_SECURITY_OIDC_*`):
+All keys live under `security.oidc.` (env-var form `ALULA_SECURITY_OIDC_*`):
 
 | key                     | required | default | meaning |
 |-------------------------|----------|---------|---------|
@@ -316,8 +316,8 @@ All keys live under `security.oidc.` (env-var form `FLIGHT_SECURITY_OIDC_*`):
 | `allowed-algorithms`    | no       | every asymmetric algorithm JWTKit verifies | Comma-separated `alg` allowlist — see *Algorithms* below |
 
 These keys shipped snake_case (`jwks_url`), following OIDC's own spec
-vocabulary, while every other namespace in Flight is kebab-case
-(`flight.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
+vocabulary, while every other namespace in Alula is kebab-case
+(`alula.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
 **Both spellings are read.** Kebab-case is canonical and wins if both are
 set; the snake_case spelling keeps working. The inconsistency was invisible
 until someone wrote `jwks-url` from habit and got the default instead of
@@ -412,14 +412,14 @@ For every request bearing `Authorization: Bearer <jwt>`:
 
 ## Choosing how tokens are validated
 
-`FlightSecurityModule` wires authentication — the request-scoped principal and
+`AlulaSecurityModule` wires authentication — the request-scoped principal and
 the `Authentication` middleware — but provides **no validator**. How tokens
 are validated is chosen by listing a module:
 
-- **`FlightOIDCModule`** for OIDC/JWT. It builds `OIDCTokenValidator` from
+- **`AlulaOIDCModule`** for OIDC/JWT. It builds `OIDCTokenValidator` from
   `security.oidc.*` in its own initializer and owns the JWKS maintenance
   service, which takes that validator directly. It depends on
-  `FlightSecurityModule`, so listing it alone is enough. Because the validator
+  `AlulaSecurityModule`, so listing it alone is enough. Because the validator
   is built when the module is, bad `security.oidc.*` configuration fails at
   composition — startup, not the first request.
 - **A module of your own** that provides `(any TokenValidator)`, for API
@@ -428,22 +428,22 @@ are validated is chosen by listing a module:
   session* above.)
 
 ```swift
-struct MyValidatorModule: FlightModule {
+struct MyValidatorModule: AlulaModule {
     // Provided as a value; the composition root matches it to
-    // FlightSecurityModule's `validator:` parameter by type.
+    // AlulaSecurityModule's `validator:` parameter by type.
     let tokenValidator: any TokenValidator = MyValidator()
 }
 ```
 
-List it alongside `FlightSecurityModule` — **order does not matter**, and no
-`security.oidc.*` configuration is required when `FlightOIDCModule` isn't
+List it alongside `AlulaSecurityModule` — **order does not matter**, and no
+`security.oidc.*` configuration is required when `AlulaOIDCModule` isn't
 listed.
 
 With neither, there is no `(any TokenValidator)` to supply, and
-`FlightSecurityModule` cannot be built — its initializer requires one, so
+`AlulaSecurityModule` cannot be built — its initializer requires one, so
 composition fails at startup, naming the type.
 
-> **Changed.** Previously `FlightSecurityModule` registered OIDC *unless* it
+> **Changed.** Previously `AlulaSecurityModule` registered OIDC *unless* it
 > found that you had already registered your own, by scanning the container.
 > That required your module to be configured **before** it — register after,
 > and your validator silently lost — and an internal flag decided whether the
@@ -461,7 +461,7 @@ mechanism keeps the intended semantics with the real APIs:
   authentication middleware into the copy it passes downstream and read
   through `context.principal`. It was a `.scoped` `PrincipalHolder`
   component until the composition migration; the container was inverting a
-  dependency (`RequestContext` is Flight Web's, `Principal` is this
+  dependency (`RequestContext` is Alula Web's, `Principal` is this
   package's) that a seam protocol expresses directly.
 - `Principal.current` still exists as a task-local; handlers opt in with
   `context.withPrincipal { ... }`, which binds it around service calls. The
@@ -469,7 +469,7 @@ mechanism keeps the intended semantics with the real APIs:
 - `context.request.bearerToken` is provided by this package (RFC 6750
   parsing); `.respond(.unauthorized)` from the sketch is spelled
   `.respond(.problem(status: .unauthorized, message: "Unauthorized"))` with
-  the real Flight Web response API.
+  the real Alula Web response API.
 
 **That constraint is gone.** `Middleware.handle(_:next:)` is layered:
 `compose(_:around:)` folds the chain right-to-left, so each layer calls
@@ -496,7 +496,7 @@ let signedIn = hasher.verify(attempt, against: stored)  // never throws: no matc
 `Argon2idHashing` wraps the actual Argon2 reference implementation — the C
 source the algorithm's own designers publish and that RFC 9106 is built
 from, not a Swift reimplementation — the same posture as delegating JWT
-verification to JWTKit. Vendored into Flight's own tree rather than an
+verification to JWTKit. Vendored into Alula's own tree rather than an
 external package dependency (`Sources/Security/CArgon2`, six files, copied
 verbatim); `needsRehash` says when a stored hash was made under
 weaker parameters than the app is configured with now, so raising the cost
@@ -534,14 +534,14 @@ a cryptographic one — see D37 in `DECISIONS.md`.
 
 ## Development
 
-Flight Security Core is a target of the `flight` package, not a package of
+Alula Security Core is a target of the `alula` package, not a package of
 its own, and its dependencies are gated behind the `Security` trait:
 
 ```sh
 swift build --enable-all-traits
-swift test  --enable-all-traits --filter FlightSecurityCoreTests
+swift test  --enable-all-traits --filter AlulaSecurityCoreTests
 # hermetic: in-memory JWKS/HTTP fakes, injected clocks — no network, no clock skew
 ```
 
-Depends on `FlightCore` and `FlightWeb`, plus JWTKit and AsyncHTTPClient
+Depends on `AlulaCore` and `AlulaWeb`, plus JWTKit and AsyncHTTPClient
 (both SSWG).

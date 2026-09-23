@@ -1,0 +1,128 @@
+import AlulaActuator
+import AlulaCore
+import AlulaWeb
+import AlulaWebTesting
+import Testing
+
+/// The snapshot is a plain assembly of what Core already tracks —
+/// no HTTP round-trip required to test it.
+@Suite("ActuatorSnapshot assembly")
+struct SnapshotTests {
+
+    @Test("snapshot carries every registered component with its metadata")
+    func snapshotCarriesComponents() throws {
+        // The components the build scanned for the app, as the composition
+        // root would hand them over.
+        let snapshot = ActuatorSnapshot(
+            environment: .test, modules: [], components: SampleAppModule.components)
+
+        #expect(snapshot.environment == .test)
+
+        let service = try #require(snapshot.components.first {
+            $0.typeName == "AlulaActuatorTests.SampleService"
+        })
+        #expect(service.stereotype == .service)
+
+        let repository = try #require(snapshot.components.first {
+            $0.typeName == "AlulaActuatorTests.SampleRepository"
+        })
+        #expect(repository.stereotype == .repository)
+
+        // The dashboard groups by stereotype and lists Controllers first
+        // (`ModuleHealth+Actuator.swift`'s ordering), which only works if the
+        // @Controller macro tags them. It did not: it omitted `stereotype:`
+        // entirely, so every application controller defaulted to .component
+        // and the Controllers section could only ever show Actuator's own —
+        // the one controller registered by hand with the argument passed.
+        let controller = try #require(snapshot.components.first {
+            $0.typeName == "AlulaActuatorTests.SampleController"
+        })
+        #expect(controller.stereotype == .controller)
+
+        // Two registrations of one type stay two rows. They used to be told
+        // apart by their qualifiers; 0.20.0 removed that field, and what
+        // survives it is the part the dashboard actually needs — the snapshot
+        // reports what the build scanned, without deduplicating it.
+        let duplicated = snapshot.components.filter {
+            $0.typeName == "AlulaActuatorTests.SampleDuplicated"
+        }
+        #expect(duplicated.count == 2)
+    }
+
+    @Test("snapshot reflects a module whose service failed at run time")
+    func snapshotReflectsModuleFailure() async throws {
+        // The real health path: assemble tracks health externally, and the
+        // health-wrapped service records the failure on the live container.
+        let app = try Alula.assemble(
+            configuration: Configuration(),
+            modules: [FailingServiceModule()]
+        )
+        let failing = try #require(app.services.first)
+        await #expect(throws: FailingServiceModule.Boom.self) {
+            try await failing.service.run()
+        }
+
+        let snapshot = ActuatorSnapshot(
+            health: app.health, components: [], environment: .test)
+        let status = try #require(snapshot.modules.first {
+            $0.moduleName == "FailingServiceModule"
+        })
+        #expect(status.health.isFailed)
+        #expect(snapshot.modules.contains { $0.health.isFailed })
+        #expect(status.health.failureDescription?.contains("flux capacitor") == true)
+    }
+
+    @Test("configured modules report running health")
+    func configuredModulesRunning() throws {
+        let app = try Alula.assemble(
+            configuration: Configuration(),
+            modules: [FailingServiceModule()]
+        )
+        // Assembly succeeded and the service has not run yet: .running
+        // (Alula Core — a module is running the moment it is part of the
+        // assembly, until its service throws).
+        let snapshot = ActuatorSnapshot(
+            health: app.health, components: [], environment: .test)
+        #expect(snapshot.modules.count == 1)
+        #expect(snapshot.modules[0].health.isRunning)
+    }
+}
+
+@Suite("ModuleHealth presentation helpers")
+struct ModuleHealthHelperTests {
+    struct SomeError: Error, CustomStringConvertible {
+        var description: String { "it broke" }
+    }
+
+    @Test("predicates match exactly one state each")
+    func predicates() {
+        #expect(ModuleHealth.failed(SomeError()).isFailed)
+        #expect(!ModuleHealth.running.isFailed)
+        #expect(!ModuleHealth.notStarted.isFailed)
+
+        #expect(ModuleHealth.running.isRunning)
+        #expect(!ModuleHealth.failed(SomeError()).isRunning)
+
+        #expect(ModuleHealth.notStarted.isNotStarted)
+        #expect(!ModuleHealth.running.isNotStarted)
+    }
+
+    @Test("labels are the stable wire vocabulary")
+    func labels() {
+        #expect(ModuleHealth.notStarted.actuatorLabel == "notStarted")
+        #expect(ModuleHealth.running.actuatorLabel == "running")
+        #expect(ModuleHealth.failed(SomeError()).actuatorLabel == "failed")
+
+        #expect(Stereotype.component.actuatorLabel == "component")
+        #expect(Stereotype.service.actuatorLabel == "service")
+        #expect(Stereotype.repository.actuatorLabel == "repository")
+        #expect(Stereotype.controller.actuatorLabel == "controller")
+    }
+
+    @Test("failureDescription surfaces the error only for .failed")
+    func failureDescription() {
+        #expect(ModuleHealth.failed(SomeError()).failureDescription == "it broke")
+        #expect(ModuleHealth.running.failureDescription == nil)
+        #expect(ModuleHealth.notStarted.failureDescription == nil)
+    }
+}

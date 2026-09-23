@@ -1,0 +1,149 @@
+import AlulaCore
+import struct Foundation.UUID
+
+/// Presence's runtime settings, read once at bootstrap from the app
+/// `Configuration` — the same source and dotted-key convention as
+/// `ChannelsConfiguration`.
+public struct PresenceConfiguration: Sendable, Equatable {
+    /// This node's stable name — the `name` half of the replica id its
+    /// gossip carries, and the vocabulary a membership monitor speaks
+    /// (`PresenceMembershipEvent.down(node:)` matches against it). Set it
+    /// explicitly in any multi-node deployment with a membership monitor;
+    /// the generated default is fine everywhere else.
+    public var nodeName: String
+
+    /// How often this node re-announces its full own-presence state. In
+    /// degraded mode this is the heartbeat that keeps its entries
+    /// alive on peers; in membership mode it is anti-entropy repairing any
+    /// gossip delta the at-most-once transport dropped.
+    public var heartbeatInterval: Duration
+
+    /// Degraded mode only: a replica not heard from for this long is
+    /// marked down and its entries leave the visible list. Must be
+    /// comfortably larger than `heartbeatInterval` — a single missed
+    /// heartbeat must not flap a node.
+    public var downAfter: Duration
+
+    /// Both modes: a replica continuously down for this long is purged —
+    /// entries deleted, context forgotten. Until then its state is kept
+    /// hidden, so a wrongly-evicted node that resumes gossiping ('s
+    /// flap) comes back as joins without data loss.
+    public var permdownAfter: Duration
+
+    /// How often the liveness sweep runs. Defaults to a quarter of
+    /// `downAfter`, floored at 100ms.
+    public var sweepInterval: Duration
+
+    /// Membership mode only: how long a replica may stay silent before it is
+    /// marked down anyway, in spite of the monitor not having said so.
+    ///
+    /// Membership mode trusts the monitor for fast, precise detection, and it
+    /// should — an orchestrator knows a pod died long before a timeout could.
+    /// But it used to trust it *exclusively*: the expiry branch of the sweep
+    /// ran only in degraded mode, so a death the monitor missed — its own
+    /// outage, a partition between it and this node, a bug — left that node's
+    /// presences visible forever, with nothing logged and no way back short
+    /// of a restart. The mode the documentation steers people toward was the
+    /// one with no backstop.
+    ///
+    /// This is the backstop. Deliberately much longer than `downAfter` so the
+    /// monitor stays authoritative in every normal case; reaching it means
+    /// the monitor missed something, and it is logged as such. `nil` restores
+    /// the old behaviour of trusting the monitor completely.
+    public var membershipFallbackAfter: Duration?
+
+    /// The most entries one gossip frame may assert, or nil for no bound.
+    ///
+    /// A bound against a *buggy* peer, not a hostile one — see the trust
+    /// model in `Docs/presence.md`: anything that can publish to the PubSub
+    /// bus is inside the boundary, and a bound cannot change that. What it
+    /// does change is the blast radius of a peer whose own state has gone
+    /// wrong, which used to be "however much it sends, merged".
+    ///
+    /// A frame carries one replica's own entries, so this is really "how many
+    /// presences may one node hold" — 10,000 is far above any real per-node
+    /// count and far below anything that hurts.
+    public var maxEntriesPerFrame: Int?
+
+    public init(
+        nodeName: String? = nil,
+        heartbeatInterval: Duration = .seconds(5),
+        downAfter: Duration = .seconds(15),
+        permdownAfter: Duration = .seconds(300),
+        sweepInterval: Duration? = nil,
+        membershipFallbackAfter: Duration?? = nil,
+        maxEntriesPerFrame: Int? = 10_000
+    ) {
+        self.maxEntriesPerFrame = maxEntriesPerFrame
+        self.nodeName = nodeName ?? "node-\(UUID().uuidString.prefix(8).lowercased())"
+        self.heartbeatInterval = heartbeatInterval
+        self.downAfter = downAfter
+        self.permdownAfter = permdownAfter
+        self.sweepInterval = sweepInterval ?? max(.milliseconds(100), downAfter / 4)
+        // Four times `downAfter`, and at least a minute: long enough that a
+        // working monitor always wins the race, short enough that a ghost
+        // does not outlive the incident that made it.
+        self.membershipFallbackAfter =
+            membershipFallbackAfter ?? max(downAfter * 4, .seconds(60))
+    }
+
+    /// Keys, under Alula's usual dotted namespace:
+    /// - `alula.presence.node-name` (String, default: generated)
+    /// - `alula.presence.heartbeat-interval-seconds` (Double, default 5)
+    /// - `alula.presence.down-after-seconds` (Double, default 15)
+    /// - `alula.presence.permdown-after-seconds` (Double, default 300)
+    /// - `alula.presence.sweep-interval-seconds` (Double, default:
+    ///   `down-after / 4`, floored at 0.1)
+    /// - `alula.presence.membership-fallback-after-seconds` (Double,
+    ///   default: `max(down-after * 4, 60)`; `0` disables the backstop)
+    /// - `alula.presence.max-entries-per-frame` (Int, default 10000; `0`
+    ///   disables the bound)
+    public init(configuration: Configuration) throws {
+        let nodeName = try configuration.getIfPresent("alula.presence.node-name", as: String.self)
+        let heartbeat = configuration.get("alula.presence.heartbeat-interval-seconds", default: 5.0)
+        let downAfter = configuration.get("alula.presence.down-after-seconds", default: 15.0)
+        let permdown = configuration.get("alula.presence.permdown-after-seconds", default: 300.0)
+        let sweep = try configuration.getIfPresent("alula.presence.sweep-interval-seconds", as: Double.self)
+        let fallback = try configuration.getIfPresent(
+            "alula.presence.membership-fallback-after-seconds", as: Double.self)
+
+        guard heartbeat > 0, downAfter > 0, permdown > 0 else {
+            throw PresenceConfigurationError.nonPositiveInterval
+        }
+        guard downAfter > heartbeat else {
+            throw PresenceConfigurationError.downAfterNotAboveHeartbeat(
+                heartbeat: heartbeat, downAfter: downAfter
+            )
+        }
+        self.init(
+            nodeName: nodeName,
+            heartbeatInterval: .seconds(heartbeat),
+            downAfter: .seconds(downAfter),
+            permdownAfter: .seconds(permdown),
+            sweepInterval: sweep.map { .seconds($0) },
+            // An explicit 0 means "trust the monitor completely".
+            membershipFallbackAfter: fallback.map { $0 > 0 ? .seconds($0) : nil },
+            maxEntriesPerFrame: try configuration.getIfPresent(
+                "alula.presence.max-entries-per-frame", as: Int.self)
+                .map { $0 > 0 ? $0 : nil } ?? 10_000
+        )
+    }
+}
+
+public enum PresenceConfigurationError: Error, CustomStringConvertible, Sendable, Equatable {
+    case nonPositiveInterval
+    case downAfterNotAboveHeartbeat(heartbeat: Double, downAfter: Double)
+
+    public var description: String {
+        switch self {
+        case .nonPositiveInterval:
+            return "alula.presence intervals must be positive."
+        case .downAfterNotAboveHeartbeat(let heartbeat, let downAfter):
+            return """
+            alula.presence.down-after-seconds (\(downAfter)) must exceed \
+            alula.presence.heartbeat-interval-seconds (\(heartbeat)); otherwise every \
+            heartbeat gap flaps the node.
+            """
+        }
+    }
+}

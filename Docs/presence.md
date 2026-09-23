@@ -1,4 +1,4 @@
-# Flight Presence
+# Alula Presence
 
 "Who is currently connected to this topic," kept correct across every node
 in a cluster — Phoenix Presence's analogue, built on the two layers below
@@ -12,32 +12,32 @@ conflict-free merge semantics and the diffing that make a distributed
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `FlightPresence` |
-| **Module** | `FlightPresenceModule.self` |
-| **Pulls in** | `FlightPubSubModule and FlightChannelsModule` |
+| **Products** | `AlulaPresence` |
+| **Module** | `AlulaPresenceModule.self` |
+| **Pulls in** | `AlulaPubSubModule and AlulaChannelsModule` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
-            .product(name: "FlightPresence", package: "flight"),
-            .product(name: "FlightPubSub", package: "flight"),
-            .product(name: "FlightChannels", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
+            .product(name: "AlulaPresence", package: "alula"),
+            .product(name: "AlulaPubSub", package: "alula"),
+            .product(name: "AlulaChannels", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -45,24 +45,24 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightCore
-import FlightPubSub
-import FlightChannels
-import FlightTransport
-import FlightWeb
-import FlightPresence
+import AlulaCore
+import AlulaPubSub
+import AlulaChannels
+import AlulaTransport
+import AlulaWeb
+import AlulaPresence
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [
-                FlightWebModule<FlightTransport>.self,
-                FlightPresenceModule.self,
+                AlulaWebModule<AlulaTransport>.self,
+                AlulaPresenceModule.self,
                 AppModule.self,
             ],
-            composedBy: flightComposeModules)
+            composedBy: alulaComposeModules)
     }
 }
 ```
@@ -72,7 +72,7 @@ is enough: the dependency DAG builds all three.
 
 **Depend on the products of what it pulls in, too.** The generated composition
 root names every module in the DAG, so a target that lists only
-`FlightPresence` fails to build with `cannot find `FlightPubSubModule` in scope`
+`AlulaPresence` fails to build with `cannot find `AlulaPubSubModule` in scope`
 — from generated code, which is a confusing place to read it.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -101,9 +101,9 @@ qualification on all of it.
 ## Using it
 
 ```swift
-struct AppModule: FlightModule {
-    static var dependencies: [any FlightModule.Type] {
-        [FlightPresenceModule.self, FlightChannelsModule.self]
+struct AppModule: AlulaModule {
+    static var dependencies: [any AlulaModule.Type] {
+        [AlulaPresenceModule.self, AlulaChannelsModule.self]
     }
 
     let channels: [ChannelRegistration]
@@ -115,7 +115,7 @@ struct AppModule: FlightModule {
     }
 
     // The socket route is a value built from the channels module and handed
-    // to FlightWebModule with every other route:
+    // to AlulaWebModule with every other route:
     //   channels.socketRoute("/socket") { $0.request.queryParam("token").map(verify) }
 }
 
@@ -146,13 +146,13 @@ drop, heartbeat timeout, server shutdown — every teardown path removes the
 metas and broadcasts the leave diff. There is nothing to remember to call.
 (`untrack` exists for the rare "stop appearing present, stay in the room".)
 
-Clients receive one `flight:presence_state` on join, then
-`flight:presence_diff`s. Both reference clients ship a helper that
+Clients receive one `alula:presence_state` on join, then
+`alula:presence_diff`s. Both reference clients ship a helper that
 maintains the list from those messages:
 
-- **Swift:** `FlightPresenceClient` — `ChannelPresence(channel:)`, an
+- **Swift:** `AlulaPresenceClient` — `ChannelPresence(channel:)`, an
   `AsyncStream` of changes.
-- **JS/TS:** `@flight-framework/channels/presence` — `new FlightPresence(channel)`,
+- **JS/TS:** `@alula-framework/channels/presence` — `new AlulaPresence(channel)`,
   `onChange(({list, joins, leaves}) => …)`.
 
 Both normalize meta updates (a leave+join of the same `ref`) into in-place
@@ -204,23 +204,23 @@ Under the usual dotted namespace (all optional):
 
 | Key | Default | |
 | --- | --- | --- |
-| `flight.presence.node-name` | generated | Stable node name; must match the membership monitor's vocabulary. Set it in any monitored deployment. |
-| `flight.presence.heartbeat-interval-seconds` | 5 | Re-announce / anti-entropy cadence. |
-| `flight.presence.down-after-seconds` | 15 | Degraded mode: silence ⇒ hidden. Must exceed the heartbeat interval (validated at bootstrap). |
-| `flight.presence.permdown-after-seconds` | 300 | Continuously down ⇒ purged. |
-| `flight.presence.sweep-interval-seconds` | `max(100ms, down-after / 4)` | Liveness sweep cadence. The floor matters only for the very short `down-after` a test sets. |
-| `flight.presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
-| `flight.presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
+| `alula.presence.node-name` | generated | Stable node name; must match the membership monitor's vocabulary. Set it in any monitored deployment. |
+| `alula.presence.heartbeat-interval-seconds` | 5 | Re-announce / anti-entropy cadence. |
+| `alula.presence.down-after-seconds` | 15 | Degraded mode: silence ⇒ hidden. Must exceed the heartbeat interval (validated at bootstrap). |
+| `alula.presence.permdown-after-seconds` | 300 | Continuously down ⇒ purged. |
+| `alula.presence.sweep-interval-seconds` | `max(100ms, down-after / 4)` | Liveness sweep cadence. The floor matters only for the very short `down-after` a test sets. |
+| `alula.presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
+| `alula.presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
 
 ## Wiring
 
-`FlightPresenceModule` is built from PubSub's two buses and holds the tracker:
+`AlulaPresenceModule` is built from PubSub's two buses and holds the tracker:
 
 ```swift
-FlightPresenceModule(
+AlulaPresenceModule(
     configuration: configuration,
-    localBus: flightPubSubModule.local,
-    gossipBus: flightPubSubModule.bus,
+    localBus: alulaPubSubModule.local,
+    gossipBus: alulaPubSubModule.bus,
     adapter: myAdapterModule.adapter,          // omit for a single node
     membershipMonitor: myAdapterModule.monitor) // omit for heartbeat expiry
 ```
@@ -242,7 +242,7 @@ a property, and the composer matches it by type.
 ## What this trusts
 
 **The PubSub bus is the trust boundary.** Gossip rides one reserved topic
-(`flight:presence`), so anything that can publish to that topic can assert
+(`alula:presence`), so anything that can publish to that topic can assert
 presence state, and nothing here authenticates a frame. That is the same
 posture Phoenix Presence has over Redis, and it is the right one for the
 deployment this is built for: a broker inside your network, reachable by your
@@ -259,7 +259,7 @@ say — a bound on buggy peers and on version skew, not on hostile ones:
 |---|---|
 | A frame asserting entries owned by a third replica | Dropped and logged. `snapshot(of:)` carries own entries and deltas carry own dots, so no correct sender does this; merging it lets one confused node speak for the cluster. |
 | A frame claiming to have observed *this* replica's dots | Those claims are stripped. Merging one raised our version past our own clock, and the next local `track` then tripped a precondition and killed the process — a one-frame remote crash rather than mere corruption. |
-| A frame with more than `flight.presence.max-entries-per-frame` entries (10,000) | Dropped and logged. A frame carries one node's own presences, a number in the hundreds. |
+| A frame with more than `alula.presence.max-entries-per-frame` entries (10,000) | Dropped and logged. A frame carries one node's own presences, a number in the hundreds. |
 | A frame with an unrecognised wire version | Dropped and logged. A mixed-version cluster degrades to silence, never to misinterpretation. |
 
 None of these can reject a legitimate frame, which is what makes them safe to
@@ -291,18 +291,18 @@ scale is worse than an honest limit.
 
 ## Design notes
 
-- **One gossip topic, not `flight:presence:<topic>`.** PubSub is
+- **One gossip topic, not `alula:presence:<topic>`.** PubSub is
   exact-match with no wildcards (PubSub), and every node needs all
   presence gossip (full replication), so per-channel-topic gossip
   topics are unsubscribable in aggregate. Gossip rides one reserved topic,
-  `flight:presence`, with per-topic payloads inside — still "PubSub's
+  `alula:presence`, with per-topic payloads inside — still "PubSub's
   existing fan-out machinery, no transport of Presence's own".
 - **The Channels seam is explicit.** Untracking is automatic when the
   connection's topic membership ends, realized through two small
-  `@_spi(FlightInternal)` additions to `FlightChannels.Socket` —
+  `@_spi(AlulaInternal)` additions to `AlulaChannels.Socket` —
   `onTopicActivated`/`onTopicTerminated` (driven by `SocketSession` on
   join/leave/teardown) and `pushReserved` (single-socket delivery of
-  reserved `flight:*` events). Application code cannot reach either
+  reserved `alula:*` events). Application code cannot reach either
   without a deliberate SPI import. `onTopicActivated` also removes the
   state/diff race: the state push runs only after the join's PubSub
   subscription is live, so the client sees reply → state → diffs with no
@@ -344,7 +344,7 @@ alone cover 120 randomized cases):
   dropped-then-snapshot-repaired gossip across simulated replicas, every
   failure reproducible by seed; plus commutativity/associativity/
   idempotence checks.
-- **Node failure** (`MultiNodeTests`): two full Flight apps over an
+- **Node failure** (`MultiNodeTests`): two full Alula apps over an
   in-memory cluster wire — prompt eviction in membership mode, delayed
   eviction and flap recovery in degraded mode, startup sync, permdown
   purge.

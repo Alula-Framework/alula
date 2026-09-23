@@ -1,48 +1,48 @@
 # What is missing
 
 An audit of every library in the ecosystem, written 2026-08-24 against the
-v0.1.2 tags, and **last reconciled with the code on 2026-09-18 at flight
-v0.20.0, flight-data v0.6.0, hangar v0.6.0, swift-changeset v0.2.1.** Each entry says what is absent, why it matters, and how much work
+v0.1.2 tags, and **last reconciled with the code on 2026-09-18 at alula
+v0.20.0, alula-data v0.6.0, hangar v0.6.0, swift-changeset v0.2.1.** Each entry says what is absent, why it matters, and how much work
 it looks like — so the list can be argued with rather than just worked
 through.
 
 Ordered by consequence, not by library. It lives here, in the flagship
-repository, because it covers the whole ecosystem — `flight`, `flight-data`,
-`hangar`, `swift-changeset`, `flight-cli` and the JS client. It was written
-in `flight-cli` only because that happened to be the working directory the
+repository, because it covers the whole ecosystem — `alula`, `alula-data`,
+`hangar`, `swift-changeset`, `alula-cli` and the JS client. It was written
+in `alula-cli` only because that happened to be the working directory the
 day it was started; its history moved with it. Entries closed overnight on
 2026-08-24/25 are marked ✅ with what actually landed; three entries in the
 first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
-**Still open, in rough priority order:** flight-web HTTP/2 (a design decision,
+**Still open, in rough priority order:** alula-web HTTP/2 (a design decision,
 not a task — see below); hangar composite-key associations; npm and Homebrew
-publishing; format debt — `flight` **1,725** violations and `flight-data`
+publishing; format debt — `alula` **1,725** violations and `alula-data`
 **1,064**, measured 2026-09-18, deliberately deferred because a bulk reformat
 corrupts the macro fixtures' expected-expansion strings and should land as its
 own reviewed change.
 
-**Closed 2026-09-18:** two providers of one type, in flight **v0.21.0** —
+**Closed 2026-09-18:** two providers of one type, in alula **v0.21.0** —
 `@Inject(from:)` names a provider by module type and
-`FlightModule.defaultProviders` says which one an unqualified `@Inject` means.
+`AlulaModule.defaultProviders` says which one an unqualified `@Inject` means.
 The root cause was a bug rather than a missing feature: module identity
 discarded generic arguments, so `PostgresDataModule<PrimaryDataSource>` and
-`<Analytics>` collapsed to one binding and flight-data's documented
+`<Analytics>` collapsed to one binding and alula-data's documented
 multi-datasource shape had never composed. DECISIONS.md D27 records the
 rejected alternatives.
 
 **Two entries left that list on 2026-09-18**, both checked against the code
 rather than assumed. The distributed PubSub adapter — nominated above as *the
-single highest-value gap* — ships as `ValkeyPubSubAdapter` in flight-data's
-`FlightPubSubValkey`, with `FlightPubSubValkeyModule` wiring it, so Channels
+single highest-value gap* — ships as `ValkeyPubSubAdapter` in alula-data's
+`AlulaPubSubValkey`, with `AlulaPubSubValkeyModule` wiring it, so Channels
 across nodes, Presence membership and `ClusteredPubSub` all have something real
 behind them. The three-way duplication of macro injection scanning is gone into
-`FlightMacroSupport`. Neither closure was recorded here, which is the thing this
+`AlulaMacroSupport`. Neither closure was recorded here, which is the thing this
 file exists to do.
 
-**Closed since this was written:** the scheduler (flight 0.2.0/0.2.1, with the
-Postgres coordinator in flight-data 0.2.0 and a tutorial stage), the target
-regrouping, DocC coverage and its CI jobs, the macOS jobs, and flight-web
+**Closed since this was written:** the scheduler (alula 0.2.0/0.2.1, with the
+Postgres coordinator in alula-data 0.2.0 and a tutorial stage), the target
+regrouping, DocC coverage and its CI jobs, the macOS jobs, and alula-web
 static-file handling.
 
 **A full source audit ran on 2026-08-29** against v0.9.1 — every file under
@@ -75,23 +75,23 @@ named defect class had been *deleted* and nothing noticed, and the second worst
 was that the docs CI job had been red on main since 2026-09-09 and nothing
 noticed either. A check nobody reads is indistinguishable from no check.
 
-**DocC is done** where it makes sense: 17 of flight's 20 targets, 8 of
-flight-data's, hangar and swift-changeset. The three flight targets without
+**DocC is done** where it makes sense: 17 of alula's 20 targets, 8 of
+alula-data's, hangar and swift-changeset. The three alula targets without
 catalogues are the two macro implementations and the registration generator,
 which have no consumer-facing API.
 
 **Both former decisions are done:** hangar v0.2.0 is tagged and
-`hangar-vapor` is published. Released since: flight 0.2.0 and 0.2.1,
-flight-data 0.2.0, hangar 0.2.0, swift-changeset (nested changesets and
+`hangar-vapor` is published. Released since: alula 0.2.0 and 0.2.1,
+alula-data 0.2.0, hangar 0.2.0, swift-changeset (nested changesets and
 optimistic locking, untagged).
 
 ### ⚠ A feature shipped inert, and every check passed
-`@Scheduler` went out in flight 0.2.0 with 743 passing tests, a DocC
+`@Scheduler` went out in alula 0.2.0 with 743 passing tests, a DocC
 catalogue, a prose guide and compiled snippets — and did nothing. The build
 plugin's `registrableAttributes` did not list `Scheduler`, so the macro's
-`_flightRegister` thunk was never called and jobs never ran.
+`_alulaRegister` thunk was never called and jobs never ran.
 
-Nothing caught it because every scheduler test called `_flightRegister` by
+Nothing caught it because every scheduler test called `_alulaRegister` by
 hand, which is exactly the step the bug skips. What caught it was *booting the
 demo*, which printed `scheduler started with no jobs`.
 
@@ -130,7 +130,7 @@ when a feature can be inert, write the test that fails if it produces nothing.
 These come first because everything below is a claim, and a claim CI does not
 exercise is a claim nobody has tested since the day it was written.
 
-### ✅ flight-data ran no integration tests *(fixed 2026-08-24)*
+### ✅ alula-data ran no integration tests *(fixed 2026-08-24)*
 Its CI had neither a Postgres nor a Valkey service, so every driver suite
 skipped on every push. The drivers are the whole reason the package exists.
 Fixed, and the fix immediately surfaced a flaky TTL test that had been passing
@@ -151,11 +151,11 @@ were failing and invisible — see below.
 not say so in one place: swift-testing prints "Test run with N tests" last,
 XCTest prints "Executed N tests, with M failures" earlier. Grepping for the
 former hid 13 broken fixtures. `hangar/CI/run-tests.sh` now reports both.
-**The same pattern should be applied to `flight` and `flight-data`**, which
+**The same pattern should be applied to `alula` and `alula-data`**, which
 still grep for one summary.
 
-### ~~`flight` has no integration tests at all~~ — wrong, struck
-I claimed this without checking and it is false. `FlightTransportTests` binds
+### ~~`alula` has no integration tests at all~~ — wrong, struck
+I claimed this without checking and it is false. `AlulaTransportTests` binds
 real ports: `HTTPWireTests`, `TLSWireTests` and `WebSocketWireTests` connect
 over TCP with a raw socket client, including a TLS handshake against a
 per-run self-signed certificate. 27 tests, ungated, running in CI today.
@@ -165,7 +165,7 @@ first draft were about test coverage and two of them were wrong. Check before
 believing an entry here.
 
 ### ✅ No macOS build anywhere *(fixed 2026-08-25)*
-Every package now has a macOS job (`macos-26` for flight and flight-data — see
+Every package now has a macOS job (`macos-26` for alula and alula-data — see
 below; `macos-15` elsewhere). The repos are public, so the 10×
 private-repo billing note no longer applies.
 
@@ -173,16 +173,16 @@ Two things had to be learned the hard way: `swift-actions/setup-swift` only
 indexes up to 6.2, so the packages declaring tools 6.3 install via `swiftly`
 instead — which is also what the toolchain is managed with locally, so CI and
 a developer's machine now resolve the same way. And the jobs are build-only
-except `flight-cli`'s: macOS runners have no Docker and GitHub service
+except `alula-cli`'s: macOS runners have no Docker and GitHub service
 containers are Linux-only, while these integration suites *fail* rather than
 skip without a database. There is no honest way to run them there.
 
-hangar's, swift-changeset's and `flight-cli`'s macOS builds are green.
-`flight-cli`'s matters most — Homebrew runs on macOS, so that gap is now
+hangar's, swift-changeset's and `alula-cli`'s macOS builds are green.
+`alula-cli`'s matters most — Homebrew runs on macOS, so that gap is now
 unblocked.
 
 **And the job immediately earned its place** — then spent four releases
-describing the wrong cause. It reported that `flight` and `flight-data` could
+describing the wrong cause. It reported that `alula` and `alula-data` could
 not build on macOS because `apple/swift-configuration` calls `Data.bytes` in
 `FileProvider.swift`, that this was purely upstream, and that
 `platforms: [.macOS(.v15)]` was therefore **false today**. Both jobs were
@@ -191,7 +191,7 @@ not build on macOS because `apple/swift-configuration` calls `Data.bytes` in
 *(fixed 2026-09-19)* Two blockers were stacked, and neither conclusion held.
 
 The first was ours and was never mentioned: `Duration.nanoseconds(Double)` in
-FlightConfigCore is macOS 26+. It failed *first* — FlightConfigCore is the
+AlulaConfigCore is macOS 26+. It failed *first* — AlulaConfigCore is the
 dependency-free half of Config and compiles before swift-configuration is
 reached — so the log showed only our error, and the upstream diagnosis above
 was written over the top of a failure that had not even been observed yet.
@@ -217,7 +217,7 @@ and the floor untouched at macOS 15. Nothing needed reporting upstream.
 
 ## 2. Documentation that is wrong or absent
 
-### ✅ `flight/Docs/channels.md` states something untrue *(fixed 2026-08-24)*
+### ✅ `alula/Docs/channels.md` states something untrue *(fixed 2026-08-24)*
 > "Security Core is not yet built"
 
 It ships, the demo uses it, and the retroactive `Principal` conformance the
@@ -225,27 +225,27 @@ passage predicts is exactly what `Main.swift` now does. A reader takes this as
 current.
 
 ### ✅ The testing libraries are barely documented *(fixed 2026-08-24)*
-`flight/Docs/testing.md` now covers the three sizes of test, and
+`alula/Docs/testing.md` now covers the three sizes of test, and
 `Snippets/TestingShapes.swift` compiles every shape it shows — which
 immediately caught an `InMemoryCluster(nodes:)` initializer the guide claimed
-and that never existed. `FlightWebTesting` also has a DocC catalogue now.
+and that never existed. `AlulaWebTesting` also has a DocC catalogue now.
 
 Original entry:
 
-`FlightWebTesting`, `FlightPubSubTesting`, `FlightChannelsTesting`,
-`FlightCacheTesting`, `FlightDataTesting` and the new `Components` are each
+`AlulaWebTesting`, `AlulaPubSubTesting`, `AlulaChannelsTesting`,
+`AlulaCacheTesting`, `AlulaDataTesting` and the new `Components` are each
 mentioned in one or two pages in passing. They are what someone reaches for on
-day two, and there is no page that says how to test a Flight application.
+day two, and there is no page that says how to test an Alula application.
 **Size:** medium. **Highest doc value on the list.**
 
 ### ◐ DocC covers 3 of 27 modules — now 13 *(partly closed 2026-08-25)*
-Ten new catalogues: `FlightWeb`, `FlightChannels`, `FlightPubSub`,
-`FlightActuator`, `FlightSecurityCore`, `FlightWebTesting`,
-`FlightTransport`, `FlightDataCore`, `FlightCache`, `FlightDataPostgres` —
+Ten new catalogues: `AlulaWeb`, `AlulaChannels`, `AlulaPubSub`,
+`AlulaActuator`, `AlulaSecurityCore`, `AlulaWebTesting`,
+`AlulaTransport`, `AlulaDataCore`, `AlulaCache`, `AlulaDataPostgres` —
 plus `HangarVapor`'s README and hangar's existing catalogue.
 
 The more important half: **nothing was building any of them.** Neither
-`flight` nor `flight-data` had a docs job at all, so even the three original
+`alula` nor `alula-data` had a docs job at all, so even the three original
 catalogues had never been verified. Both now build every catalogue with
 `--warnings-as-errors`, which found real breakage on the first run — an
 `OIDCTokenValidator` doc comment linking an internal type, a
@@ -259,7 +259,7 @@ It also caught two pages of *mine* that described APIs incorrectly: a
 the argument for the CI job in one paragraph.
 
 Finished the same night: the protocol and client modules, the testing
-helpers, presence, and `flight-data`'s Valkey drivers, its testing
+helpers, presence, and `alula-data`'s Valkey drivers, its testing
 datasource and its migration core. Every catalogue is built in CI. What is
 left has no consumer-facing API to document.
 
@@ -298,7 +298,7 @@ left has no consumer-facing API to document.
   only so a driver can raise `ChangesetConflictError` instead of reporting a
   bare row count.
 
-### flight-web
+### alula-web
 - ✅ **No connection idle/read timeout — a half-open connection is held
   indefinitely.** *Closed in 0.11.0.* Found on 2026-08-26 while building the
   resumable-upload acceptance test: a client that sent request headers with a
@@ -316,7 +316,7 @@ left has no consumer-facing API to document.
   interesting part: the upgrade channel installs Hummingbird's idle handler
   from its *not-upgrading completion handler*, which does not run until a head
   has decoded — so a connection that never finishes its first header block is
-  invisible to it. Flight adds `RequestHeaderTimeoutHandler` in front of the
+  invisible to it. Alula adds `RequestHeaderTimeoutHandler` in front of the
   channel for that window, disarming on the header terminator. One setting,
   two mechanisms, and a wire test for each of the four cases.
 
@@ -329,7 +329,7 @@ left has no consumer-facing API to document.
   **HTTP/2 and WebSockets are mutually exclusive on one listener** —
   `HTTPServerBuilder.http2Upgrade` has no WebSocket hook and
   hummingbird-websocket has no RFC 8441 extended CONNECT. Channels are
-  WebSockets, so Flight ships HTTP/1.1.
+  WebSockets, so Alula ships HTTP/1.1.
 
   The correction: **this is Hummingbird's wiring, not the protocol layer's
   capability.** apple/swift-nio-http2 has had RFC 8441 since 1.33.0
@@ -366,9 +366,9 @@ left has no consumer-facing API to document.
   2. When transport work starts, it is a **second** transport behind
      `ServerTransport` (the seam exists for exactly this), either adopting
      swift-http-server early — the leaning, since that is where the
-     ecosystem is converging and Flight has the concrete WebSocket need to
+     ecosystem is converging and Alula has the concrete WebSocket need to
      push its design — or ~1,000 lines of direct NIO wiring over
-     NIOHTTP1/NIOHTTP2/NIOWebSocket, which would make Flight the first
+     NIOHTTP1/NIOHTTP2/NIOWebSocket, which would make Alula the first
      Swift framework serving WebSockets over HTTP/2.
   3. Prerequisite before investing: verify RFC 8441 *client* support in
      practice (Safari and common intermediaries especially). If browsers
@@ -380,7 +380,7 @@ left has no consumer-facing API to document.
 - No runtime route-registration API beyond the bootstrap escape hatch.
   *Deliberate.*
 
-### flight-actuator
+### alula-actuator
 - ~~**No authenticated production access.**~~ **Wrong — struck.** I read a
   stale passage in `Docs/actuator.md` rather than the code. `ActuatorExposure`
   already has three levels, and `health_only` is the *default* outside
@@ -394,7 +394,7 @@ left has no consumer-facing API to document.
   lane and a role check; health stays open.
 - No live-updating dashboard, no historical metrics. *Deliberate.*
 
-### flight-presence
+### alula-presence
 - ✅ **The gossip trust model.** *Decided and documented in 0.11.0.* The entry
   asked two questions — what happens when a malicious or buggy node gossips bad
   state, and what the rolling-upgrade story is across protocol versions — and
@@ -427,13 +427,13 @@ left has no consumer-facing API to document.
   beats two versions agreeing on the bytes and disagreeing on the meaning. Both
   halves of the trade are written down in `Docs/presence.md`.
 
-### flight-data / drivers
+### alula-data / drivers
 - No cross-database abstraction, no auto-migration at boot, no query caching.
   *All deliberate.*
-- `FlightDataValkey` has no PubSub and no transaction support. *Deliberate —
+- `AlulaDataValkey` has no PubSub and no transaction support. *Deliberate —
   Valkey is not transactional in that sense.*
 
-### flight-channels-js
+### alula-channels-js
 - Published to a repo, **not to npm**. Blocked on the org being public.
 - No CI badge, no bundled build; consumers use it as ESM source. *Fine for now.*
 
@@ -457,17 +457,17 @@ holding one.
 
 ~~**Blocked on two decisions of yours:** a hangar v0.2.0 tag, and creating the
 public repository.~~ Both done: hangar is tagged through v0.6.0 and
-`hangar-vapor` is published at `Flight-Framework/hangar-vapor`.
+`hangar-vapor` is published at `Alula-Framework/hangar-vapor`.
 
 ### ✅ A contributor test script *(done 2026-08-24/25)*
-`./scripts/test.sh` in hangar, flight-data and hangar-vapor: starts throwaway
+`./scripts/test.sh` in hangar, alula-data and hangar-vapor: starts throwaway
 containers, runs everything through `CI/run-tests.sh`, tears them down.
 
-flight-data's waited for Postgres and then started the suite, leaving Valkey
+alula-data's waited for Postgres and then started the suite, leaving Valkey
 to race the Swift build. It usually won — which is how a suite becomes
 intermittently red for reasons nobody can reproduce. It waits for both now.
 
-### ✅ `flight new --with` flags *(done 2026-08-24)*
+### ✅ `alula new --with` flags *(done 2026-08-24)*
 
 ---
 
@@ -475,9 +475,9 @@ intermittently red for reasons nobody can reproduce. It waits for both now.
 
 Recorded so they are not rediscovered as bugs:
 
-- **Format debt**, measured 2026-09-18: `flight` **1,725** and `flight-data`
-  **1,064** violations against the shared `.swift-format`; `flight-cli` is
-  **0** and blocking. Both of the others' lint jobs are advisory, and flight's
+- **Format debt**, measured 2026-09-18: `alula` **1,725** and `alula-data`
+  **1,064** violations against the shared `.swift-format`; `alula-cli` is
+  **0** and blocking. Both of the others' lint jobs are advisory, and alula's
   has grown — this entry said 1,309 and `ci.yml` said ~1,240, two stale numbers
   that disagreed with each other and with the tool. A bulk reformat must avoid the macro fixture files,
   whose expected-expansion strings a careless regex corrupts.
@@ -491,10 +491,10 @@ Recorded so they are not rediscovered as bugs:
   bounded `curl --retry-connrefused`.
 
   Then cp06 and cp08 showed red — and they had **never** been passing
-  legitimately. The application reads its database URL from `flight.yaml`
+  legitimately. The application reads its database URL from `alula.yaml`
   (`127.0.0.1:55432`, hardcoded in the tutorial on purpose so a starter
   project does not fight a local 5432); CI's Postgres is a service container
-  elsewhere. The runner rewrote `$FLIGHT_DATABASE_URL`, which is the
+  elsewhere. The runner rewrote `$ALULA_DATABASE_URL`, which is the
   *migrate CLI's* variable and one the application never reads — a split the
   tutorial documents and the runner did not honour.
 
@@ -535,20 +535,20 @@ port 8080 already bound. Neither is a crash; both were reported as one. All
 three templates now catch, print one line, and exit 1 — verified on real
 generated projects for both cases.
 
-~~**Still open:** the same fix belongs in `FlightCore` as a `Flight.main`
-helper.~~ **Closed** — `Flight.run(configuration:modules:composedBy:)` is that
+~~**Still open:** the same fix belongs in `AlulaCore` as a `Alula.main`
+helper.~~ **Closed** — `Alula.run(configuration:modules:composedBy:)` is that
 helper: it prints why and exits 1 rather than trapping out of a throwing
 `main`, and hand-written applications get it on the same terms as generated
-ones. The "blocked on a flight release, templates pin 0.1.2" note is eighteen
+ones. The "blocked on an alula release, templates pin 0.1.2" note is eighteen
 releases stale; templates pin 0.20.0.
-- **One unexplained test failure**, flight-data, 2026-08-25: a single issue
+- **One unexplained test failure**, alula-data, 2026-08-25: a single issue
   in a 375-test run that did not reproduce in ten subsequent runs, cold
   containers included. The Valkey readiness gap was fixed because it was
   genuinely there, not because it was shown to be the cause. Recorded so the
   next occurrence is the second one rather than the first.
 - **Root builds need `--enable-all-traits`.** A root build compiles every
-  target regardless of traits, so a plain `swift build` in `flight` or
-  `flight-data` fails by design. Documented in both READMEs.
+  target regardless of traits, so a plain `swift build` in `alula` or
+  `alula-data` fails by design. Documented in both READMEs.
 - **Relative paths remain in git history.** Not sensitive; removing them would
   mean rewriting three more repositories and moving four tags for no security
   benefit.
@@ -576,7 +576,7 @@ releases stale; templates pin 0.20.0.
   neither an upgrade nor a handler that never queries can hold a connection
   open. See `COMPOSITION-MIGRATION.md` §2.3 (untracked, local to this
   working copy).
-- ✅ **Flight Web has no static-file handling.** *Closed.* Static assets ship
+- ✅ **Alula Web has no static-file handling.** *Closed.* Static assets ship
   with exactly what this entry asked for and more (the closure text named
   `container.assets(at:root:)`, which went with the container in 0.17.0; assets
   are declared as module values now): containment by resolving

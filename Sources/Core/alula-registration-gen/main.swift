@@ -1,0 +1,2976 @@
+// alula-registration-gen
+//
+// Invoked by AlulaRegistrationPlugin with one argument: the path to a JSON
+// manifest describing the target being built, the source files of every
+// module in scope (the target itself plus its recursive source-module
+// dependencies that sit atop AlulaCore), and the output path.
+//
+// Mechanism note: symbol graphs are
+// not available to build tool plugins, so this tool scans *source text* with
+// SwiftParser. It emits the composition root for the whole graph visible from
+// the target — `alulaComposeModules` (wires the modules by type), the
+// `AlulaGraph` (builds every scanned component once, in dependency order),
+// `alulaRoutes` / `alulaScheduledJobs` (project registrations off it), and
+// `alulaComponentDescriptors` (the scanned manifest). One generated file per
+// target covers the whole visible graph rather than per-target functions
+// calling each other — dependency targets' generated outputs are not visible
+// across plugin work directories anyway.
+//
+// Building the graph also resolves synthesized *existential bridges*: for
+// every `@Inject var x: (any P)` demand whose protocol has exactly one scanned
+// conformer, the graph wires that conformer in (see the synthesis section
+// below for the exact rules and escape hatches).
+//
+// Diagnostics are printed to stderr in `path:line:col: severity: message`
+// form, which SwiftPM surfaces in build logs and IDEs.
+
+import AlulaConfigCore
+import AlulaRouteScan
+import Foundation
+import SwiftParser
+import SwiftSyntax
+
+// MARK: - Manifest (shape shared with Plugins/AlulaRegistrationPlugin)
+
+struct Manifest: Codable {
+    struct Module: Codable {
+        let name: String
+        let files: [String]
+    }
+    /// The module the generated file is compiled into.
+    let targetModuleName: String
+    /// All modules to scan, target's own module included.
+    let modules: [Module]
+    let output: String
+    /// Directory of the package that owns the target — where alula.yaml
+    /// lives when the app has one. Optional: older manifests (and tests)
+    /// omit it, which skips the config-key check.
+    let packageDirectory: String?
+}
+
+// MARK: - Scan model
+
+struct ScannedComponent {
+    let module: String
+    let typeName: String
+    /// The registrable attribute's name — `Service`, `Repository`,
+    /// `Controller`, … — which is what decides the stereotype. Kept because
+    /// the container-era generator delegated registration to the macro's thunk
+    /// and so never had to know it; emitting a static component list does.
+    let attributeName: String
+    let isPublic: Bool
+    /// Source text of a `scope:` argument the declaration still carries, nil
+    /// when it carries none. **Diagnostics only**: the argument was removed in
+    /// 0.20.0 and feeds no emission. It is scanned so that a stale call site
+    /// gets a message naming the migration rather than the type checker's
+    /// "extra argument in call", which says nothing about what to do.
+    let removedScopeText: String?
+    /// As `removedScopeText`, for the removed *type-level* `qualifier:`
+    /// argument. The property-level `@Inject("name")` was removed in the same
+    /// release; neither qualifier survives.
+    let removedQualifierText: String?
+    /// Type names the declaration conforms to: its inheritance clause, plus
+    /// any `extension T: P` found in scanned sources (merged after the scan —
+    /// extensions are the part of the conformance picture an attached macro
+    /// can never see).
+    var conformanceNames: [String]
+    let injectTypeNames: [String]
+    /// The property names behind `injectTypeNames`, positionally. The
+    /// generated initializer labels its parameters by property name, so a
+    /// composition function calling it needs these and not the type names —
+    /// `UserRepository(pool: dataSource)`, never `(postgresDataSource:)`.
+    let injectPropertyNames: [String]
+    /// `@Inject` types whose property carries a `alula:hand-registered`
+    /// marker comment — the author's acknowledgment that the type is provided
+    /// some other way (a value a module holds, or an external input) and so is
+    /// invisible to this scanner (P-2), and the missing-registration warning
+    /// should not fire. Still participates in cycle detection.
+    let acknowledgedTypeNames: [String]
+    /// Every dependency, injected and acknowledged alike, in **declaration
+    /// order** with its property name.
+    ///
+    /// The generated initializer takes its parameters in declaration order, so
+    /// emitting `inject` then `acknowledged` mislabels the call whenever a
+    /// `alula:hand-registered` property is declared before an injected one —
+    /// `UserController(sockets:validator:)` against an
+    /// `init(validator:sockets:)`. Caught by the demo's `SocketController`.
+    let dependencyOrder: [(type: String, label: String, from: String?)]
+
+    /// As `injectPropertyNames`, for the acknowledged edges.
+    let acknowledgedPropertyNames: [String]
+    /// Carries a `alula:module-registered` marker: the type is registrable
+    /// (it has the macro) but its *existence in an application* is a runtime
+    /// question its own module answers — so the composition root must not
+    /// build it.
+    ///
+    /// Without this the scan registers every annotated type in every app that
+    /// merely links the package. `Authentication` is the worked example: it
+    /// injects `(any TokenValidator)`, which only a security module provides,
+    /// and composition eagerly builds every singleton — so an app that linked
+    /// AlulaSecurityCore without including a security module failed to boot.
+    let isModuleRegistered: Bool
+    let configValues: [ScannedConfigValue]
+    let file: String
+    let line: Int
+}
+
+/// One required-key site — an explicit `@ConfigValue`, or a plain property
+/// inside `@Settings` whose key is derived from its name. `key` is nil when
+/// the expression isn't a plain string literal (interpolation) — not
+/// statically checkable, so the check skips it and the runtime throw remains
+/// the backstop.
+struct ScannedConfigValue {
+    enum Source {
+        /// An explicit `@ConfigValue("...")` attribute.
+        case explicitConfigValue
+        /// A plain property inside `@Settings`, whose attribute the message
+        /// must not claim was written — the whole point of `@Settings` is
+        /// that it wasn't.
+        case implicitSettingsField
+    }
+    let key: String?
+    let hasDefault: Bool
+    let source: Source
+    let file: String
+    let line: Int
+}
+
+// MARK: - Route scanning
+
+/// One route, as the generator sees it: the same scan `@Controller` runs,
+/// through the same parser (`AlulaRouteScan`), so the manifest and the
+/// expansion cannot disagree about a path, a method, or a lane.
+struct ScannedControllerRoute {
+    /// The controller's type name, and the route's position within it —
+    /// together they name the factory `@Controller` generated,
+    /// `_alulaRoute_<method>_<index>`.
+    let controllerTypeName: String
+    let methodName: String
+    let indexInController: Int
+    let httpMethod: String
+    /// Controller base path combined with the route's own, by the same rule
+    /// the macro applies.
+    let path: String
+    /// `String(reflecting:)`-shaped origin, matching the qualifier the macro
+    /// gives the route's `RouteRegistration`.
+    let source: String
+    /// Resolved lanes, verbatim: the route's own `pipelines:` when it has
+    /// one — replacement, not addition — otherwise the controller's.
+    let pipelinesText: String?
+    let isUpgrade: Bool
+    let file: String
+    let line: Int
+}
+
+/// Swallows what the scan reports.
+///
+/// Deliberate, and the reason is double-reporting: `@Controller` already
+/// scans every one of these functions and already diagnoses a non-literal
+/// path, a static handler, a bad signature, an upgrade with a body. The
+/// generator runs over the same sources in the same build, so anything it
+/// reported would arrive at the author twice, at the same line, in the same
+/// build log.
+///
+/// The macro owns the reporting; the generator owns the manifest. A route
+/// the macro rejects simply does not reach the manifest — which is correct,
+/// because the macro did not register it either.
+struct SilentRouteDiagnostics: RouteDiagnostics {
+    func error(_ id: String, _ message: String, at node: some SyntaxProtocol) {}
+    func warning(_ id: String, _ message: String, at node: some SyntaxProtocol) {}
+}
+
+/// One `MiddlewareRegistration.lane(_:_:)` declaration.
+///
+/// Lanes are the other half of what dispatch reads out of the composed
+/// application (COMPOSITION-MIGRATION.md §2.9): the middleware chain and its
+/// declared lanes are values the composition root gathers, exactly the way
+/// routes are, so the manifest has to carry them too.
+struct ScannedPipelineLane {
+    /// Normalized lane name: the literal's content for `.lane("admin", ...)`,
+    /// the member's name for `.lane(.authenticated, ...)` or
+    /// `.lane(.default, ...)`. nil when the argument is neither — a computed
+    /// lane, which the manifest records but cannot name.
+    let lane: String?
+    /// The lane argument's source text, verbatim.
+    let laneText: String?
+    /// Middleware type names in declared order — outermost first, which is
+    /// the order the block is written in.
+    let middleware: [String]
+    /// The type whose body holds this call, when there is one.
+    ///
+    /// Nearly always a `AlulaModule`, and that is the point: the call runs
+    /// only if the application includes that module, so a lane the scan sees
+    /// is not necessarily a lane the composed application gets. The same
+    /// conditional-inclusion fact `alula:module-registered` exists to record
+    /// for components.
+    let declaredIn: String?
+    let module: String
+    let file: String
+    let line: Int
+}
+
+/// One `AlulaModule` conformer and the modules it pulls in.
+///
+/// The edges the composition root orders construction by: it topologically
+/// sorts the DAG and builds each module after its dependencies, which is what
+/// makes module order — and therefore lane order — a property of the
+/// module graph rather than of file order.
+struct ScannedModule {
+    let typeName: String
+    /// Every initializer the module declares, as (labels, types).
+    ///
+    /// All of them, not the first: `ActuatorModule` declares `init()` *and*
+    /// `init(processEnvironment:)` — a test seam — and `AlulaPubSubModule`
+    /// declares `init(configuration:adapter:)` *and* an `init()` that traps
+    /// because it cannot be built from its type. Neither "first" nor "prefer
+    /// `init()`" picks correctly in both cases. The composer chooses the one
+    /// it can actually supply.
+    let initializers: [(labels: [String], types: [String], throws: Bool)]
+    /// Dependency type names as written with `.self` dropped — the generic
+    /// argument is **kept**, because `PostgresDataModule<PrimaryDataSource>`
+    /// and `<Analytics>` are two modules (D27). This comment used to say the
+    /// argument was stripped; the code never did.
+    let dependencies: [String]
+    /// The modules this one nominates to answer unqualified `@Inject` when
+    /// two provide the same type, from `static var defaultProviders`. Empty
+    /// for the overwhelming majority: it is only consulted on ambiguity, so an
+    /// application with one provider per type never writes it.
+    let defaultProviders: [String]
+    /// The module's public stored properties — what it *provides*.
+    ///
+    /// D11 says a module is a value that holds what it provides, which makes
+    /// its stored properties the outputs of the composition graph:
+    /// `AlulaPubSubValkeyModule.adapter` is what
+    /// `AlulaPubSubModule(configuration:adapter:)` takes. Matching them by
+    /// type is how one module's output becomes another's input without either
+    /// naming the other.
+    let provides: [(name: String, type: String)]
+    let module: String
+}
+
+/// Finds `MiddlewareRegistration.lane(_:_:)` calls and `AlulaModule` declarations.
+///
+/// A second pass rather than work folded into `ComponentVisitor`: that one
+/// returns `.skipChildren` at every type declaration, deliberately — nested
+/// registrable types are a non-goal — so it never descends into the method
+/// bodies where these calls live. Walking twice costs one more traversal of
+/// an already-parsed tree and leaves component collection untouched.
+///
+/// Lanes and module edges are collected together because neither is useful
+/// without the other: a lane declaration says what a stack contains, and the
+/// module graph says when it runs.
+final class ModuleVisitor: SyntaxVisitor {
+    let module: String
+    let file: String
+    let converter: SourceLocationConverter
+    var lanes: [ScannedPipelineLane] = []
+    var modules: [ScannedModule] = []
+    /// Non-private stored properties with no written type. Collected rather
+    /// than emitted here: this is a `SyntaxVisitor`, and `emit` is MainActor.
+    var untypedProvides: [(file: String, line: Int, message: String)] = []
+    /// Module types named in a `modules:` argument — the bootstrap list.
+    ///
+    /// This is the fact that makes conditional inclusion static. It was
+    /// treated as a runtime question because the container was the only
+    /// mechanism that knew it, but the list is a literal array in the
+    /// application's own source, and that source is scanned.
+    var bootstrapModules: [String] = []
+    /// The `prefix:` an application hands `Configuration.load`, read from its
+    /// own source.
+    ///
+    /// The same reasoning as `bootstrapModules` above: the prefix looked like
+    /// a runtime value because `load` takes it at runtime, but an application
+    /// writes it as a literal in source, and that source is scanned. Reading
+    /// it here keeps the `@ConfigValue` key check at compile time under a
+    /// custom prefix, instead of standing down the moment the base file is not
+    /// called alula.yaml.
+    ///
+    /// `text` is nil when the argument is not a plain string literal — an
+    /// interpolation or a computed value — which is not statically knowable,
+    /// exactly as `@ConfigValue`'s own key is nil in that case.
+    var configPrefix: (text: String?, file: String, line: Int)?
+    private var typeStack: [String] = []
+
+    init(module: String, file: String, tree: SourceFileSyntax) {
+        self.module = module
+        self.file = file
+        self.converter = SourceLocationConverter(fileName: file, tree: tree)
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        typeStack.append(node.name.text)
+        collectModule(
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+        return .visitChildren
+    }
+    override func visitPost(_ node: ClassDeclSyntax) { typeStack.removeLast() }
+
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        typeStack.append(node.name.text)
+        collectModule(
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+        return .visitChildren
+    }
+    override func visitPost(_ node: StructDeclSyntax) { typeStack.removeLast() }
+
+    override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+        typeStack.append(node.name.text)
+        collectModule(
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+        return .visitChildren
+    }
+    override func visitPost(_ node: EnumDeclSyntax) { typeStack.removeLast() }
+
+    override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        typeStack.append(node.extendedType.trimmedDescription)
+        return .visitChildren
+    }
+    override func visitPost(_ node: ExtensionDeclSyntax) { typeStack.removeLast() }
+
+
+    /// Records a `AlulaModule` conformer and the `dependencies` it declares.
+    ///
+    /// Conformance is matched by name, like everything else in this scanner —
+    /// a build tool has source text and no symbol graph. A type that conforms
+    /// only through an extension is missed, which is the same blind spot the
+    /// component scan has and the same reason `extension T: P` clauses are
+    /// merged in separately there.
+    private func collectModule(
+        named name: String, inheritance: InheritanceClauseSyntax?, members: MemberBlockSyntax
+    ) {
+        guard let inheritance,
+              inheritance.inheritedTypes.contains(where: {
+                  baseName($0.type.trimmedDescription) == "AlulaModule"
+              })
+        else { return }
+
+        var dependencies: [String] = []
+        for member in members.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                  variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) }),
+                  variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?
+                      .identifier.text == "dependencies"
+            else { continue }
+            for element in arrayElements(of: variable) {
+                // `Foo<Bar>.self` -> `Foo<Bar>`. Each specialization is its own
+                // module, so the argument travels with the edge.
+                guard let member = element.as(MemberAccessExprSyntax.self),
+                      member.declName.baseName.tokenKind == .keyword(.self),
+                      let base = member.base
+                else { continue }
+                dependencies.append(base.trimmedDescription)
+            }
+        }
+        // `static var defaultProviders` — scanned the same way, and only read
+        // when a type turns out to have two providers.
+        var defaultProviders: [String] = []
+        for member in members.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                  variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) }),
+                  variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?
+                      .identifier.text == "defaultProviders"
+            else { continue }
+            for element in arrayElements(of: variable) {
+                guard let member = element.as(MemberAccessExprSyntax.self),
+                      member.declName.baseName.tokenKind == .keyword(.self),
+                      let base = member.base
+                else { continue }
+                defaultProviders.append(base.trimmedDescription)
+            }
+        }
+        // The initializer a composer would call. `init()` conformances are
+        // the ordinary case today; a module that has moved to owning its
+        // components declares what it needs instead.
+        var initializers: [(labels: [String], types: [String], throws: Bool)] = []
+        for member in members.members {
+            guard let initializer = member.decl.as(InitializerDeclSyntax.self) else { continue }
+            let parameters = initializer.signature.parameterClause.parameters
+            initializers.append(
+                (
+                    labels: parameters.map {
+                        $0.firstName.tokenKind == .wildcard ? "_" : $0.firstName.text
+                    },
+                    types: parameters.map { $0.type.trimmedDescription },
+                    throws: initializer.signature.effectSpecifiers?.throwsClause != nil
+                ))
+        }
+        // A module declaring none conforms through the protocol's own
+        // requirement, which is `init()`.
+        if initializers.isEmpty { initializers = [(labels: [], types: [], throws: false)] }
+        // Stored properties, with an explicit type and reachable from the
+        // composition root. Computed ones are excluded because `var service:
+        // (any Service)?` is one, and a module's service is bootstrap's to
+        // collect, not another module's to take.
+        var provides: [(name: String, type: String)] = []
+        for member in members.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                  !variable.modifiers.contains(where: {
+                      $0.name.tokenKind == .keyword(.static)
+                          || $0.name.tokenKind == .keyword(.private)
+                          || $0.name.tokenKind == .keyword(.fileprivate)
+                  })
+            else { continue }
+            for binding in variable.bindings {
+                guard binding.accessorBlock == nil,
+                      let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?
+                          .identifier.text
+                else { continue }
+                guard let type = binding.typeAnnotation?.type.trimmedDescription else {
+                    // A non-private stored property with an inferred type is
+                    // almost certainly meant to be provided, and silently is
+                    // not: matching needs the type as written, so the module
+                    // provides it in fact and not in the composer's view.
+                    //
+                    // `AlulaSchedulerModule` shipped that way —
+                    // `public let status = SchedulerStatus()` — so
+                    // `@Inject var scheduler: SchedulerStatus`, which
+                    // Actuator's own documentation shows, could not be
+                    // satisfied by any application. Nothing said anything.
+                    if binding.initializer != nil {
+                        let location = converter.location(for: variable.position)
+                        untypedProvides.append(
+                            (
+                                file: file, line: location.line,
+                                message:
+                                    "\(name).\(identifier) has no written type, so composition "
+                                    + "cannot provide it — matching needs the type as written. "
+                                    + "Annotate it (`let \(identifier): SomeType = …`), or mark "
+                                    + "it private if it is not meant to be provided."
+                            ))
+                    }
+                    continue
+                }
+                provides.append((name: identifier, type: type))
+            }
+        }
+        modules.append(
+            ScannedModule(
+                typeName: name, initializers: initializers,
+                dependencies: dependencies, defaultProviders: defaultProviders,
+                provides: provides, module: module))
+    }
+
+    /// The elements of the array literal a `dependencies` property returns,
+    /// whether it is written as an implicit-return getter or with `return`.
+    private func arrayElements(of variable: VariableDeclSyntax) -> [ExprSyntax] {
+        guard let accessors = variable.bindings.first?.accessorBlock else {
+            // `static let dependencies: [...] = [ ... ]`
+            if let value = variable.bindings.first?.initializer?.value.as(ArrayExprSyntax.self) {
+                return value.elements.map(\.expression)
+            }
+            return []
+        }
+        let statements: CodeBlockItemListSyntax
+        switch accessors.accessors {
+        case .getter(let items): statements = items
+        case .accessors(let list):
+            guard let getter = list.first(where: { $0.accessorSpecifier.tokenKind == .keyword(.get) }),
+                  let body = getter.body
+            else { return [] }
+            statements = body.statements
+        }
+        for statement in statements {
+            if let array = statement.item.as(ExprSyntax.self)?.as(ArrayExprSyntax.self) {
+                return array.elements.map(\.expression)
+            }
+            if let returned = statement.item.as(ReturnStmtSyntax.self)?.expression?
+                .as(ArrayExprSyntax.self) {
+                return returned.elements.map(\.expression)
+            }
+        }
+        return []
+    }
+
+
+    /// Records the module types a `modules:` argument names.
+    private func collectBootstrapModules(_ node: FunctionCallExprSyntax) {
+        guard let argument = node.arguments.first(where: { $0.label?.text == "modules" }),
+            let array = argument.expression.as(ArrayExprSyntax.self)
+        else { return }
+        for element in array.elements {
+            guard let member = element.expression.as(MemberAccessExprSyntax.self),
+                member.declName.baseName.tokenKind == .keyword(.self),
+                let base = member.base
+            else { continue }
+            // Kept whole: `AlulaWebModule<AlulaTransport>` is one module,
+            // and the generic argument is the transport it was chosen with —
+            // which the composer has to write back out to construct it.
+            bootstrapModules.append(base.trimmedDescription)
+        }
+    }
+
+    /// Records a `Configuration.load(prefix:)` argument.
+    ///
+    /// Matched on the callee's method name plus the label, like the framework
+    /// spellings above: the call is usually nested inside `Alula.run`'s
+    /// `configuration:` argument, so the enclosing call is not a reliable
+    /// anchor.
+    private func collectConfigPrefix(_ node: FunctionCallExprSyntax) {
+        guard let callee = node.calledExpression.as(MemberAccessExprSyntax.self),
+            callee.declName.baseName.text == "load",
+            let argument = node.arguments.first(where: { $0.label?.text == "prefix" })
+        else { return }
+
+        let line = converter.location(for: node.position).line
+        guard let literal = argument.expression.as(StringLiteralExprSyntax.self) else {
+            // A computed prefix: present, but not knowable here.
+            configPrefix = (text: nil, file: file, line: line)
+            return
+        }
+        let segments = literal.segments.compactMap { $0.as(StringSegmentSyntax.self) }
+        guard segments.count == literal.segments.count else {
+            // Interpolated — same as above.
+            configPrefix = (text: nil, file: file, line: line)
+            return
+        }
+        configPrefix = (
+            text: segments.map(\.content.text).joined(), file: file, line: line
+        )
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        // `modules:` can appear on `Alula.run`, `Alula.bootstrap` or
+        // `Alula.assemble`; the label is what identifies it, not the callee.
+        collectBootstrapModules(node)
+        collectConfigPrefix(node)
+
+        guard let callee = node.calledExpression.as(MemberAccessExprSyntax.self) else {
+            return .visitChildren
+        }
+        // A lane declaration: `MiddlewareRegistration.lane(name, [A(), B()])`.
+        // Matched by method name and shape — a name, then an array of
+        // middleware instances — like the framework spellings above. (The
+        // container-era `container.pipeline(name) { A.self }` this replaced
+        // took a trailing closure of `.self` metatypes.)
+        guard callee.declName.baseName.text == "lane",
+              node.trailingClosure == nil,
+              node.arguments.count == 2,
+              let laneArgument = node.arguments.first, laneArgument.label == nil,
+              let listArgument = node.arguments.last, listArgument.label == nil,
+              let list = listArgument.expression.as(ArrayExprSyntax.self)
+        else { return .visitChildren }
+
+        // The lane name: the literal's content for `.lane("admin", ...)`, the
+        // member's name for `.lane(.authenticated, ...)` / `.lane(.default, ...)`.
+        // nil when the argument is neither — a computed lane, which the
+        // manifest records but cannot name.
+        let laneText: String? = laneArgument.expression.trimmedDescription
+        var lane: String? = nil
+        if let literal = laneArgument.expression.as(StringLiteralExprSyntax.self) {
+            lane = literal.segments.compactMap {
+                $0.as(StringSegmentSyntax.self)?.content.text
+            }.joined()
+            // An interpolated lane name is not statically knowable.
+            if literal.segments.count != literal.segments.compactMap({
+                $0.as(StringSegmentSyntax.self)
+            }).count {
+                lane = nil
+            }
+        } else if let member = laneArgument.expression.as(MemberAccessExprSyntax.self),
+                  member.base == nil {
+            lane = member.declName.baseName.text
+        }
+
+        // Middleware type names in declared order — outermost first, the order
+        // the array is written in. Each element is an instance `A()`, so the
+        // type is the called expression.
+        var middleware: [String] = []
+        for element in list.elements {
+            guard let call = element.expression.as(FunctionCallExprSyntax.self) else { continue }
+            middleware.append(call.calledExpression.trimmedDescription)
+        }
+
+        lanes.append(
+            ScannedPipelineLane(
+                lane: lane,
+                laneText: laneText,
+                middleware: middleware,
+                declaredIn: typeStack.last,
+                module: module,
+                file: file,
+                line: converter.location(for: node.position).line
+            ))
+        return .visitChildren
+    }
+}
+
+// MARK: - Syntax visitor
+
+/// Collects top-level `@Component`/`@Controller` types. Nested registrable
+/// types are a deliberate v1 non-goal (registration by qualified nested name
+/// is easy to add; supporting it silently before deciding it's wanted is not).
+final class ComponentVisitor: SyntaxVisitor {
+    /// Attribute names that mark a type as a scanned component. This is Alula
+    /// Web's "one pipeline, different entry kinds" extension point:
+    /// `@Controller` expands to the same parameterized init as `@Component`,
+    /// so the generator's only job is knowing the *name* — it never references
+    /// another package's types, keeping the "Core imports nothing above it"
+    /// boundary intact at the code level.
+    /// Every attribute that makes a type a scanned component.
+    ///
+    /// A new one must be added here as well as given a macro, or the generator
+    /// never scans the type and it is silently left out of the composition —
+    /// its macro-generated init and factories compile, but nothing calls them.
+    /// That is exactly what happened to
+    /// `@Scheduler`: it shipped in 0.2.0 with a working macro, a working
+    /// runtime, and no entry here, so a scheduled job never ran. There is a
+    /// test below pinning this list against the macros the framework
+    /// actually declares.
+    static let registrableAttributes: Set<String> = [
+        "Component", "Service", "Repository", "Controller", "Scheduler", "Settings", "Middleware",
+    ]
+
+    let module: String
+    let file: String
+    let converter: SourceLocationConverter
+    var components: [ScannedComponent] = []
+    var routes: [ScannedControllerRoute] = []
+    /// `extension T: P` clauses seen in this file, keyed later by the extended
+    /// type's base name. Collected file-wide (not just for known components —
+    /// the component's declaration may live in a different file).
+    var extensionConformances: [(typeName: String, protocols: [String])] = []
+
+    init(module: String, file: String, tree: SourceFileSyntax) {
+        self.module = module
+        self.file = file
+        self.converter = SourceLocationConverter(fileName: file, tree: tree)
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        collect(
+            name: node.name.text, attributes: node.attributes,
+            modifiers: node.modifiers, members: node.memberBlock,
+            inheritanceClause: node.inheritanceClause, position: node.position,
+            leadingTrivia: node.leadingTrivia.description)
+        return .skipChildren
+    }
+
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        collect(
+            name: node.name.text, attributes: node.attributes,
+            modifiers: node.modifiers, members: node.memberBlock,
+            inheritanceClause: node.inheritanceClause, position: node.position,
+            leadingTrivia: node.leadingTrivia.description)
+        return .skipChildren
+    }
+
+    override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        if let clause = node.inheritanceClause, !clause.inheritedTypes.isEmpty {
+            extensionConformances.append(
+                (
+                    typeName: node.extendedType.trimmedDescription,
+                    protocols: clause.inheritedTypes.map { $0.type.trimmedDescription }
+                ))
+        }
+        return .skipChildren
+    }
+
+
+    /// Scans one `@Controller`'s members for routes and records them with
+    /// their combined paths and resolved lanes.
+    private func collectRoutes(
+        controller: String, attribute: AttributeSyntax, members: MemberBlockSyntax
+    ) {
+        let silent = SilentRouteDiagnostics()
+        let base = RouteScanning.basePath(of: attribute, diagnostics: silent)
+        let controllerPipelines = RouteScanning.pipelines(of: attribute)
+
+        var index = 0
+        for member in members.members {
+            guard let function = member.decl.as(FunctionDeclSyntax.self) else { continue }
+            for route in RouteScanning.scanRoutes(of: function, diagnostics: silent) {
+                let location = converter.location(for: route.node.position)
+                defer { index += 1 }
+                routes.append(
+                    ScannedControllerRoute(
+                        controllerTypeName: controller,
+                        methodName: route.methodName,
+                        indexInController: index,
+                        httpMethod: route.kind.httpMethod,
+                        path: RouteScanning.combinePaths(base, route.path),
+                        source: "\(module).\(controller).\(route.methodName)",
+                        pipelinesText: RouteScanning.resolvedPipelines(
+                            route: route.pipelinesText, controller: controllerPipelines),
+                        isUpgrade: route.kind.isUpgrade,
+                        file: file,
+                        line: location.line
+                    )
+                )
+            }
+        }
+    }
+
+    private func collect(
+        name: String,
+        attributes: AttributeListSyntax,
+        modifiers: DeclModifierListSyntax,
+        members: MemberBlockSyntax,
+        inheritanceClause: InheritanceClauseSyntax?,
+        position: AbsolutePosition,
+        leadingTrivia: String
+    ) {
+        let registrable = attributes.lazy
+            .compactMap { $0.as(AttributeSyntax.self) }
+            .first {
+                guard let name = $0.attributeName.as(IdentifierTypeSyntax.self)?.name.text else {
+                    return false
+                }
+                return Self.registrableAttributes.contains(name)
+            }
+        guard let registrable else { return }
+        let isPublic = modifiers.contains {
+            $0.name.tokenKind == .keyword(.public) || $0.name.tokenKind == .keyword(.open)
+        }
+        // @Settings binds every plain property implicitly — there is no
+        // per-property @ConfigValue attribute to scan for the common case,
+        // only a property name and the type's own namespace argument. The
+        // key the macro will generate is derived the same way here as there
+        // (ConfigKeyNaming.kebabCase, shared rather than duplicated) so a
+        // required key with no default can get the same compile-time
+        // alula.yaml check @ConfigValue's explicit form already has.
+        // Routes, for the static manifest (COMPOSITION-MIGRATION.md §2.9).
+        // Same parser the macro uses, so a path combined here and a path
+        // combined in the expansion are combined by one implementation.
+        if registrable.attributeName.as(IdentifierTypeSyntax.self)?.name.text == "Controller" {
+            collectRoutes(controller: name, attribute: registrable, members: members)
+        }
+
+        let isSettingsType =
+            registrable.attributeName.as(IdentifierTypeSyntax.self)?.name.text == "Settings"
+        let settingsNamespace = isSettingsType ? literalKey(of: registrable) : nil
+
+        var inject: [String] = []
+        var injectNames: [String] = []
+        var acknowledged: [String] = []
+        var acknowledgedNames: [String] = []
+        var dependencyOrder: [(type: String, label: String, from: String?)] = []
+        var configValues: [ScannedConfigValue] = []
+        for member in members.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            if hasAttribute(variable.attributes, named: "Inject"),
+                let binding = variable.bindings.first,
+                let type = binding.typeAnnotation?.type.trimmedDescription
+            {
+                // `@Inject(from: SomeModule.self)` names which provider to take
+                // this from, for the case where two modules provide the type.
+                // Carried as source text; the composer matches it by module
+                // identity (D27).
+                let namedProvider = attribute(of: variable.attributes, named: "Inject")
+                    .flatMap { labeledArgumentSource(of: $0, label: "from") }
+                    .map(moduleTypeText(ofMetatype:))
+                let propertyName =
+                    binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text ?? ""
+                // `member.description` spans the member's leading trivia
+                // through its last token's trailing trivia, so the marker is
+                // found whether it sits on the line above the property or as
+                // a same-line trailing comment.
+                dependencyOrder.append((type: type, label: propertyName, from: namedProvider))
+                if member.description.contains("alula:hand-registered") {
+                    acknowledged.append(type)
+                    acknowledgedNames.append(propertyName)
+                } else {
+                    inject.append(type)
+                    injectNames.append(propertyName)
+                }
+            }
+            if let attribute = attribute(of: variable.attributes, named: "ConfigValue") {
+                let propertyLocation = converter.location(for: variable.position)
+                // A property initializer *is* a default — the macro treats it
+                // as one (`getIfPresent ?? default`). Reading only the
+                // attribute's `default:` label made
+                // `@ConfigValue("legacy.key") var x: String = "fallback"`
+                // a hard build error saying the key is missing from
+                // alula.yaml and has no default, on code that runs correctly.
+                let hasInitializer = variable.bindings.contains { $0.initializer != nil }
+                configValues.append(
+                    ScannedConfigValue(
+                        key: literalKey(of: attribute),
+                        hasDefault: hasLabeledArgument(attribute, label: "default")
+                            || hasInitializer,
+                        source: .explicitConfigValue,
+                        file: file,
+                        line: propertyLocation.line
+                    ))
+                continue
+            }
+
+            if let namespace = settingsNamespace,
+                !hasAttribute(variable.attributes, named: "Inject")
+            {
+                for binding in variable.bindings {
+                    guard binding.accessorBlock == nil,
+                        binding.initializer == nil,
+                        let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
+                        let type = binding.typeAnnotation?.type,
+                        !type.is(OptionalTypeSyntax.self),
+                        type.as(IdentifierTypeSyntax.self)?.name.text != "Optional"
+                    else { continue }
+                    let propertyLocation = converter.location(for: variable.position)
+                    let key = "\(namespace).\(ConfigKeyNaming.kebabCase(pattern.identifier.text))"
+                    configValues.append(
+                        ScannedConfigValue(
+                            key: key, hasDefault: false, source: .implicitSettingsField,
+                            file: file, line: propertyLocation.line
+                        ))
+                }
+            }
+        }
+        let location = converter.location(for: position)
+        components.append(
+            ScannedComponent(
+                module: module,
+                typeName: name,
+                attributeName: registrable.attributeName
+                    .as(IdentifierTypeSyntax.self)?.name.text ?? "Component",
+                isPublic: isPublic,
+                removedScopeText: labeledArgumentSource(of: registrable, label: "scope"),
+                removedQualifierText: labeledArgumentSource(of: registrable, label: "qualifier"),
+                conformanceNames: inheritanceClause?.inheritedTypes.map {
+                    $0.type.trimmedDescription
+                } ?? [],
+                injectTypeNames: inject,
+                injectPropertyNames: injectNames,
+                acknowledgedTypeNames: acknowledged,
+                dependencyOrder: dependencyOrder,
+                acknowledgedPropertyNames: acknowledgedNames,
+            isModuleRegistered: leadingTrivia.contains("alula:module-registered"),
+                configValues: configValues,
+                file: file,
+                line: location.line
+            ))
+    }
+
+    private func hasAttribute(_ attributes: AttributeListSyntax, named name: String) -> Bool {
+        attribute(of: attributes, named: name) != nil
+    }
+
+    private func attribute(of attributes: AttributeListSyntax, named name: String)
+        -> AttributeSyntax?
+    {
+        for element in attributes {
+            guard let attribute = element.as(AttributeSyntax.self) else { continue }
+            if attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text == name {
+                return attribute
+            }
+        }
+        return nil
+    }
+
+    /// The key argument's literal content — nil when it isn't a plain string
+    /// literal, which makes the site unverifiable statically.
+    private func literalKey(of attribute: AttributeSyntax) -> String? {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
+            let first = arguments.first, first.label == nil,
+            let literal = first.expression.as(StringLiteralExprSyntax.self)
+        else { return nil }
+        var key = ""
+        for segment in literal.segments {
+            guard let text = segment.as(StringSegmentSyntax.self) else { return nil }
+            key += text.content.text
+        }
+        return key
+    }
+
+    private func hasLabeledArgument(_ attribute: AttributeSyntax, label: String) -> Bool {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
+            return false
+        }
+        return arguments.contains { $0.label?.text == label }
+    }
+
+    /// Source text of a labeled argument, nil only when the label is absent.
+    ///
+    /// A literal `nil` reads as present, with text "nil". That matters for the
+    /// removed-argument diagnostic: `@Component(qualifier: nil)` is a call site
+    /// still passing an argument that no longer exists, and telling its author
+    /// so is the entire point — the value it passes is beside the point.
+    private func labeledArgumentSource(of attribute: AttributeSyntax, label: String) -> String? {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
+            return nil
+        }
+        for argument in arguments where argument.label?.text == label {
+            return argument.expression.trimmedDescription
+        }
+        return nil
+    }
+}
+
+// MARK: - Diagnostics
+
+var errorCount = 0
+
+// Top-level vars in main.swift are MainActor-isolated under Swift 6; these
+// helpers touch them, so they join the same isolation (the tool is strictly
+// single-threaded top-level code either way).
+@MainActor
+func emit(_ severity: String, _ message: String, file: String, line: Int) {
+    FileHandle.standardError.write(
+        "\(file):\(line):1: \(severity): \(message)\n".data(using: .utf8)!)
+    if severity == "error" { errorCount += 1 }
+}
+
+// MARK: - Main
+
+let arguments = CommandLine.arguments
+guard arguments.count == 2 else {
+    FileHandle.standardError.write(
+        "usage: alula-registration-gen <manifest.json>\n".data(using: .utf8)!)
+    exit(2)
+}
+
+let manifest: Manifest
+do {
+    let data = try Data(contentsOf: URL(fileURLWithPath: arguments[1]))
+    manifest = try JSONDecoder().decode(Manifest.self, from: data)
+} catch {
+    FileHandle.standardError.write(
+        "alula-registration-gen: cannot read manifest: \(error)\n".data(using: .utf8)!)
+    exit(2)
+}
+
+var components: [ScannedComponent] = []
+/// Imports written by the target's own sources.
+///
+/// The generated file is a separate file, so it inherits nothing. It has
+/// always emitted the modules that *declare components*, which is enough for
+/// the component list — every type it names is one of those. `AlulaGraph`
+/// is not: its root parameters are typed by whatever an `@Inject` said, and
+/// those types come from wherever the application imports them —
+/// `PostgresDataSource` from AlulaDataPostgres, which declares no scanned
+/// component and so was never imported here.
+var targetImports: Set<String> = []
+var routes: [ScannedControllerRoute] = []
+var lanes: [ScannedPipelineLane] = []
+var moduleGraph: [ScannedModule] = []
+var bootstrapModules: [String] = []
+var scannedConfigPrefixes: [(text: String?, file: String, line: Int)] = []
+var extensionConformances: [(typeName: String, protocols: [String])] = []
+for module in manifest.modules {
+    for file in module.files {
+        guard let source = try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
+        else {
+            emit(
+                "warning", "Alula codegen could not read source file (skipped).", file: file,
+                line: 1)
+            continue
+        }
+        // Cheap pre-filter before full parse; scanning is on the hot path of
+        // every build of the target. "extension" is included because a
+        // conformance-only `extension T: P` file feeds bridge synthesis —
+        // this admits most real files, but the parse it saves was always the
+        // cheap part; the filter's remaining job is skipping generated and
+        // resource-adjacent sources.
+        guard
+            ComponentVisitor.registrableAttributes.contains(where: { source.contains("@\($0)") })
+                || source.contains("extension")
+                // A module body declaring lanes, or carrying the
+                // dependency edges lane order is derived from, has no
+                // registrable attribute to match on.
+                || source.contains(".lane")
+                || source.contains("AlulaModule")
+                || source.contains("modules:")
+                // The application's `Configuration.load(prefix:)` — the base
+                // file name the @ConfigValue check verifies against.
+                || source.contains("Configuration.load")
+        else { continue }
+        if module.name == manifest.targetModuleName {
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard text.hasPrefix("import ") else { continue }
+                let name = text.dropFirst("import ".count).trimmingCharacters(in: .whitespaces)
+                // `@_exported` and submodule paths are not plain names.
+                if !name.isEmpty, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) {
+                    targetImports.insert(name)
+                }
+            }
+        }
+        let tree = Parser.parse(source: source)
+        let visitor = ComponentVisitor(module: module.name, file: file, tree: tree)
+        visitor.walk(tree)
+        components.append(contentsOf: visitor.components)
+        routes.append(contentsOf: visitor.routes)
+        extensionConformances.append(contentsOf: visitor.extensionConformances)
+
+        if source.contains(".lane") || source.contains("AlulaModule")
+            || source.contains("Configuration.load")
+        {
+            let moduleScan = ModuleVisitor(module: module.name, file: file, tree: tree)
+            moduleScan.walk(tree)
+            lanes.append(contentsOf: moduleScan.lanes)
+            moduleGraph.append(contentsOf: moduleScan.modules)
+            for warning in moduleScan.untypedProvides {
+                emit("warning", warning.message, file: warning.file, line: warning.line)
+            }
+            if module.name == manifest.targetModuleName {
+                bootstrapModules.append(contentsOf: moduleScan.bootstrapModules)
+                // Only the target's own source decides the application's
+                // prefix: a library calling `load` configures itself, not
+                // the app being built.
+                if let found = moduleScan.configPrefix { scannedConfigPrefixes.append(found) }
+            }
+        }
+    }
+}
+
+/// A module's identity for matching, with its generic argument stripped.
+///
+/// `AlulaWebModule<AlulaTransport>` and `AlulaWebModule` are the same
+/// module named two ways: the declaration has no generic argument, a
+/// bootstrap list and a `dependencies` entry do. Matching uses this; emitting
+/// uses the text as written, because the composer has to construct it.
+func moduleKey(_ text: String) -> String {
+    var name = text
+    if let angle = name.firstIndex(of: "<") { name = String(name[..<angle]) }
+    return baseName(name)
+}
+
+/// Splits `A, B<C, D>, E` into three, not four — a comma inside a nested
+/// generic argument list is not a separator.
+func splitTopLevelArguments(_ text: String) -> [String] {
+    var parts: [String] = []
+    var depth = 0
+    var current = ""
+    for character in text {
+        switch character {
+        case "<":
+            depth += 1
+            current.append(character)
+        case ">":
+            depth -= 1
+            current.append(character)
+        case "," where depth == 0:
+            parts.append(current.trimmingCharacters(in: .whitespaces))
+            current = ""
+        default:
+            current.append(character)
+        }
+    }
+    let last = current.trimmingCharacters(in: .whitespaces)
+    if !last.isEmpty { parts.append(last) }
+    return parts
+}
+
+/// A module's identity, **generic arguments included**.
+///
+/// `moduleKey` discards them, which is right for a value type —
+/// `AlulaDemo.UserRepositoryProtocol` and `UserRepositoryProtocol` name one
+/// seam — and wrong for a module. `PostgresDataModule<PrimaryDataSource>` and
+/// `PostgresDataModule<Analytics>` are two modules: two configurations, two
+/// pools, two lifetimes. Keyed by `moduleKey` they collapsed into one, so
+/// `resolveIncludedModules` visited only the first, the composer emitted a
+/// single binding, and a module taking both received the same one twice:
+///
+///     let poolModule = PoolModule<Primary>()
+///     let appModule = AppModule(primary: poolModule, analytics: poolModule)
+///     // error: cannot convert 'PoolModule<Primary>' to 'PoolModule<Analytics>'
+///
+/// alula-data is built on this shape — `PostgresDataModule<Name>`,
+/// `InMemoryDataModule<Name>`, `ValkeyDataModule<Name>` — and documented
+/// composing two from the start. See DECISIONS.md D27.
+///
+/// Generic arguments are reduced to base names too, and recursively, so
+/// `Cargo.PostgresDataModule<Cargo.Analytics>` and
+/// `PostgresDataModule<Analytics>` are the same module written two ways.
+func moduleIdentity(_ text: String) -> String {
+    let name = text.trimmingCharacters(in: .whitespaces)
+    guard let open = name.firstIndex(of: "<"), name.hasSuffix(">") else {
+        return baseName(name)
+    }
+    let outer = baseName(String(name[..<open]))
+    let inside = String(name[name.index(after: open)..<name.index(before: name.endIndex)])
+    let arguments = splitTopLevelArguments(inside).map(moduleIdentity)
+    return arguments.isEmpty ? outer : "\(outer)<\(arguments.joined(separator: ", "))>"
+}
+
+/// A Swift identifier for a module's binding in the composer:
+/// `PostgresDataModule<PrimaryDataSource>` becomes
+/// `postgresDataModulePrimaryDataSource`, so two instantiations get two
+/// bindings instead of one that silently serves both.
+/// What to call a root that named its provider: `PostgresDataModule<Analytics>`
+/// becomes `Analytics`, because the generic argument is what tells two
+/// instantiations apart and is what an author would call the thing. A
+/// non-generic module keeps its own name.
+func providerSuffix(_ moduleText: String) -> String {
+    let identity = moduleIdentity(moduleText)
+    guard let open = identity.firstIndex(of: "<"), identity.hasSuffix(">") else { return identity }
+    let inside = String(identity[identity.index(after: open)..<identity.index(before: identity.endIndex)])
+    let arguments = splitTopLevelArguments(inside)
+    return arguments.isEmpty ? identity : arguments.joined()
+}
+
+/// The scanned *declaration* behind a module reference.
+///
+/// `includedModules` holds specializations — `PostgresDataModule<Analytics>` —
+/// while the scan saw one declaration, `PostgresDataModule`. Identity tells the
+/// instantiations apart, which is the point; `provides` and the initializers
+/// live on the declaration they share, so a lookup has to fall back to it.
+///
+/// Before module identity carried generic arguments this worked by accident:
+/// every key was generic-stripped, so specialization and declaration were the
+/// same string.
+func scannedModule(_ text: String, in byName: [String: ScannedModule]) -> ScannedModule? {
+    byName[moduleIdentity(text)] ?? byName[moduleKey(text)]
+}
+
+/// `PostgresDataModule<Analytics>.self` -> `PostgresDataModule<Analytics>`.
+func moduleTypeText(ofMetatype text: String) -> String {
+    var name = text.trimmingCharacters(in: .whitespaces)
+    if name.hasSuffix(".self") { name = String(name.dropLast(".self".count)) }
+    return name.trimmingCharacters(in: .whitespaces)
+}
+
+func moduleBindingName(_ text: String) -> String {
+    var name = ""
+    var capitalizeNext = false
+    for character in moduleIdentity(text) {
+        if character.isLetter || character.isNumber {
+            name.append(capitalizeNext ? Character(character.uppercased()) : character)
+            capitalizeNext = false
+        } else {
+            capitalizeNext = !name.isEmpty
+        }
+    }
+    return name.prefix(1).lowercased() + name.dropFirst()
+}
+
+/// Name-level matching everywhere below compares base names — the last dotted
+/// component — so `AlulaDemo.UserRepositoryProtocol` and
+/// `UserRepositoryProtocol` refer to the same seam.
+func baseName(_ typeName: String) -> String {
+    typeName.split(separator: ".").last.map(String.init) ?? typeName
+}
+
+// Merge extension-declared conformances into the scanned components.
+if !extensionConformances.isEmpty {
+    var extras: [String: [String]] = [:]
+    for entry in extensionConformances {
+        extras[baseName(entry.typeName), default: []].append(contentsOf: entry.protocols)
+    }
+    for index in components.indices {
+        if let added = extras[components[index].typeName] {
+            components[index].conformanceNames.append(contentsOf: added)
+        }
+    }
+}
+
+// MARK: - Existential bridge synthesis
+//
+// The stereotype macros register a component under its CONCRETE type key;
+// `@Inject var x: (any P)` resolves the EXISTENTIAL key. Nothing used to
+// populate that key, so every protocol seam cost a hand-written bridge in a
+// module's configure(_:) plus a marker comment silencing the warning below.
+// The scanner sees both sides of the seam — the demand in @Inject type
+// text, the supply in inheritance clauses and extensions — so when a demanded
+// protocol has exactly one scanned conformer, the graph wires that conformer
+// in instead.
+//
+// Demand-driven on purpose: binding only what some @Inject actually asks
+// for means marker conformances (Sendable, Codable, a superclass) never
+// produce registrations — nobody autowires `(any Sendable)`.
+//
+// A `// alula:hand-registered` marker on the demanding property suppresses
+// synthesis: it is the author's statement that the key is supplied some other
+// way this scanner cannot see (P-2), and a synthesized duplicate would collide
+// at composition. Ambiguity (multiple scanned
+// conformers) also synthesizes nothing — warning, not error, because a hand
+// bridge may already resolve it invisibly; guessing a winner silently would
+// be worse than asking.
+
+/// `(any P)` / `any P` → "P". Nil for optionals (they resolve under a
+/// different key), compositions (`any P & Q`), generics, and non-existential
+/// types — those demands fall back to the warning + hand-bridge path.
+func existentialProtocolName(_ typeText: String) -> String? {
+    var text = typeText.trimmingCharacters(in: .whitespaces)
+    if text.hasSuffix("?") || text.hasSuffix("!") { return nil }
+    while text.hasPrefix("("), text.hasSuffix(")") {
+        text = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+    }
+    guard text.hasPrefix("any ") else { return nil }
+    let name = String(text.dropFirst("any ".count)).trimmingCharacters(in: .whitespaces)
+    guard !name.isEmpty,
+        name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." })
+    else { return nil }
+    return name
+}
+
+/// The key two types are matched on when one is provided and the other
+/// demanded: base name, with optionality, parentheses, `any`, and generic
+/// arguments stripped.
+///
+/// `existentialProtocolName` deliberately refuses an optional — it decides
+/// whether to synthesize a bridge, and `(any P)?` is not a registrable
+/// component. Composition asks a different question: `adapter: (any
+/// DistributedPubSubAdapter)?` and `let adapter: any DistributedPubSubAdapter`
+/// are the same seam, and the `?` only says the parameter may be omitted.
+func normalizedTypeText(_ typeText: String) -> String {
+    var text = typeText.trimmingCharacters(in: .whitespaces)
+    while text.hasSuffix("?") || text.hasSuffix("!") {
+        text = String(text.dropLast()).trimmingCharacters(in: .whitespaces)
+    }
+    while text.hasPrefix("("), text.hasSuffix(")") {
+        text = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+    }
+    if text.hasPrefix("any ") {
+        text = String(text.dropFirst("any ".count)).trimmingCharacters(in: .whitespaces)
+    }
+    return text
+}
+
+func providedTypeKey(_ typeText: String) -> String {
+    moduleKey(normalizedTypeText(typeText))
+}
+
+/// The same normalization, keyed as a *module* rather than a value type — for
+/// the one question that asks whether a parameter names a module:
+/// `init(primary: PostgresDataModule<PrimaryDataSource>)`.
+func providedModuleIdentity(_ typeText: String) -> String {
+    moduleIdentity(normalizedTypeText(typeText))
+}
+
+/// `[T]` and `Array<T>` -> `T`; anything else -> nil.
+///
+/// Both spellings, because a module author writes whichever reads better and
+/// the composer has only source text to go on.
+func arrayElementType(_ typeText: String) -> String? {
+    var text = typeText.trimmingCharacters(in: .whitespaces)
+    while text.hasSuffix("?") || text.hasSuffix("!") {
+        text = String(text.dropLast()).trimmingCharacters(in: .whitespaces)
+    }
+    if text.hasPrefix("["), text.hasSuffix("]") {
+        let inner = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+        // `[K: V]` is a dictionary, not an aggregate of contributions.
+        return inner.contains(":") ? nil : inner
+    }
+    if text.hasPrefix("Array<"), text.hasSuffix(">") {
+        return String(text.dropFirst("Array<".count).dropLast())
+            .trimmingCharacters(in: .whitespaces)
+    }
+    return nil
+}
+
+struct SynthesizedBridge {
+    /// The protocol name as written at the demand site (module qualification
+    /// preserved) — re-embedded verbatim in the generated register call.
+    let protocolName: String
+    let component: ScannedComponent
+}
+
+@MainActor
+func synthesizeBridges() -> [SynthesizedBridge] {
+    var suppressed: Set<String> = []
+    for component in components {
+        for acknowledged in component.acknowledgedTypeNames {
+            if let name = existentialProtocolName(acknowledged) {
+                suppressed.insert(baseName(name))
+            }
+        }
+    }
+
+    // First demand site wins for spelling/diagnostics; the key is the same
+    // type however it is spelled.
+    var demands: [String: (protocolName: String, demandedBy: ScannedComponent)] = [:]
+    for component in components {
+        for dependency in component.injectTypeNames {
+            guard let name = existentialProtocolName(dependency) else { continue }
+            let base = baseName(name)
+            if demands[base] == nil { demands[base] = (name, component) }
+        }
+    }
+
+    var bridges: [SynthesizedBridge] = []
+    for base in demands.keys.sorted() {
+        guard !suppressed.contains(base) else { continue }
+        let demand = demands[base]!
+        // Module-registered types are not bridge candidates: a bridge
+        // resolving one asserts it exists, and whether it exists is exactly
+        // the runtime question its module answers. Bridging to it would
+        // reintroduce the eager-construction failure the marker exists to prevent.
+        let conformers = components.filter { component in
+            !component.isModuleRegistered
+                && component.conformanceNames.contains { baseName($0) == base }
+        }
+        switch conformers.count {
+        case 0:
+            continue  // The missing-registration warning below covers this.
+        case 1:
+            bridges.append(
+                SynthesizedBridge(protocolName: demand.protocolName, component: conformers[0]))
+        default:
+            emit(
+                "warning",
+                "@Inject type '(any \(demand.protocolName))' in \(demand.demandedBy.typeName) has \(conformers.count) scanned conformers (\(conformers.map(\.typeName).sorted().joined(separator: ", "))) — no bridge was generated. Provide it from a module and acknowledge the property with a `// alula:hand-registered` comment.",
+                file: demand.demandedBy.file, line: demand.demandedBy.line
+            )
+        }
+    }
+    return bridges
+}
+let bridges = synthesizeBridges()
+let bridgedProtocolBaseNames = Set(bridges.map { baseName($0.protocolName) })
+
+// MARK: - Validation
+
+// Missing-registration checks are *warnings*: a dependency a module provides as a
+// value, or one supplied from outside the graph, is invisible to the scan, so an unknown
+// type name is suspicious, not proven wrong. Cycles among scanned components
+// are errors: those are fully decidable from what the scanner sees.
+let knownTypeNames = Set(components.map(\.typeName))
+// Types available without anyone providing them. A demand
+// for one of these is satisfied at runtime no matter what the scanner sees,
+// so warning about it would be a false positive on correct code — and a
+// false positive that appears on every build is how a useful warning gets
+// tuned out.
+let alwaysAvailable: Set<String> = [
+    "Configuration", "AlulaCore.Configuration", "AlulaConfig.Configuration",
+]
+
+for component in components {
+    for dependency in component.injectTypeNames {
+        // Demands satisfied by a synthesized bridge are no longer suspicious.
+        if let name = existentialProtocolName(dependency),
+            bridgedProtocolBaseNames.contains(baseName(name))
+        {
+            continue
+        }
+        let written = dependency.trimmingCharacters(in: .whitespaces)
+        // Optional injection is not supported, and stripping the `?` here hid
+        // that: the check passed, then the macro generated `resolve(Cache?.self)`
+        // whose `Optional<Cache>` key is never registered, and the app failed
+        // at bootstrap with `notRegistered` — against Docs/core.md's promise
+        // that missing registrations are reported at build time.
+        if written.hasSuffix("?") {
+            emit(
+                "error",
+                """
+                @Inject does not support optional types: '\(written)' in \
+                \(component.typeName) would resolve Optional<\
+                \(written.dropLast())>, which nothing registers. Drop the '?' if the \
+                dependency is required, or resolve it by hand where absence is \
+                meaningful.
+                """,
+                file: component.file, line: component.line
+            )
+            continue
+        }
+        let base = written
+        // Compared on the base name, as the bridge check above already does.
+        // Comparing the written text against bare scanned names warned on
+        // every correctly-qualified `@Inject var x: MyLib.Foo` — an
+        // always-on false positive, which is how a warning teaches people to
+        // stop reading warnings.
+        let known =
+            knownTypeNames.contains(base) || alwaysAvailable.contains(base)
+            || knownTypeNames.contains(baseName(base))
+            || alwaysAvailable.contains(baseName(base))
+        if !known {
+            emit(
+                "warning",
+                "@Inject type '\(base)' in \(component.typeName) is not a scanned @Component. If it is provided some other way — a value a module holds, or an external input — acknowledge it with a `// alula:hand-registered` comment on the property; otherwise composition will fail at startup.",
+                file: component.file, line: component.line
+            )
+        }
+    }
+}
+
+// Static cycle detection over the @Inject edges, at the level of type names —
+// which is now the only level there is: 0.20.0 removed the qualifiers, so an
+// edge is a type and nothing else. ("qualifier-blind" used to be a caveat
+// here; it is simply what an edge is.)
+@MainActor
+func detectCycles() {
+    let byName = Dictionary(components.map { ($0.typeName, $0) }, uniquingKeysWith: { a, _ in a })
+    var finished: Set<String> = []
+    var inProgress: Set<String> = []
+
+    func visit(_ name: String, stack: [String]) {
+        guard let component = byName[name] else { return }
+        if finished.contains(name) { return }
+        if inProgress.contains(name) {
+            let cycleStart = stack.firstIndex(of: name) ?? 0
+            let chain = (stack[cycleStart...] + [name]).joined(separator: " → ")
+            emit(
+                "error", "Dependency cycle among @Component types: \(chain)", file: component.file,
+                line: component.line)
+            return
+        }
+        inProgress.insert(name)
+        // Acknowledged (marker-carrying) dependencies keep their edges here:
+        // the marker silences the missing-registration warning, never cycle
+        // detection.
+        for dependency in (component.injectTypeNames + component.acknowledgedTypeNames)
+        where byName[dependency] != nil {
+            visit(dependency, stack: stack + [name])
+        }
+        inProgress.remove(name)
+        finished.insert(name)
+    }
+
+    for component in components {
+        visit(component.typeName, stack: [])
+    }
+}
+detectCycles()
+
+// MARK: - Removed lifetimes (compile-time case)
+//
+// Singleton is the only lifetime: a component is built once, at composition,
+// and shared. `.scoped` and `.transient` are gone — per-request state rides
+// `RequestContext`, and a per-operation resource is leased where the operation
+// is — so removing them removed the captive-dependency class of bug with them
+// (COMPOSITION-MIGRATION.md §2.2).
+//
+// A `scope:` argument therefore names a distinction that no longer exists —
+// and as of 0.20.0 the argument itself is gone from `@Component`, `@Service`
+// and `@Repository`, along with the type-level `qualifier:` beside it, which
+// expanded to nothing because composition wires by type.
+//
+// Both are reported here, at build time and pointing at the site. Without this
+// the author of `@Service(scope: .singleton)` meets the type checker's "extra
+// argument in call", which is true and useless: it does not say the argument
+// was removed, that removing it is the whole fix, or where the lifetimes went.
+@MainActor
+func diagnoseRemovedComponentArguments() {
+    // The migration prose, shared by both `scope:` messages: where the other
+    // lifetimes went is still the question an author of `.scoped` is really
+    // asking, and it is still true.
+    let whereTheLifetimesWent =
+        "Singleton is the only lifetime: nothing needed the others, and removing them "
+        + "removed the captive-dependency class with them. Per-request state travels on "
+        + "`RequestContext` — the authenticated principal is the worked example — and a "
+        + "pooled connection is leased per operation by the repository that holds the pool."
+
+    for component in components {
+        if let scopeText = component.removedScopeText {
+            let namesARemovedLifetime =
+                scopeText.hasSuffix(".scoped") || scopeText.hasSuffix(".transient")
+            let opening =
+                namesARemovedLifetime
+                ? "'\(component.typeName)' declares `scope: \(scopeText)`, which no longer exists, "
+                    + "and `scope:` itself was removed in 0.20.0. "
+                : "'\(component.typeName)' declares `scope: \(scopeText)`. The `scope:` argument "
+                    + "was removed in 0.20.0: it had one legal value and expanded to nothing. "
+            emit(
+                "error",
+                opening + whereTheLifetimesWent
+                    + " Delete the argument: `@\(component.attributeName)`.",
+                file: component.file, line: component.line)
+        }
+
+        if let qualifierText = component.removedQualifierText {
+            emit(
+                "error",
+                "'\(component.typeName)' declares `qualifier: \(qualifierText)`. The type-level "
+                    + "`qualifier:` argument was removed in 0.20.0: it expanded to nothing, "
+                    + "because composition wires by type rather than by name. Delete the "
+                    + "argument: `@\(component.attributeName)`. The property-level "
+                    + "`@Inject(\"name\")` went in the same release — two @Inject properties of "
+                    + "one type are now a build error, because nothing distinguishes them.",
+                file: component.file, line: component.line)
+        }
+    }
+}
+diagnoseRemovedComponentArguments()
+
+// Cross-module registration requires the component be visible to the target's
+// generated code.
+for component in components
+where component.module != manifest.targetModuleName && !component.isPublic {
+    emit(
+        "error",
+        "@Component type '\(component.typeName)' in module \(component.module) must be public to be built from \(manifest.targetModuleName)'s generated composition root.",
+        file: component.file, line: component.line
+    )
+}
+
+// MARK: - Undeclared lanes (compile-time case)
+//
+// A route naming a lane nobody declared fails when dispatch is built —
+// at bootstrap, naming the route and the lane, never as a 500. The scan
+// knows both halves before the binary exists, so it can say so at the
+// declaration instead (§2.7 asked for this).
+//
+// A warning rather than an error, deliberately. The scan reaches the target
+// and its recursive *source* dependencies, so a lane declared inside a
+// binary dependency is invisible to it — and a build error there would fail
+// an application that runs correctly. `UndeclaredLaneError` at bootstrap
+// stays the enforcement; this is the early word, and it is silent whenever
+// it cannot be sure.
+@MainActor
+func diagnoseUndeclaredLanes() {
+    // A lane whose name is computed makes the whole set unknowable: it might
+    // be the very lane a route is asking for. Say nothing rather than guess.
+    guard lanes.allSatisfy({ $0.lane != nil }) else { return }
+
+    var declared = Set(lanes.compactMap(\.lane))
+    // `DispatchBuilder` provides both without a declaration: an application
+    // with no middleware is legal, and `.public` means "explicitly no lanes".
+    declared.insert("default")
+    declared.insert("public")
+
+    for route in routes {
+        guard let text = route.pipelinesText else { continue }
+        guard let named = laneNames(in: text) else { continue }
+        for lane in named where !declared.contains(lane) {
+            emit(
+                "warning",
+                """
+                Route \(route.httpMethod) \(route.path) runs through pipeline lane \
+                '\(lane)', which nothing declares. Declare it with \
+                `MiddlewareRegistration.lane("\(lane)", [...])` in a module (an empty \
+                lane list is legal), or remove it from the route's pipelines — \
+                otherwise this fails when dispatch is built.
+                """,
+                file: route.file, line: route.line
+            )
+        }
+    }
+}
+
+/// Lane names from a `pipelines:` argument's source text — `[.authenticated]`,
+/// `["admin"]`, `[.default, "admin"]`. nil when any element is neither a
+/// canonical member nor a string literal, since a computed lane cannot be
+/// checked and one unknowable element makes the list unknowable.
+func laneNames(in text: String) -> [String]? {
+    let body = text.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
+    guard !body.isEmpty else { return [] }
+    var names: [String] = []
+    for element in body.split(separator: ",") {
+        let piece = element.trimmingCharacters(in: .whitespaces)
+        if piece.hasPrefix("."), piece.dropFirst().allSatisfy({ $0.isLetter || $0.isNumber }) {
+            names.append(String(piece.dropFirst()))
+        } else if piece.hasPrefix("\""), piece.hasSuffix("\""), piece.count >= 2 {
+            names.append(String(piece.dropFirst().dropLast()))
+        } else {
+            return nil
+        }
+    }
+    return names
+}
+
+diagnoseUndeclaredLanes()
+
+/// Every module an application actually includes: the ones it listed, plus
+/// everything those pull in through `dependencies`.
+///
+/// The composition root includes the same set at bootstrap; this is that walk
+/// over the scanned edges, against roots read from the `modules:` argument in
+/// the application's own source. It is what makes "does this subsystem exist in
+/// this app" a build-time question instead of a runtime one — the assumption
+/// behind
+/// `alula:module-registered`, and the thing D11 removes the need for.
+///
+/// Empty when the target names no bootstrap list, which is the ordinary case
+/// for a library: it includes nothing because it starts nothing.
+@MainActor
+func resolveIncludedModules() -> [String] {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    var ordered: [String] = []
+    var seen: Set<String> = []
+
+    func visit(_ text: String) {
+        let key = moduleIdentity(text)
+        guard !seen.contains(key) else { return }
+        seen.insert(key)
+        // Dependencies first, the order `configure` runs in.
+        for dependency in scannedModule(text, in: byName)?.dependencies ?? [] {
+            visit(dependency)
+        }
+        // As written, generic argument and all: this is what constructs it.
+        ordered.append(text)
+    }
+    for root in bootstrapModules { visit(root) }
+    return ordered
+}
+let includedModules = resolveIncludedModules()
+
+/// Every module nominated by some `defaultProviders` in this application.
+///
+/// Flat, not per-type: a nomination says "prefer this module", and the type it
+/// settles is whichever ambiguous one it provides. Two modules nominated for
+/// the same type is not resolved here — `defaultProviderChoice` requires
+/// exactly one match and otherwise lets the ambiguity diagnostic fire.
+let defaultProviderModules: [String] = moduleGraph.flatMap(\.defaultProviders)
+
+// MARK: - @ConfigValue key check (compile-time case)
+//
+// A @ConfigValue key with no `default:` must exist in alula.yaml — the base
+// layer, present in every environment. Absent from both is a *compile error*
+// at the @ConfigValue site: the check needs only alula.yaml plus static
+// context, so per the project-wide rule it must not wait for runtime. The
+// runtime-only case (key present in base but a specific alula-{env}.yaml
+// failed to supply its real value) stays a thrown ConfigError at bootstrap.
+//
+// Which file is the base layer is a question the application answers in its
+// own source — `Configuration.load(prefix: "myapp")` — and that source is
+// scanned, so the check holds under a custom prefix rather than standing down
+// the moment the file is not called alula.yaml. Nothing is discovered from
+// the filesystem: an unscanned prefix means the default name, never "whatever
+// YAML is lying around".
+//
+// Four outcomes, and only the last two give up anything:
+//
+//   * no `prefix:` written          -> alula.yaml, as always
+//   * one literal prefix            -> <prefix>.yaml, checked exactly the same
+//   * a literal that isn't a legal  -> build error. It would trap at startup
+//     prefix                           otherwise; a bad name is knowable here
+//   * interpolated, computed, or    -> warning: not statically knowable, so
+//     two literals that disagree       the keys are verified at boot instead
+//
+// And when the resolved base file simply isn't there: skip, but say so if
+// there was anything to check. A pure-library package has no config files and
+// no keys — that case stays silent. Silently reporting success is the one
+// outcome that teaches people to trust a check that never ran.
+@MainActor
+func resolvedConfigPrefix() -> ConfigPrefix? {
+    let literals = scannedConfigPrefixes.compactMap { entry in entry.text.map { (entry, $0) } }
+    let distinct = Set(literals.map(\.1))
+
+    if distinct.count > 1 {
+        let (entry, _) = literals[0]
+        emit(
+            "warning",
+            """
+            This target calls Configuration.load with \(distinct.count) different literal \
+            prefixes (\(distinct.sorted().joined(separator: ", "))), so the base configuration \
+            file cannot be identified and the @ConfigValue key check did not run. Those keys \
+            are verified at startup instead.
+            """,
+            file: entry.file, line: entry.line)
+        return nil
+    }
+
+    if let (entry, text) = literals.first {
+        guard let prefix = ConfigPrefix(validating: text) else {
+            emit(
+                "error",
+                """
+                '\(text)' is not a usable configuration prefix: it must be lowercase ASCII \
+                letters, digits and underscores, starting with a letter, because its uppercased \
+                form is an environment-variable prefix and \
+                '\(text.uppercased())_SERVER_PORT' is not a name most shells can set. \
+                Configuration.load would trap on this at startup.
+                """,
+                file: entry.file, line: entry.line)
+            return nil
+        }
+        return prefix
+    }
+
+    // A prefix was written but is not a literal: present, unknowable.
+    if let entry = scannedConfigPrefixes.first {
+        emit(
+            "warning",
+            """
+            The prefix passed to Configuration.load here is not a plain string literal, so the \
+            base configuration file cannot be identified and the @ConfigValue key check did not \
+            run. Those keys are verified at startup instead.
+            """,
+            file: entry.file, line: entry.line)
+        return nil
+    }
+    return ConfigPrefix.default
+}
+
+@MainActor
+func checkConfigKeys() {
+    guard let packageDirectory = manifest.packageDirectory else { return }
+    guard let prefix = resolvedConfigPrefix() else { return }
+    let baseURL = URL(fileURLWithPath: packageDirectory)
+        .appendingPathComponent(prefix.baseFileName)
+    guard FileManager.default.fileExists(atPath: baseURL.path) else {
+        let uncheckable = components.flatMap { component in
+            component.configValues
+                .filter { $0.key != nil && !$0.hasDefault }
+                .map { ($0, component.typeName) }
+        }
+        guard let (first, _) = uncheckable.first else { return }
+        let names = uncheckable.compactMap(\.0.key).sorted()
+        let shown = names.prefix(3).joined(separator: ", ")
+        let more = names.count > 3 ? " (+\(names.count - 3) more)" : ""
+        emit(
+            "warning",
+            """
+            \(prefix.baseFileName) was not found in \(packageDirectory), so the \
+            compile-time check of \(names.count) configuration key\(names.count == 1 ? "" : "s") \
+            without defaults did not run: \(shown)\(more). Add \(prefix.baseFileName) \
+            — the base layer this application loads — and these keys are checked here \
+            instead of at startup.
+            """,
+            file: first.file, line: first.line)
+        return
+    }
+
+    let baseKeys: Set<String>
+    do {
+        // .none: build-machine env vars are meaningless here, and the check
+        // only needs the key *structure*. Same parser as the runtime, so the
+        // two can never disagree about what keys the file defines.
+        baseKeys = try AlulaYAMLDocument(contentsOf: baseURL, substitution: .none).keys
+    } catch let error as ConfigLoadError {
+        if case .parseFailed(_, let line, let column, let message) = error {
+            FileHandle.standardError.write(
+                "\(baseURL.path):\(line):\(column): error: \(message)\n".data(using: .utf8)!
+            )
+            errorCount += 1
+        } else {
+            emit(
+                "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
+                file: baseURL.path, line: 1)
+        }
+        return
+    } catch {
+        emit(
+            "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
+            file: baseURL.path, line: 1)
+        return
+    }
+
+    for component in components {
+        for configValue in component.configValues {
+            guard let key = configValue.key, !configValue.hasDefault else { continue }
+            guard !baseKeys.contains(key) else { continue }
+            let message: String
+            switch configValue.source {
+            case .explicitConfigValue:
+                message =
+                    "@ConfigValue key '\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or provide default:."
+            case .implicitSettingsField:
+                // No @ConfigValue was written here — @Settings derived this
+                // key from the property's own name — so the message must not
+                // claim an attribute that isn't there.
+                message =
+                    "'\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and the property has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or give the property a default value."
+            }
+            emit("error", message, file: configValue.file, line: configValue.line)
+        }
+    }
+}
+checkConfigKeys()
+
+if errorCount > 0 { exit(1) }
+
+/// Lane declarations in the order their modules are composed.
+///
+/// A lane's chain runs in module order, and module order is dependency order:
+/// the composition root builds each module *after* its dependencies. Scan
+/// order has no such notion — it follows the file list, which puts the
+/// target's own module first, so a framework module's middleware would land
+/// after the application's when composition puts it before.
+///
+/// The same walk, over the edges scanned from `static var dependencies`.
+/// Where two modules have no path between them the runtime order comes from
+/// the bootstrap list, which is not in scope here; those keep scan order
+/// relative to each other, which is the honest answer rather than a guess.
+@MainActor
+func lanesInModuleOrder() -> [ScannedPipelineLane] {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    var position: [String: Int] = [:]
+    var finished: Set<String> = []
+    var inProgress: Set<String> = []
+
+    func visit(_ name: String) {
+        guard let module = scannedModule(name, in: byName), !finished.contains(name)
+        else { return }
+        // A cycle is caught by the build-time cycle check; nothing to add here
+        // beyond not looping.
+        guard !inProgress.contains(name) else { return }
+        inProgress.insert(name)
+        for dependency in module.dependencies {
+            visit(moduleIdentity(dependency))
+        }
+        inProgress.remove(name)
+        finished.insert(name)
+        position[name] = position.count
+    }
+
+    for module in moduleGraph {
+        visit(moduleIdentity(module.typeName))
+    }
+
+    // Stable: declarations from one module keep the order they were written
+    // in, which is the order `configure` makes the calls.
+    return lanes.enumerated().sorted { left, right in
+        let leftModule = left.element.declaredIn.flatMap { position[$0] } ?? Int.max
+        let rightModule = right.element.declaredIn.flatMap { position[$0] } ?? Int.max
+        if leftModule != rightModule { return leftModule < rightModule }
+        return left.offset < right.offset
+    }.map(\.element)
+}
+
+
+/// The `Stereotype` a registrable attribute registers under.
+///
+/// Mirrors the macros' own mapping: `@Component` passes no `stereotype:` and
+/// takes the parameter's `.component` default, and so does anything without
+/// an explicit case here. `@Scheduler` is deliberately in that group —
+/// `Stereotype` has no scheduler case, and inventing one in a build tool
+/// would put the manifest and the runtime out of step.
+func stereotype(forAttribute name: String) -> String {
+    switch name {
+    case "Service": return "service"
+    case "Repository": return "repository"
+    case "Controller": return "controller"
+    case "Settings": return "settings"
+    case "Middleware": return "middleware"
+    default: return "component"
+    }
+}
+
+/// Escapes text being re-embedded in a generated Swift string literal. Route
+/// paths are already refused a quote or a backslash by the scanner, but the
+/// lane text is an arbitrary expression, so this is not decorative.
+func escaped(_ text: String) -> String {
+    text.replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+}
+
+// MARK: - Emission
+
+// Deterministic output: sort by (module, type). Stable output means stable
+// builds and readable diffs of the generated file.
+let sorted = components.sorted {
+    ($0.module, $0.typeName) < ($1.module, $1.typeName)
+}
+// Registrable, but registered by their own module rather than by this scan:
+// their presence in an app is a runtime question (a configuration gate, an
+// optional subsystem) that no build-time scan can answer. Kept in `sorted`
+// for validation and conformance analysis; excluded from the emitted calls.
+let (moduleRegistered, autoRegistered) = (
+    sorted.filter(\.isModuleRegistered), sorted.filter { !$0.isModuleRegistered }
+)
+let dependencyModules = Set(sorted.map(\.module)).subtracting([manifest.targetModuleName]).sorted()
+
+let graphRegistrable = components.filter { !$0.isModuleRegistered }
+// A controller is constructed per request by its route terminal, not
+// held for the process — that is the whole point of §2.1a — so it is not
+// a graph node. Unless something else injects it, in which case the
+// graph has to build it like anything else.
+let graphDependedUpon = Set(
+graphRegistrable.flatMap { $0.injectTypeNames + $0.acknowledgedTypeNames }.map(baseName))
+// Left out of the graph, and each for its own reason:
+//
+// - a controller is built per request by its route terminal, which is
+//   the whole of §2.1a — unless something else injects it, in which case
+//   the graph does have to build it;
+// - `@Settings` calls `validate()` after construction and `@Scheduler`
+//   registers its jobs, both inside their own initializer. Projecting those
+//   would drop the extra, so they keep being built through their own init and
+//   arrive here as root parameters if anything depends on them.
+// `@Scheduler` only. `@Settings` was here too, and that made every
+// application with one fail to compose: excluded from the graph, a settings
+// type arrived as a *root*, and roots are resolved from what modules provide —
+// no module provides a settings type, so the build said "no module in this
+// application provides CargoSettings" about a type it had scanned itself.
+//
+// The exclusion's reason does not apply to it. The worry was that *projecting*
+// a settings type onto a graph property would skip the `validate()` its
+// initializer runs — but the graph does not project, it constructs, and it
+// already passes `_alulaConfiguration:` to any node with config values, which
+// a settings type's fields are. Built as a node it runs its own init, and
+// `validate()` with it.
+//
+// Nothing caught this because nothing composed one: no template declares
+// `@Settings`, GeneratorTests covers only its config-key check, and
+// SettingsIntegrationTests constructs it directly rather than through the
+// composer. The seam beside the seam, again.
+let containerConstructed: Set<String> = ["scheduler"]
+let graphNodes = graphRegistrable.filter { component in
+    let kind = stereotype(forAttribute: component.attributeName)
+    if containerConstructed.contains(kind) { return false }
+    return kind != "controller" || graphDependedUpon.contains(baseName(component.typeName))
+}
+
+/// Which graph property holds each component the graph builds, by base name.
+/// `alulaRoutes` and `alulaScheduledJobs` project a registration onto it
+/// instead of constructing a second copy.
+let graphBindings: [String: String] = Dictionary(
+    graphNodes.map { component in
+        let name = baseName(component.typeName)
+        return (name, name.prefix(1).lowercased() + name.dropFirst())
+    },
+    uniquingKeysWith: { a, _ in a })
+
+var out = """
+    // AUTO-GENERATED by alula-registration-gen — do not edit.
+    // Target: \(manifest.targetModuleName)
+    // Components: \(autoRegistered.count), existential bridges: \(bridges.count)
+    // Module-registered (not registered here): \(moduleRegistered.count)
+
+    import AlulaCore
+
+    """
+for module in dependencyModules {
+    out += "import \(module)\n"
+}
+// Plus what the target imports, for the types `AlulaGraph`'s root
+// parameters are written in. Sorted so the output is byte-stable.
+for module in targetImports.sorted()
+where module != "AlulaCore" && !dependencyModules.contains(module) {
+    out += "import \(module)\n"
+}
+// Plus the module of every *included* module the target does not import
+// itself. A module brought in only by another's `dependencies` —
+// `AlulaTelemetryModule`, which `AlulaWebModule` lists — is constructed
+// here, so its type must be in scope, though the application never named
+// it and has no reason to import it.
+let includedModuleImports: [String] = {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    return Set(includedModules.compactMap { scannedModule($0, in: byName)?.module }).sorted()
+}()
+for module in includedModuleImports
+where module != "AlulaCore" && module != manifest.targetModuleName
+    && !dependencyModules.contains(module) && !targetImports.contains(module)
+{
+    out += "import \(module)\n"
+}
+
+/// What `AlulaGraph`'s initializer takes, published by `emitAlulaGraph` for
+/// the composer to wire.
+///
+/// The graph's roots are exactly the things modules provide — a data source, a
+/// token validator — so once a module holds what it provides, the composition
+/// root can build the graph directly, in dependency order, rather than a
+/// factory building it lazily.
+struct GraphRoots {
+    var emitted = false
+    var needsConfiguration = false
+    /// (label, type as written, the module `@Inject(from:)` named), in
+    /// initializer order. `from` is nil for the ordinary case, and carried so
+    /// the composer can resolve two roots of one type to two providers.
+    var supplied: [(label: String, type: String, from: String?)] = []
+    /// Extra parameters of `alulaRoutes(_:…)` — values only a controller
+    /// needs, deliberately kept out of the graph.
+    var terminalSupplied: [(label: String, type: String, from: String?)] = []
+}
+var graphRoots = GraphRoots()
+
+/// True when this target emitted `alulaRoutes(_:)` — its own controllers'
+/// routes, as a value. The composer folds it into the `[RouteRegistration]`
+/// aggregate alongside whatever routes modules declare.
+var emittedRouteValues = false
+
+/// True when this target emitted `alulaScheduledJobs(_:)`.
+var emittedScheduledJobValues = false
+
+/// True when this target emitted `alulaComponentDescriptors()` — its scanned
+/// components in the shape Actuator's dashboard renders.
+var emittedComponentDescriptors = false
+
+// MARK: - AlulaGraph (§2.1)
+//
+// The composition: every scanned component built once, in dependency order,
+// by plain initializer calls. `alulaComposeModules` builds the modules;
+// `AlulaGraph` builds the components inside them, and `alulaRoutes` /
+// `alulaScheduledJobs` project registrations off it.
+//
+// What it can build is the application's own graph. A dependency it cannot
+// construct — a framework component a module provides as a value, a type
+// marked `alula:hand-registered`, anything the scan never saw — becomes an
+// initializer parameter instead. That is §2.6's escape hatch: externally
+// supplied values arrive through the same typed parameters everything else
+// uses, visible at one root rather than scattered across many separate
+// configuration sites.
+@MainActor
+func emitAlulaGraph(into out: inout String) {
+    // Module-registered types are excluded for the same reason the component
+    // list excludes them: whether they exist in an application is a runtime
+    // question their own module answers.
+    guard !graphRegistrable.isEmpty else { return }
+    let registrable = graphRegistrable
+    let nodes = graphNodes
+
+    let byName = Dictionary(nodes.map { (baseName($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    // One conformer per protocol, the same mapping the existential bridges
+    // use — so `@Inject var store: (any RoomStore)` resolves to the concrete
+    // type the graph already builds.
+    var conformerOfProtocol: [String: ScannedComponent] = [:]
+    for bridge in synthesizeBridges() {
+        conformerOfProtocol[baseName(bridge.protocolName)] = bridge.component
+    }
+
+    func qualified(_ component: ScannedComponent) -> String {
+        component.module == manifest.targetModuleName
+            ? component.typeName
+            : "\(component.module).\(component.typeName)"
+    }
+    func binding(_ component: ScannedComponent) -> String {
+        let name = baseName(component.typeName)
+        return name.prefix(1).lowercased() + name.dropFirst()
+    }
+    /// The node a dependency resolves to, or nil when the graph cannot build
+    /// it and the root must supply it.
+    func provider(of dependency: String) -> ScannedComponent? {
+        if let direct = byName[baseName(dependency)] { return direct }
+        if let name = existentialProtocolName(dependency) { return conformerOfProtocol[baseName(name)] }
+        return nil
+    }
+
+    // Dependencies first, the order composition already constructs in.
+    var ordered: [ScannedComponent] = []
+    var finished: Set<String> = []
+    var visiting: Set<String> = []
+    func visit(_ component: ScannedComponent) {
+        let key = baseName(component.typeName)
+        if finished.contains(key) || visiting.contains(key) { return }
+        visiting.insert(key)
+        for dependency in component.injectTypeNames + component.acknowledgedTypeNames {
+            if let next = provider(of: dependency) { visit(next) }
+        }
+        visiting.remove(key)
+        finished.insert(key)
+        ordered.append(component)
+    }
+    for node in nodes { visit(node) }
+
+    // Externally supplied: every dependency with no node to build it, in a
+    // stable order, deduplicated by the type as written.
+    //
+    // Over everything the generated code constructs, not just the graph's
+    // own nodes: a controller is built by its route terminal rather than
+    // held by the graph, and it reaches its dependencies *through* the
+    // graph — so a root input only a controller needs still has to be
+    // stored there.
+    let terminalOnly = registrable.filter { component in
+        !ordered.contains { baseName($0.typeName) == baseName(component.typeName) }
+    }
+    let constructed = ordered + terminalOnly
+
+    /// Roots the **graph itself** needs — a dependency of a stored component
+    /// that the graph cannot build.
+    // Keyed by type *and* named provider: `@Inject var primary: DataSource`
+    // beside `@Inject(from: X.self) var analytics: DataSource` is two roots,
+    // not one shared by both (D27). Without the provider in the key they
+    // collapse onto a single graph property and one pool serves both.
+    var supplied: [(type: String, from: String?)] = []
+    var seenSupplied: Set<String> = []
+    // Keyed on the normalized type, not its spelling: `(any TokenValidator)`
+    // and `any TokenValidator` are one root, and keying on the text emitted
+    // `alulaRoutes` with two parameters of the same name — found by a
+    // starter template whose two controllers spelled the same injection
+    // differently.
+    func rootKey(_ type: String, _ from: String?) -> String {
+        "\(providedTypeKey(type))|\(from.map(moduleIdentity) ?? "")"
+    }
+    for node in ordered {
+        for edge in node.dependencyOrder where provider(of: edge.type) == nil {
+            if seenSupplied.insert(rootKey(edge.type, edge.from)).inserted {
+                supplied.append((type: edge.type, from: edge.from))
+            }
+        }
+    }
+
+    /// Roots only a **route terminal** needs — a controller's dependency that
+    /// no stored component shares.
+    ///
+    /// These are deliberately *not* graph properties, and the distinction is
+    /// load-bearing rather than tidiness. A controller injecting
+    /// `ChannelBroadcaster` used to make it a graph root, so the graph
+    /// depended on `AlulaChannelsModule` — and `AlulaChannelsModule` takes
+    /// the channel list, so nothing that builds channels from the graph could
+    /// ever compose. A controller is not a component: it is constructed by its
+    /// terminal, so what only it needs belongs to the terminal.
+    var terminalSupplied: [(type: String, from: String?)] = []
+    for node in terminalOnly {
+        for edge in node.dependencyOrder
+        where provider(of: edge.type) == nil
+            && !seenSupplied.contains(rootKey(edge.type, edge.from))
+        {
+            if !terminalSupplied.contains(where: {
+                rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
+            }) {
+                terminalSupplied.append((type: edge.type, from: edge.from))
+            }
+        }
+    }
+    func suppliedBinding(_ typeText: String, from namedProvider: String? = nil) -> String {
+        let name = baseName(existentialProtocolName(typeText) ?? typeText)
+        let base = name.prefix(1).lowercased() + name.dropFirst()
+        guard let namedProvider else { return base }
+        let suffix = providerSuffix(namedProvider)
+        return base + suffix.prefix(1).uppercased() + suffix.dropFirst()
+    }
+
+    // A settings node always needs it, whether or not any field was recorded
+    // as a config value — the same asymmetry as the construction site below.
+    // Computed from `configValues` alone, a settings type whose fields all
+    // have defaults (which records none) made the graph pass `configuration`
+    // to an initializer that did not take it: "cannot find 'configuration' in
+    // scope", in generated code.
+    let needsConfiguration = constructed.contains {
+        !$0.configValues.isEmpty || stereotype(forAttribute: $0.attributeName) == "settings"
+    }
+
+    // Published for `emitComposer`, which builds the graph from module
+    // properties rather than leaving it to a factory to build lazily.
+    graphRoots = GraphRoots(
+        emitted: true,
+        needsConfiguration: needsConfiguration,
+        supplied: supplied.map {
+            (label: suppliedBinding($0.type, from: $0.from), type: $0.type, from: $0.from)
+        },
+        terminalSupplied: terminalSupplied.map {
+            (label: suppliedBinding($0.type, from: $0.from), type: $0.type, from: $0.from)
+        })
+
+    out += "\n"
+    out += "/// Every component this module declares, constructed once, in\n"
+    out += "/// dependency order, without a container.\n"
+    out += "///\n"
+    out += "/// The whole of how components are wired now: the composition root\n"
+    out += "/// builds this, route controllers are built from it per request,\n"
+    out += "/// and other modules take what they need as values from it.\n"
+    out += "///\n"
+    out += "/// Internal, not public: an application's components are internal by\n"
+    out += "/// default, and a public struct cannot expose them. The composition\n"
+    out += "/// root is in this module too, so nothing needs it to be public.\n"
+    out += "struct AlulaGraph {\n"
+    if needsConfiguration || !supplied.isEmpty {
+        out += "    // Root inputs, stored: a route terminal reaches these the\n"
+        out += "    // same way it reaches a component.\n"
+    }
+    if needsConfiguration {
+        out += "    let configuration: AlulaCore.Configuration\n"
+    }
+    for root in supplied {
+        out += "    let \(suppliedBinding(root.type, from: root.from)): \(root.type)\n"
+    }
+    if (needsConfiguration || !supplied.isEmpty) && !ordered.isEmpty { out += "\n" }
+    for node in ordered {
+        out += "    let \(binding(node)): \(qualified(node))\n"
+    }
+    out += "\n"
+    var parameters: [String] = []
+    if needsConfiguration { parameters.append("configuration: AlulaCore.Configuration") }
+    parameters += supplied.map { "\(suppliedBinding($0.type, from: $0.from)): \($0.type)" }
+    // Every node is also a parameter, defaulting to nil, so a test can
+    // replace one and get the rest of the graph real (§2.10). `nil` rather
+    // than the composed value because a Swift default cannot reference
+    // another parameter — the body does the `??`.
+    parameters += ordered.map { "\(binding($0)): \(qualified($0))? = nil" }
+    out += "    init(\(parameters.joined(separator: ", "))) throws {\n"
+    if needsConfiguration { out += "        self.configuration = configuration\n" }
+    for root in supplied {
+        let name = suppliedBinding(root.type, from: root.from)
+        out += "        self.\(name) = \(name)\n"
+    }
+    for node in ordered {
+        var arguments: [String] = []
+        // A settings type always takes it, whether or not any field was
+        // *recorded* as a config value: `@Settings` generates
+        // `init(_alulaConfiguration:)` unconditionally, while the implicit
+        // field scan skips properties that have a default — so
+        // `struct CargoSettings { var pageSize: Int = 500 }` has no recorded
+        // config values and still has no other initializer.
+        if !node.configValues.isEmpty
+            || stereotype(forAttribute: node.attributeName) == "settings"
+        {
+            arguments.append("_alulaConfiguration: configuration")
+        }
+        // Labelled by property name, which is what the generated initializer
+        // uses. Zipped rather than indexed: the two arrays are built together
+        // and stay positional, and a mismatch would silently mislabel an
+        // argument rather than fail.
+        let edges = node.dependencyOrder
+        for edge in edges {
+            if let source = provider(of: edge.type) {
+                arguments.append("\(edge.label): \(binding(source))")
+            } else {
+                arguments.append(
+                    "\(edge.label): \(suppliedBinding(edge.type, from: edge.from))")
+            }
+        }
+        let call = "\(qualified(node))(\(arguments.joined(separator: ", ")))"
+        // Bound locally first: a later node's arguments must see the
+        // *supplied* instance when a test passed one, not a second copy.
+        //
+        // `try` goes in front of the whole coalescing, not around the call:
+        // `??` takes its right side as an autoclosure, so the throw escapes
+        // through the operator and `x ?? (try C())` does not compile
+        // ("operator can throw but expression is not marked with 'try'").
+        // Only a node with @ConfigValue has a throwing initializer, so only
+        // that case is marked.
+        // Same condition as the `_alulaConfiguration:` argument above, and
+        // for the same reason: a settings type's generated initializer throws
+        // whether or not any field was recorded as a config value.
+        let throwsOnConstruction =
+            !node.configValues.isEmpty
+            || stereotype(forAttribute: node.attributeName) == "settings"
+        let initializer =
+            throwsOnConstruction
+            ? "try (\(binding(node)) ?? \(call))"
+            : "\(binding(node)) ?? \(call)"
+        out += "        let \(binding(node)) = \(initializer)\n"
+        out += "        self.\(binding(node)) = \(binding(node))\n"
+    }
+    out += "    }\n"
+
+    out += "}\n"
+
+
+    // Route registrations with a per-request controller (§2.1a).
+    //
+    // The whole route lives in the factory `@Controller` generated; all this
+    // supplies is *how the controller is obtained* — a closure that constructs
+    // the controller from the graph on every request, so a controller's
+    // per-request state stays per request.
+    guard !routes.isEmpty else { return }
+    let componentsByName = Dictionary(
+        registrable.map { (baseName($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+
+    out += "\n"
+    out += "/// Every route this target declares, with its controller\n"
+    out += "/// constructed per request from ``AlulaGraph`` rather than\n"
+    out += "/// resolved once.\n"
+    out += "///\n"
+    out += "/// A value, handed to `AlulaWebModule` by the composition root\n"
+    out += "/// alongside whatever routes other modules declare. The controllers\n"
+    out += "/// themselves are scanned components, so they still show on an\n"
+    out += "/// Actuator dashboard; only their routes flow through here.\n"
+    emittedRouteValues = true
+    if !terminalSupplied.isEmpty {
+        out += "///\n"
+        out += "/// The extra parameters are values only a *controller* needs —\n"
+        out += "/// no stored component shares them, so they are not graph\n"
+        out += "/// properties. Keeping them here is what lets a module provide\n"
+        out += "/// one *and* be built from the graph.\n"
+    }
+    let terminalParameters =
+        terminalSupplied.map {
+            ", \(suppliedBinding($0.type, from: $0.from)): \($0.type)"
+        }.joined()
+    out += "func alulaRoutes(_ graph: AlulaGraph\(terminalParameters))\n"
+    out += "    -> [AlulaWeb.RouteRegistration]\n"
+    out += "{\n"
+    out += "    [\n"
+    for route in routes {
+        guard let controller = componentsByName[baseName(route.controllerTypeName)] else { continue }
+        let type = qualified(controller)
+        var arguments: [String] = []
+        if !controller.configValues.isEmpty {
+            arguments.append("_alulaConfiguration: graph.configuration")
+        }
+        let edges = controller.dependencyOrder
+        for edge in edges {
+            let rootName = suppliedBinding(edge.type, from: edge.from)
+            if let source = provider(of: edge.type) {
+                arguments.append("\(edge.label): graph.\(binding(source))")
+            } else if terminalSupplied.contains(where: {
+                rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
+            }) {
+                arguments.append("\(edge.label): \(rootName)")
+            } else {
+                arguments.append("\(edge.label): graph.\(rootName)")
+            }
+        }
+        let construction =
+            "\(controller.configValues.isEmpty ? "" : "try ")\(type)(\(arguments.joined(separator: ", ")))"
+        let factory = "_alulaRoute_\(route.methodName)_\(route.indexInController)"
+        out += "        \(type).\(factory) { _ in \(construction) },\n"
+    }
+    out += "    ]\n"
+    out += "}\n"
+
+    // Scheduled jobs, the same way: the macro generated a value form beside
+    // its registration form, and this closes it over the component the graph
+    // built at composition rather than one resolved when the job fires.
+    let schedulers = ordered.filter { $0.attributeName == "Scheduler" }
+    guard !schedulers.isEmpty else { return }
+    emittedScheduledJobValues = true
+    out += "\n"
+    out += "/// Every scheduled job this target declares, bound to the\n"
+    out += "/// components ``AlulaGraph`` already built.\n"
+    out += "func alulaScheduledJobs(_ graph: AlulaGraph)\n"
+    out += "    -> [AlulaScheduler.ScheduledJobRegistration]\n"
+    out += "{\n"
+    for scheduler in schedulers {
+        out +=
+            "    \(qualified(scheduler))._alulaScheduledJobs { graph.\(binding(scheduler)) }\n"
+        out += "        + \n"
+    }
+    out = String(out.dropLast("        + \n".count)) + "}\n"
+}
+
+// MARK: - The composition root
+//
+// Every module this application includes, constructed in dependency order and
+// handed to `Alula.run(configuration:modules:composedBy:)`.
+//
+// `modules:` stays the declaration — the list of subsystems, written by the
+// author and read by this generator — and this is what that list *means*
+// once a module can take what it needs: a module declares its inputs and
+// holds what it provides (COMPOSITION-MIGRATION.md D11).
+//
+// There is no composer-less path to fall back to. `composedBy` has no default
+// and every entry point takes built instances; the type-based one went with
+// the container in 0.17.0.
+//
+// A module that still declares `init()` is called that way, so this works
+// before any module moves and each conversion is one local change.
+@MainActor
+func emitComposer(into out: inout String) {
+    guard !includedModules.isEmpty else { return }
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+
+    func binding(_ text: String) -> String { moduleBindingName(text) }
+    // Carried into the generated file as `#error`, rather than to stderr.
+    // A composition that cannot be wired should fail the consumer's build with
+    // the reason attached, at a line their compiler points at — not as a
+    // warning scrolled past on the way to a confusing type error.
+    var compositionDiagnostics: [String] = []
+    /// Where a parameter's value comes from: another module, or a property of
+    /// one. This is how one module's output becomes another's input, and
+    /// neither module names the other — the type is the whole connection.
+    ///
+    /// Two shapes, tried in that order. A parameter whose type *is* a module
+    /// takes that module. Otherwise the parameter is matched against the
+    /// public stored properties of every included module, which is what
+    /// carries `AlulaPubSubValkeyModule.adapter` into
+    /// `AlulaPubSubModule(configuration:adapter:)`.
+    ///
+    /// `consumer` is excluded from both searches: a module cannot be built out
+    /// of itself. Without that, `ActuatorModule`'s `init(environment:)` looks
+    /// satisfiable by `ActuatorModule.environment` and the composer emits
+    /// `let actuatorModule = ActuatorModule(environment: actuatorModule.environment)`.
+    /// Every module contributing to an aggregate parameter, in module order.
+    ///
+    /// An aggregate is a parameter typed `[T]`, and it is the one place where
+    /// several providers are right rather than ambiguous: channels, routes,
+    /// scheduled jobs. Each is a *contribution*, and the aggregator wants all
+    /// of them.
+    ///
+    /// This is what keeps the extension surface open. A module in a package
+    /// alula has never heard of exposes `let channels: [ChannelRegistration]`
+    /// and is wired in without the application enumerating it — the same
+    /// openness `container.registerChannel` gave, without the container and
+    /// without the post-`freeze()` collection that made it a cycle.
+    func contributors(to type: String, for consumer: String)
+        -> [(expression: String, module: String)]
+    {
+        guard let element = arrayElementType(type) else { return [] }
+        let wanted = providedTypeKey(element)
+        var found: [(expression: String, module: String)] = []
+        for name in includedModules where moduleIdentity(name) != moduleIdentity(consumer) {
+            guard let module = scannedModule(name, in: byName) else { continue }
+            for property in module.provides {
+                guard let provided = arrayElementType(property.type),
+                      providedTypeKey(provided) == wanted
+                else { continue }
+                found.append(("\(binding(name)).\(property.name)", name))
+            }
+        }
+        return found
+    }
+
+    /// - Parameter namedProvider: the module `@Inject(from:)` named, if any.
+    ///   Checked rather than trusted: it has to be in this application and it
+    ///   has to provide the type, and both failures name the module.
+    func provider(
+        of type: String, preferring namedProvider: String? = nil, for consumer: String
+    ) -> (expression: String, module: String)? {
+        let wanted = providedTypeKey(type)
+        let candidates = includedModules.filter { moduleIdentity($0) != moduleIdentity(consumer) }
+        // "Is this parameter a module?" is a module question, so both sides are
+        // module identities — `providedTypeKey` discards generic arguments, and
+        // comparing against it would make `PostgresDataModule<Analytics>` match
+        // the binding for `<PrimaryDataSource>`.
+        let wantedModule = providedModuleIdentity(type)
+        if let module = candidates.first(where: { moduleIdentity($0) == wantedModule }) {
+            return (binding(module), module)
+        }
+        var matches: [(expression: String, module: String)] = []
+        for name in candidates {
+            guard let module = scannedModule(name, in: byName) else { continue }
+            for property in module.provides where providedTypeKey(property.type) == wanted {
+                matches.append(("\(binding(name)).\(property.name)", name))
+            }
+        }
+        if let namedProvider {
+            let wantedIdentity = moduleIdentity(namedProvider)
+            let named = matches.filter { moduleIdentity($0.module) == wantedIdentity }
+            if named.count == 1 { return named[0] }
+            if named.isEmpty {
+                let inApplication = includedModules.contains {
+                    moduleIdentity($0) == wantedIdentity
+                }
+                compositionDiagnostics.append(
+                    inApplication
+                        ? "@Inject(from: \(namedProvider).self) names a module that does not "
+                            + "provide \(wanted). A module provides a value by holding it as a "
+                            + "stored property."
+                        : "@Inject(from: \(namedProvider).self) names a module this application "
+                            + "does not include. Add it to `modules:`, or to the `dependencies` "
+                            + "of a module that is already there.")
+            } else {
+                compositionDiagnostics.append(
+                    "@Inject(from: \(namedProvider).self) is ambiguous: that module provides "
+                        + "\(wanted) more than once (\(named.map(\.expression).sorted().joined(separator: ", "))).")
+            }
+            return nil
+        }
+        switch matches.count {
+        case 0: return nil
+        case 1: return matches[0]
+        default:
+            // Ambiguity is a composition error, not something to guess at: two
+            // modules offering the same type means the application has to say
+            // which. Reported, and left to fail the build at the call site.
+            //
+            // `defaultProviders` answers it for the unqualified case, and
+            // `@Inject(from:)` for the property that wants the other one —
+            // which is why the message shows both rather than only naming the
+            // problem (D27).
+            if let chosen = defaultProviderChoice(for: wanted, among: matches) { return chosen }
+            compositionDiagnostics.append(ambiguityDiagnostic(wanted: wanted, matches: matches))
+            return nil
+        }
+    }
+
+    /// Whether an ambiguity was already reported for this type.
+    ///
+    /// `provider` returns nil for "nobody provides it" and for "several do",
+    /// and the caller cannot tell them apart. Saying both is worse than saying
+    /// neither: the second message contradicts the first and sends the reader
+    /// looking for a module to add.
+    func reportedAmbiguity(for type: String) -> Bool {
+        let wanted = providedTypeKey(type)
+        return compositionDiagnostics.contains {
+            $0.hasPrefix("Composition is ambiguous") && $0.contains(wanted)
+        }
+    }
+
+    /// The provider a module's `defaultProviders` nominated for this type.
+    func defaultProviderChoice(
+        for wanted: String, among matches: [(expression: String, module: String)]
+    ) -> (expression: String, module: String)? {
+        let nominated = matches.filter { match in
+            defaultProviderModules.contains { moduleIdentity($0) == moduleIdentity(match.module) }
+        }
+        guard nominated.count == 1 else { return nil }
+        return nominated[0]
+    }
+
+    /// Names both providers, every consumer asking by type, and the two lines
+    /// that fix it. The diagnostic is the feature here: this is the moment an
+    /// application acquires a second provider, and the build is the only place
+    /// that knows.
+    func ambiguityDiagnostic(
+        wanted: String, matches: [(expression: String, module: String)]
+    ) -> String {
+        // `Module.property`, not the generated binding name: the binding is an
+        // identifier this file invented, and the reader has never seen it.
+        let described = matches.map { match -> String in
+            let property = match.expression.split(separator: ".").last.map(String.init) ?? ""
+            return "\(match.module).\(property)"
+        }.sorted()
+        let modules = matches.map(\.module).sorted()
+        let suggestion = modules.first ?? "SomeModule"
+        let other = modules.count > 1 ? modules[1] : "OtherModule"
+        return "Composition is ambiguous: "
+            + described.joined(separator: " and ")
+            + " both provide \(wanted), and it is asked for by type.\n"
+            + "Say which one an unqualified @Inject means, in the module that lists them:\n"
+            + "    static var defaultProviders: [any AlulaModule.Type] { [\(suggestion).self] }\n"
+            + "Then name the other one only where you want it:\n"
+            + "    @Inject(from: \(other).self) var name: \(wanted)"
+    }
+
+    out += "\n"
+    out += "/// Every module this application includes, in dependency order.\n"
+    out += "///\n"
+    out += "/// Pass to `Alula.run(configuration:modules:composedBy:)`. The\n"
+    out += "/// `modules:` list stays the declaration of *which* subsystems the\n"
+    out += "/// application includes; this is how they are built.\n"
+    out += "func alulaComposeModules(\n"
+    out += "    _ configuration: AlulaCore.Configuration,\n"
+    out += "    _ alulaHealth: AlulaCore.ModuleHealthRegistry\n"
+    out += ") throws -> [any AlulaCore.AlulaModule] {\n"
+    /// The argument for one parameter, or nil when nothing can supply it.
+    ///
+    /// An optional parameter with no provider is *omittable* rather than
+    /// unsatisfiable — `adapter: (any DistributedPubSubAdapter)?` means "not
+    /// in this deployment", which is §2.6's mechanism (3).
+    func argument(
+        label: String, type: String, for consumer: String, needing needed: inout Set<String>
+    ) -> String?? {
+        if baseName(type) == "Configuration" { return "\(label): configuration" }
+        // The shared health registry the composition root owns — Actuator
+        // takes it, and `Alula.run` writes module state into the same one.
+        if providedTypeKey(type) == "ModuleHealthRegistry" {
+            return "\(label): alulaHealth"
+        }
+        // The graph is a value the composition root builds, not a module, so
+        // it is not in `includedModules` — but a module can take it, and the
+        // application's own module does.
+        if graphRoots.emitted, providedTypeKey(type) == "AlulaGraph" {
+            needed.insert("AlulaGraph")
+            return "\(label): alulaGraph"
+        }
+        // Aggregates first: `[T]` is a collection of contributions, not a
+        // single value some one module provides.
+        if let element = arrayElementType(type) {
+            var expressions: [String] = []
+            // This target's own controllers come first, so an application's
+            // routes precede a framework module's in the table — the order
+            // `alulaRegisterAll` produced when they were registrations.
+            if emittedRouteValues, providedTypeKey(element) == "RouteRegistration" {
+                needed.insert("AlulaGraph")
+                // Values only a controller needs are passed here rather than
+                // stored on the graph, so a module can provide one and still
+                // be built from the graph.
+                var callArguments = ["alulaGraph"]
+                for root in graphRoots.terminalSupplied {
+                    if let source = provider(
+                        of: root.type, preferring: root.from, for: "alulaRoutes")
+                    {
+                        needed.insert(moduleIdentity(source.module))
+                        callArguments.append("\(root.label): \(source.expression)")
+                    } else {
+                        callArguments.append(
+                            "\(root.label): fatalError(\"unresolved: see the #error below\")")
+                        compositionDiagnostics.append(
+                            "A route terminal needs \(root.type), and no module in this "
+                                + "application provides it. A module that owns it should expose "
+                                + "it as a stored property.")
+                    }
+                }
+                expressions.append("alulaRoutes(\(callArguments.joined(separator: ", ")))")
+            }
+            if emittedScheduledJobValues, providedTypeKey(element) == "ScheduledJobRegistration" {
+                needed.insert("AlulaGraph")
+                expressions.append("alulaScheduledJobs(alulaGraph)")
+            }
+            if emittedComponentDescriptors, providedTypeKey(element) == "ComponentDescriptor" {
+                expressions.append("alulaComponentDescriptors()")
+            }
+            let sources = contributors(to: type, for: consumer)
+            for source in sources { needed.insert(moduleIdentity(source.module)) }
+            expressions += sources.map(\.expression)
+            guard !expressions.isEmpty else { return String?.none }  // nobody contributed
+            return "\(label): \(expressions.joined(separator: " + "))"
+        }
+        if let source = provider(of: type, for: consumer) {
+            needed.insert(moduleIdentity(source.module))
+            return "\(label): \(source.expression)"
+        }
+        if type.hasSuffix("?") { return String?.none }  // omittable
+        return nil  // unsatisfiable
+    }
+
+    /// One module's construction, and which other modules it had to draw on.
+    struct Construction {
+        let name: String
+        let statement: String
+        let needs: Set<String>
+        /// Kept so an unconsumed contribution can be spotted below.
+        let arguments: [String]
+    }
+
+    var constructions: [Construction] = []
+
+    // The graph, built here rather than by a factory building it lazily.
+    //
+    // Its roots are the components modules provide, so they are matched the
+    // same way a module's initializer parameters are — which is the whole
+    // reason a module now *holds* what it provides. Sorted with the modules
+    // below, because it both needs them (its roots) and is needed by them
+    // (the application's module registers from it).
+    if graphRoots.emitted {
+        var arguments: [String] = []
+        var needs: Set<String> = []
+        if graphRoots.needsConfiguration { arguments.append("configuration: configuration") }
+        for root in graphRoots.supplied {
+            if let source = provider(
+                of: root.type, preferring: root.from, for: "AlulaGraph")
+            {
+                needs.insert(moduleIdentity(source.module))
+                arguments.append("\(root.label): \(source.expression)")
+            } else {
+                // No editor placeholder: `<#…#>` is itself a compile error
+                // ("editor placeholder in source file"), so it added a third
+                // error above the explanatory one and pointed at generated
+                // code. The `#error` below already fails the build, with the
+                // reason attached.
+                arguments.append(
+                    "\(root.label): fatalError(\"unresolved: see the #error below\")")
+                // Only when nothing provides it. `provider` returns nil for
+                // ambiguity too, and claiming "no module provides it" while
+                // two do sent people looking for a missing module.
+                if !reportedAmbiguity(for: root.type) {
+                    compositionDiagnostics.append(
+                        "The component graph needs \(root.type), and no module in this application "
+                            + "provides it. A module that owns it should expose it as a stored "
+                            + "property, which is how the composition root finds it.")
+                }
+            }
+        }
+        constructions.append(
+            Construction(
+                name: "AlulaGraph",
+                statement:
+                    "    let alulaGraph = try AlulaGraph(\(arguments.joined(separator: ", ")))",
+                needs: needs,
+                arguments: arguments))
+    }
+
+    for name in includedModules {
+        let module = scannedModule(name, in: byName)
+        // The initializer the composer can actually supply, preferring the
+        // most specific. "First declared" picks a test seam; "prefer init()"
+        // picks a tombstone on a module that cannot be built from its type.
+        // What it can satisfy is the question that has one right answer.
+        var arguments: [String] = []
+        var satisfiable = false
+        var canThrow = false
+        var needs: Set<String> = []
+        for candidate in (module?.initializers ?? [(labels: [], types: [], throws: false)])
+            .sorted(by: { $0.labels.count > $1.labels.count })
+        {
+            var built: [String] = []
+            var candidateNeeds: Set<String> = []
+            var ok = true
+            for (label, type) in zip(candidate.labels, candidate.types) {
+                guard
+                    let resolved = argument(
+                        label: label, type: type, for: name, needing: &candidateNeeds)
+                else { ok = false; break }
+                if let resolved { built.append(resolved) }
+            }
+            if ok {
+                arguments = built
+                satisfiable = true
+                canThrow = candidate.throws
+                needs = candidateNeeds
+                break
+            }
+        }
+        if !satisfiable {
+            // This used to rely on an editor placeholder being the compile
+            // error. The placeholder is gone, and `fatalError` type-checks, so
+            // without this the module would compose silently and trap at
+            // start-up — a loud failure turned into a quiet one.
+            arguments = ["fatalError(\"unresolved: see the #error below\")"]
+            compositionDiagnostics.append(
+                "\(name) has no initializer this composer can supply. Its parameters have to be "
+                    + "values some module in this application provides, `Configuration`, or the "
+                    + "component graph — or it needs an `init()`.")
+        }
+        // `try` only where the initializer throws: an unnecessary one is a
+        // warning in every consumer's build.
+        constructions.append(
+            Construction(
+                name: name,
+                statement:
+                    "    let \(binding(name)) = \(canThrow ? "try " : "")\(name)(\(arguments.joined(separator: ", ")))",
+                needs: needs,
+                arguments: arguments))
+    }
+
+    // A provider has to be built before whoever draws on it, and that ordering
+    // no longer comes from `dependencies`: inverting the PubSub adapter
+    // direction means `AlulaPubSubValkeyModule` is a dependency of
+    // `AlulaPubSubModule` that alula cannot declare, because alula does not
+    // know alula-data exists. The value flow says it instead — B takes a
+    // property of A, therefore A first — which is the real edge, and the one
+    // `dependencies` was always an approximation of.
+    //
+    // A stable sort over the declared order, so a module needing nothing stays
+    // exactly where the module graph put it.
+    var ordered: [Construction] = []
+    var placed: Set<String> = []
+    var remaining = constructions
+    while !remaining.isEmpty {
+        guard
+            let index = remaining.firstIndex(where: {
+                $0.needs.isSubset(of: placed)
+            })
+        else {
+            // A cycle: two modules each wanting something the other holds.
+            // Emit the rest in declared order so the failure is Swift's
+            // "used before initialized" at a named line, not a silent
+            // reordering that happens to compile.
+            compositionDiagnostics.append(
+                "Modules "
+                    + remaining.map(\.name).sorted().joined(separator: ", ")
+                    + " form a composition cycle: each needs a value another holds. Break it by "
+                    + "moving the shared value into a module both can take it from.")
+            ordered.append(contentsOf: remaining)
+            break
+        }
+        let next = remaining.remove(at: index)
+        placed.insert(moduleIdentity(next.name))
+        ordered.append(next)
+    }
+
+    // A contribution nobody collects is silent: the module declaring channels
+    // composes fine, the application starts, and the first join finds no
+    // route. That is the failure mode the PubSub inversion existed to remove,
+    // so it must not reappear here. An aggregate is reported when some scanned
+    // module *would* take it and is not in this application — which names the
+    // module to add rather than merely observing that a property went unused.
+    let consumed = Set(constructions.flatMap(\.arguments))
+    for name in includedModules {
+        guard let module = scannedModule(name, in: byName) else { continue }
+        for property in module.provides {
+            guard let element = arrayElementType(property.type) else { continue }
+            let expression = "\(binding(name)).\(property.name)"
+            guard !consumed.contains(where: { $0.contains(expression) }) else { continue }
+            let aggregators = moduleGraph.filter { candidate in
+                // Declaration-to-declaration, so `moduleKey` rather than
+                // `moduleIdentity`: `includedModules` holds specializations
+                // (`AlulaWebModule<AlulaTransport>`) while `typeName` is the
+                // declaration (`AlulaWebModule`), and the question here is
+                // "is any instantiation of this module present" — the answer
+                // the suggestion "add it to modules:" depends on. Comparing
+                // identities said no for every generic module in the list and
+                // told applications to add a module they already had.
+                !includedModules.contains { moduleKey($0) == moduleKey(candidate.typeName) }
+                    && candidate.initializers.contains { initializer in
+                        initializer.types.contains {
+                            arrayElementType($0).map(providedTypeKey) == providedTypeKey(element)
+                        }
+                    }
+            }
+            guard !aggregators.isEmpty else { continue }
+            compositionDiagnostics.append(
+                "\(name).\(property.name) is declared but nothing in this application collects "
+                    + "it. Add "
+                    + aggregators.map(\.typeName).sorted().joined(separator: " or ")
+                    + " to the modules: list.")
+        }
+    }
+
+    for construction in ordered {
+        out += construction.statement + "\n"
+    }
+    out += "    return [\n"
+    for construction in ordered where construction.name != "AlulaGraph" {
+        out += "        \(binding(construction.name)),\n"
+    }
+    out += "    ]\n"
+    out += "}\n"
+    for diagnostic in compositionDiagnostics {
+        // Newlines have to be escaped, not emitted: a real one inside
+        // `#error("…")` ends the string literal, and the generated file then
+        // fails to parse — which buries the message this exists to deliver
+        // under whatever the parser says next.
+        let text =
+            diagnostic
+            .replacingOccurrences(of: "\"", with: "'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        out += "#error(\"\(text)\")\n"
+    }
+}
+
+// MARK: - Static route manifest
+//
+// Every route this target declares, scanned at build time through the same
+// `AlulaRouteScan` parser `@Controller` expands with. This is the static,
+// build-time record of the routes — for tooling that reads them before the
+// process runs; the live route table is built from the `RouteRegistration`
+// values the composition root gathers (COMPOSITION-MIGRATION.md §2.9).
+//
+// Emitted only when the target actually declares routes, so a target with no
+// controllers gets a generated file of exactly the shape it had before.
+// The manifest exists when the target has any Alula surface at all. A
+// components-only target — a library of `@Service` types with no routes —
+// gets one too, since the component list is the part a composition function
+// is built from.
+if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
+    || !components.isEmpty
+{
+    let sorted = routes.sorted {
+        ($0.path, $0.httpMethod, $0.source) < ($1.path, $1.httpMethod, $1.source)
+    }
+    out += "\n"
+    out += "/// Every route this module declares, as scanned at build time.\n"
+    out += "///\n"
+    out += "/// The build-time record of the routes; the live route table is built\n"
+    out += "/// from the `RouteRegistration` values `alulaRoutes(_:)` produces. This\n"
+    out += "/// is the static form, for tooling that reads routes before the process runs.\n"
+    out += "public enum AlulaRouteManifest {\n"
+    out += "    public struct Entry: Sendable {\n"
+    out += "        public let method: String\n"
+    out += "        public let path: String\n"
+    out += "        public let source: String\n"
+    out += "        /// Lane names as written, after the route-replaces-controller\n"
+    out += "        /// rule; nil means the route inherits the default lane.\n"
+    out += "        public let pipelines: String?\n"
+    out += "        public let isUpgrade: Bool\n"
+    out += "    }\n"
+    out += "\n"
+    out += "    public static let routes: [Entry] = [\n"
+    for route in sorted {
+        let pipelines = route.pipelinesText.map { "\"\(escaped($0))\"" } ?? "nil"
+        out += "        Entry("
+        out += "method: \"\(route.httpMethod)\", "
+        out += "path: \"\(escaped(route.path))\", "
+        out += "source: \"\(escaped(route.source))\", "
+        out += "pipelines: \(pipelines), "
+        out += "isUpgrade: \(route.isUpgrade)),\n"
+    }
+    out += "    ]\n"
+
+    // Lanes, in declaration order. Order is the whole content of a lane
+    // declaration — `.lane(_:_:)` composes across calls, so a framework module
+    // contributing `Authentication` and an application appending its own
+    // concatenate by registration sequence, and flattening that here would
+    // lose the only thing the declaration carries.
+    out += "\n"
+    out += "    /// One `MiddlewareRegistration.lane(_:_:)` declaration, in the\n"
+    out += "    /// order the scan met it. Calls compose: two declarations\n"
+    out += "    /// naming one lane concatenate rather than conflict.\n"
+    out += "    public struct Lane: Sendable {\n"
+    out += "        /// nil when the lane argument is not a literal or a\n"
+    out += "        /// canonical member — a computed name, unknowable here.\n"
+    out += "        public let name: String?\n"
+    out += "        /// Middleware type names, outermost first.\n"
+    out += "        public let middleware: [String]\n"
+    out += "        /// The type whose body declared it — nearly always a\n"
+    out += "        /// AlulaModule, and the reason this lane may or may not\n"
+    out += "        /// exist in a given application.\n"
+    out += "        public let declaredIn: String?\n"
+    out += "        public let module: String\n"
+    out += "    }\n"
+    out += "\n"
+    out += "    public static let lanes: [Lane] = [\n"
+    for lane in lanesInModuleOrder() {
+        let name = lane.lane.map { "\"\(escaped($0))\"" } ?? "nil"
+        let declaredIn = lane.declaredIn.map { "\"\(escaped($0))\"" } ?? "nil"
+        let middleware = lane.middleware.map { "\"\(escaped($0))\"" }.joined(separator: ", ")
+        out += "        Lane("
+        out += "name: \(name), "
+        out += "middleware: [\(middleware)], "
+        out += "declaredIn: \(declaredIn), "
+        out += "module: \"\(escaped(lane.module))\"),\n"
+    }
+    out += "    ]\n"
+
+    // The edges the lane order above was derived from, so a consumer holding
+    // the real bootstrap list can redo the sort with the right roots. This
+    // scan uses every scanned module as a root, in scan order, which
+    // reproduces the runtime wherever a dependency path exists between two
+    // modules and cannot where none does.
+    out += "\n"
+    out += "    /// A `AlulaModule` conformer and the modules it pulls in.\n"
+    out += "    public struct ModuleEdge: Sendable {\n"
+    out += "        public let name: String\n"
+    out += "        /// Dependency type names, generic arguments stripped.\n"
+    out += "        public let dependencies: [String]\n"
+    out += "        public let module: String\n"
+    out += "    }\n"
+    out += "\n"
+    out += "    /// The modules this application includes: the ones its\n"
+    out += "    /// bootstrap list names, plus everything those pull in\n"
+    out += "    /// through `dependencies`, dependencies first.\n"
+    out += "    ///\n"
+    out += "    /// Empty for a target that starts nothing, which is what a\n"
+    out += "    /// library is.\n"
+    out += "    public static let includedModules: [String] = [\n"
+    for module in includedModules {
+        out += "        \"\(escaped(module))\",\n"
+    }
+    out += "    ]\n"
+    out += "\n"
+    out += "    public static let moduleGraph: [ModuleEdge] = [\n"
+    for edge in moduleGraph.sorted(by: { $0.typeName < $1.typeName }) {
+        let dependencies = edge.dependencies.map { "\"\(escaped($0))\"" }.joined(separator: ", ")
+        out += "        ModuleEdge("
+        out += "name: \"\(escaped(edge.typeName))\", "
+        out += "dependencies: [\(dependencies)], "
+        out += "module: \"\(escaped(edge.module))\"),\n"
+    }
+    out += "    ]\n"
+
+    // The component list — every scanned component with its stereotype and
+    // dependency edges. The edges are what the composition root is built from
+    // (COMPOSITION-MIGRATION.md §2.1).
+    out += "\n"
+    out += "    /// A registrable component, as scanned.\n"
+    out += "    public struct Component: Sendable {\n"
+    out += "        /// Qualified with its module when it comes from another\n"
+    out += "        /// one, matching how registration names it.\n"
+    out += "        public let typeName: String\n"
+    out += "        /// \"service\", \"repository\", \"controller\", …\n"
+    out += "        public let stereotype: String\n"
+    out += "        /// `@Inject` types, in declaration order — the edges a\n"
+    out += "        /// composition function orders construction by.\n"
+    out += "        public let dependencies: [String]\n"
+    out += "        /// Provided by its own module rather than built by the\n"
+    out += "        /// composition root, because whether it exists in an\n"
+    out += "        /// application is a runtime question.\n"
+    out += "        public let isModuleRegistered: Bool\n"
+    out += "        public let module: String\n"
+    out += "    }\n"
+    out += "\n"
+    out += "    public static let components: [Component] = [\n"
+    for component in components.sorted(by: { ($0.module, $0.typeName) < ($1.module, $1.typeName) }) {
+        let qualified =
+            component.module == manifest.targetModuleName
+            ? component.typeName
+            : "\(component.module).\(component.typeName)"
+        // Acknowledged edges are dependencies too — the marker says the type
+        // is registered by hand, not that nothing depends on it.
+        let dependencies = (component.injectTypeNames + component.acknowledgedTypeNames)
+            .map { "\"\(escaped($0))\"" }.joined(separator: ", ")
+        out += "        Component("
+        out += "typeName: \"\(escaped(qualified))\", "
+        out += "stereotype: \"\(stereotype(forAttribute: component.attributeName))\", "
+        out += "dependencies: [\(dependencies)], "
+        out += "isModuleRegistered: \(component.isModuleRegistered), "
+        out += "module: \"\(escaped(component.module))\"),\n"
+    }
+    out += "    ]\n"
+    out += "}\n"
+}
+
+// Actuator's component list, at file scope — it is not part of the manifest
+// enum, and nesting it there made the composer's call fail to resolve.
+if !components.isEmpty {
+    emittedComponentDescriptors = true
+    out += "\n"
+    out += "/// Every scanned component, as Actuator's dashboard renders them.\n"
+    out += "///\n"
+    out += "/// Actuator lives in its own module and cannot see this target's\n"
+    out += "/// manifest, so the descriptors are *passed* to `ActuatorModule` by\n"
+    out += "/// the composition root — the same way routes and scheduled jobs\n"
+    out += "/// are. What the build scanned is a better answer than runtime\n"
+    out += "/// introspection, and it exists before the process does.\n"
+    out += "func alulaComponentDescriptors() -> [AlulaCore.ComponentDescriptor] {\n"
+    out += "    [\n"
+    for component in components.sorted(by: {
+        ($0.module, $0.typeName) < ($1.module, $1.typeName)
+    }) {
+        let qualified =
+            component.module == manifest.targetModuleName
+            ? component.typeName
+            : "\(component.module).\(component.typeName)"
+        out += "        AlulaCore.ComponentDescriptor("
+        out += "typeName: \"\(escaped(qualified))\", "
+        out += "sourceModule: \"\(escaped(component.module))\", "
+        out += "stereotype: .\(stereotype(forAttribute: component.attributeName))),\n"
+    }
+    out += "    ]\n"
+    out += "}\n"
+}
+
+emitAlulaGraph(into: &out)
+emitComposer(into: &out)
+
+do {
+    let outputURL = URL(fileURLWithPath: manifest.output)
+    try FileManager.default.createDirectory(
+        at: outputURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try out.write(to: outputURL, atomically: true, encoding: .utf8)
+} catch {
+    FileHandle.standardError.write(
+        "alula-registration-gen: cannot write output: \(error)\n".data(using: .utf8)!)
+    exit(2)
+}

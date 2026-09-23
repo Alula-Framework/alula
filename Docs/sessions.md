@@ -1,4 +1,4 @@
-# Flight Sessions
+# Alula Sessions
 
 Server-side session state for browser applications: a bag of values kept
 under an id that a cookie carries, loaded before the handler and persisted
@@ -6,7 +6,7 @@ after it. It is where a login lives once a password has been checked, where a
 cart lives before there is an order, and where a "Saved." notice waits for
 the page a form redirects to.
 
-It is **not** authentication. Flight Security Core's non-goals stay true:
+It is **not** authentication. Alula Security Core's non-goals stay true:
 sessions carry state, and turning that state into an identity is a small,
 explicit step described below.
 
@@ -14,61 +14,61 @@ Three pieces, and you name one of them:
 
 | | |
 |---|---|
-| `FlightSessionsModule` (`FlightWeb`) | The middleware and `context.session`. List it. |
-| `SessionStore` (`FlightSessions`) | The seam a backend implements. `InMemorySessionStore` is the default and needs no configuration; `FlightSessionsValkey` in flight-data is the shared one; [Stores](#stores) shows how to write another. |
-| `Session` (`FlightSessions`) | What a handler holds: `get`, `set`, `remove`, `flash`, `regenerate`, `destroy`. |
+| `AlulaSessionsModule` (`AlulaWeb`) | The middleware and `context.session`. List it. |
+| `SessionStore` (`AlulaSessions`) | The seam a backend implements. `InMemorySessionStore` is the default and needs no configuration; `AlulaSessionsValkey` in alula-data is the shared one; [Stores](#stores) shows how to write another. |
+| `Session` (`AlulaSessions`) | What a handler holds: `get`, `set`, `remove`, `flash`, `regenerate`, `destroy`. |
 
 ## Adding this module
 
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `FlightWeb` (the middleware and `context.session`); `FlightSessions` is brought along |
-| **Module** | `FlightSessionsModule.self` |
-| **Optional** | `FlightSessionsValkeyModule.self` from flight-data, for more than one replica |
+| **Products** | `AlulaWeb` (the middleware and `context.session`); `AlulaSessions` is brought along |
+| **Module** | `AlulaSessionsModule.self` |
+| **Optional** | `AlulaSessionsValkeyModule.self` from alula-data, for more than one replica |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
         ],
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
 
 ```swift
 // Sources/App/Main.swift
-import FlightCore
-import FlightTransport
-import FlightWeb
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [
-                FlightWebModule<FlightTransport>.self,
-                FlightSessionsModule.self,
+                AlulaWebModule<AlulaTransport>.self,
+                AlulaSessionsModule.self,
                 AppModule.self,
             ],
-            composedBy: flightComposeModules)
+            composedBy: alulaComposeModules)
     }
 }
 ```
 
-`import FlightWeb` is enough: it re-exports `FlightSessions`, so `Session`
+`import AlulaWeb` is enough: it re-exports `AlulaSessions`, so `Session`
 and its methods are in scope wherever `RequestContext` is.
 
 ## Quick start
@@ -174,7 +174,7 @@ worth refusing them for.
 
 ## Configuration reference
 
-All keys live under `sessions.` (env-var form `FLIGHT_SESSIONS_*`), all
+All keys live under `sessions.` (env-var form `ALULA_SESSIONS_*`), all
 kebab-case, none required.
 
 | key | default | meaning |
@@ -205,7 +205,7 @@ The cost is a development server on plain HTTP in Safari, which drops
 Pay it in the dev overlay, not the base file:
 
 ```yaml
-# flight-dev.yaml
+# alula-dev.yaml
 sessions:
   cookie-secure: false
 ```
@@ -216,17 +216,17 @@ sessions:
 TTL, `delete` — and every one of them throws. A record is one JSON blob per
 id; values inside it were encoded as JSON when `set` was called. Not with the
 wire's `web.*` coders, and on purpose: the module used to take `WebCoders`,
-and `FlightWebModule` provides that while taking this module's middleware,
+and `AlulaWebModule` provides that while taking this module's middleware,
 which is a composition cycle the build refuses. Session bytes are read back
 only by this runtime, so nothing is lost.
 
 | Store | Where | For |
 |---|---|---|
-| `InMemorySessionStore` | `FlightSessions`, the default | One replica, development, tests. Bounded; lost on restart |
-| `ValkeySessionStore` | `FlightSessionsValkey` in flight-data, `Valkey` trait | Any deployment with more than one replica |
-| `RecordingSessionStore` | `FlightSessionsTesting` | Asserting what a request did to its session |
+| `InMemorySessionStore` | `AlulaSessions`, the default | One replica, development, tests. Bounded; lost on restart |
+| `ValkeySessionStore` | `AlulaSessionsValkey` in alula-data, `Valkey` trait | Any deployment with more than one replica |
+| `RecordingSessionStore` | `AlulaSessionsTesting` | Asserting what a request did to its session |
 
-Configuring `sessions.valkey.url` without listing `FlightSessionsValkeyModule`
+Configuring `sessions.valkey.url` without listing `AlulaSessionsValkeyModule`
 is refused at startup. The alternative — each replica quietly keeping its own
 sessions — is the failure nobody notices until a load balancer signs a user
 out.
@@ -234,13 +234,13 @@ out.
 ### Writing a store
 
 A store is three methods over opaque bytes, and a module that provides it.
-`FlightSessionsModule` takes `store: any SessionStore` by type, so providing
+`AlulaSessionsModule` takes `store: any SessionStore` by type, so providing
 one is the whole integration — the same direction the cache and PubSub
 adapters use:
 
 ```swift
-import FlightCore
-import FlightSessions
+import AlulaCore
+import AlulaSessions
 
 /// Any client with get, set-with-TTL and delete — a database table with an
 /// `expires_at` column, a cloud key-value service, an actor in tests.
@@ -275,8 +275,8 @@ final class KeyValueSessionStore: SessionStore, Sendable {
     }
 }
 
-struct KeyValueSessionsModule: FlightModule {
-    /// Matched by type to `FlightSessionsModule`'s `store:` parameter.
+struct KeyValueSessionsModule: AlulaModule {
+    /// Matched by type to `AlulaSessionsModule`'s `store:` parameter.
     let store: any SessionStore
 
     init(client: MyKeyValueClient) {          // whatever module provides the client
@@ -285,7 +285,7 @@ struct KeyValueSessionsModule: FlightModule {
 }
 ```
 
-List `KeyValueSessionsModule.self` beside `FlightSessionsModule.self` and
+List `KeyValueSessionsModule.self` beside `AlulaSessionsModule.self` and
 the in-memory default is no longer chosen. Order does not matter.
 
 What a store must promise:
@@ -302,13 +302,13 @@ What a store must promise:
   base64url string safe for any key; the record is JSON the framework owns.
 - **Idempotent `delete`.** Deleting an absent id is not an error.
 
-`FlightSessionsTesting`'s `RecordingSessionStore` is a fourth conforming
+`AlulaSessionsTesting`'s `RecordingSessionStore` is a fourth conforming
 implementation, and reading it beside `ValkeySessionStore` shows the whole
 contract in under two hundred lines.
 
 ## Sessions and identity
 
-`FlightSecurityCore` establishes identity from a bearer token. A browser
+`AlulaSecurityCore` establishes identity from a bearer token. A browser
 has no bearer token; it has a cookie. With both modules listed, the bridge
 is two calls:
 
@@ -321,7 +321,7 @@ try context.requireSession().signOut()
 that carries the cookie, and everything downstream — `context.principal`,
 `requirePrincipal()`, `roles:` on a route — works as it does for a token.
 `signIn` regenerates the id; a bearer token, when present, still wins.
-Ordering is `FlightSecurityModule`'s: given the session runtime, it runs
+Ordering is `AlulaSecurityModule`'s: given the session runtime, it runs
 `Sessions` ahead of `Authentication` in every lane it declares, and a lane
 of your own that gets that backwards is refused at startup. The details are
 in `Docs/security-core.md` under *Signing in with a session*.
@@ -342,13 +342,13 @@ try await sessions.revokeSessions(
 try await sessions.revokeSessions(ownedBy: subject)
 ```
 
-`sessions` is the `SessionRuntime` that `FlightSessionsModule` provides.
+`sessions` is the `SessionRuntime` that `AlulaSessionsModule` provides.
 Inject it where you need it.
 
 Indexing is a capability, `OwnerIndexedSessionStore`, rather than a
 requirement of `SessionStore`. A store is handed opaque bytes, and indexing
 them is extra work it opts into. The in-memory store does it, and so does
-flight-data's Valkey store from 0.10.0. A store that doesn't index keeps
+alula-data's Valkey store from 0.10.0. A store that doesn't index keeps
 working. Asking it to revoke throws `SessionRevocationUnsupported` rather
 than ending nothing, because a "sign out everywhere" that signs nobody out
 is the failure this exists to prevent.
@@ -400,14 +400,14 @@ reject fail at startup.
 
 | Counter | Dimensions |
 |---|---|
-| `flight_sessions_created` | none: a new session's first save |
-| `flight_sessions_regenerated` | none: sign-in, sign-out, `regenerate()` |
-| `flight_sessions_store_failures` | `operation` (`load`, `save`, `delete`): each one is a 503 to someone |
-| `flight_sessions_revoked` | none: counted per session ended, not per call |
-| `flight_sessions_revocation_failures` | none, including a store that can't revoke |
+| `alula_sessions_created` | none: a new session's first save |
+| `alula_sessions_regenerated` | none: sign-in, sign-out, `regenerate()` |
+| `alula_sessions_store_failures` | `operation` (`load`, `save`, `delete`): each one is a 503 to someone |
+| `alula_sessions_revoked` | none: counted per session ended, not per call |
+| `alula_sessions_revocation_failures` | none, including a store that can't revoke |
 
 Each is a telemetry event first (`SessionEvents`), and
-`FlightSessionsModule` contributes the definitions above, so they reach
+`AlulaSessionsModule` contributes the definitions above, so they reach
 whatever metrics backend the application bootstraps, under the names 0.33
 used. Attach to the events directly for anything else: an alert on store
 failures, a log line, or a test.
@@ -426,7 +426,7 @@ let failures = await TelemetryTest.capture(SessionEvents.StoreFailed.self) {
 `OneTimeTokenStore` lives here too. It's the short-lived, single-use
 storage behind a password-reset or email-verification link, the same kind
 of thing as a session: server-side state with a lifetime that must be
-shared across replicas. The token logic is `FlightSecurityCore`'s
+shared across replicas. The token logic is `AlulaSecurityCore`'s
 `OneTimeTokens`, which covers hashing, purposes, binding, and redeeming
 once. See `Docs/sign-in.md`. A store needs only `put` and an atomic
 `take`.
@@ -436,13 +436,13 @@ once. See `Docs/sign-in.md`. A store needs only `put` and an atomic
 A signed-in session is exactly what CSRF protection exists to defend —
 ambient, cookie-carried authority a browser attaches automatically, to a
 request an attacker's page triggers without the visitor's knowledge.
-`CSRFProtection` is `FlightWeb`'s, keyed off the same session's own token,
+`CSRFProtection` is `AlulaWeb`'s, keyed off the same session's own token,
 with the same `SessionReading` ordering rule `Authentication` follows. See
 `Docs/web.md` under *CSRF*.
 
 ## Testing
 
-`RecordingSessionStore` from `FlightSessionsTesting` serves from a dictionary
+`RecordingSessionStore` from `AlulaSessionsTesting` serves from a dictionary
 and remembers every call. `SessionRuntime` takes a clock, so renewal and
 expiry are tested without sleeping:
 
@@ -450,7 +450,7 @@ expiry are tested without sleeping:
 let store = RecordingSessionStore()
 let runtime = SessionRuntime(store: store, settings: try SessionSettings(ttl: .seconds(3600)))
 let client = try TestClient(
-    routes: AccountController.flightRoutes { _ in AccountController(accounts: fakeAccounts) },
+    routes: AccountController.alulaRoutes { _ in AccountController(accounts: fakeAccounts) },
     middleware: MiddlewareRegistration.lane(.default, [Sessions(runtime: runtime)]))
 
 let login = await client.post("/account/login", body: form)
@@ -467,5 +467,5 @@ hands it an empty session to write to.
   and a signing key to rotate. The server-side design needs none of those.
 - **Per-key merging of concurrent writes.** See *Concurrency*.
 - **A Postgres store.** Valkey has native expiry and is the store every
-  other shared thing in Flight already uses. A relational store wants a
+  other shared thing in Alula already uses. A relational store wants a
   sweeper, and nothing has asked for one yet.

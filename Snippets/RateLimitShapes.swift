@@ -4,11 +4,11 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightRateLimit
-import FlightRateLimitTesting
-import FlightSecurityCore
-import FlightWeb
+import AlulaCore
+import AlulaRateLimit
+import AlulaRateLimitTesting
+import AlulaSecurityCore
+import AlulaWeb
 
 // snippet.hide
 enum SignInError: Error { case tooManyAttempts(retryAfter: Duration?) }
@@ -36,7 +36,7 @@ struct SignIn {
 
 func rateLimitShapes(configuration: Configuration) throws {
     // The module, built the way the composition root builds it.
-    let module = try FlightRateLimitModule(configuration: configuration)
+    let module = try AlulaRateLimitModule(configuration: configuration)
     let limiter = module.limiter
 
     // The HTTP middleware: a fixed quota, keyed on the caller.
@@ -63,7 +63,7 @@ func rateLimitShapes(configuration: Configuration) throws {
     _ = RateLimitQuota.perDay(10_000)
 
     // A store of your own is the seam, provided from a module by type.
-    struct MyLimitStoreModule: FlightModule {
+    struct MyLimitStoreModule: AlulaModule {
         let store: any RateLimitStore = InMemoryRateLimitStore()
     }
     _ = MyLimitStoreModule()

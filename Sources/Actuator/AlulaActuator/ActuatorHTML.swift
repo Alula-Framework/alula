@@ -1,0 +1,116 @@
+import AlulaCore
+
+// SSR rendering: deliberately basic, plain server-rendered HTML — a
+// heading, a table of modules with health status, tables of components grouped by
+// layer. No CSS framework, no client-side JS, no dependency on the future
+// reactive templating engine (Alula Web scopes that as a separate,
+// later package — this is not it). String-templated generation is sufficient
+// here; if these needs ever grow past "sufficient," that's a reason to
+// revisit, not to over-build now.
+
+func renderActuatorHTML(_ snapshot: ActuatorSnapshot) -> String {
+    var html = """
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Alula Actuator</title>
+    <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+    table { border-collapse: collapse; margin: 0.5rem 0 1.5rem; }
+    th, td { border: 1px solid #ccc; padding: 0.3rem 0.75rem; text-align: left; }
+    th { background: #f0f0f0; }
+    code { font-family: ui-monospace, monospace; }
+    .health-running { color: #1a7f37; }
+    .health-failed { color: #cf222e; }
+    .health-notStarted { color: #9a6700; }
+    </style>
+    </head>
+    <body>
+    <h1>Alula Actuator</h1>
+    <p>Environment: <strong>\(htmlEscaped(snapshot.environment.rawValue))</strong></p>
+
+    """
+
+    html += renderModulesSection(snapshot.modules)
+    html += renderComponentsSection(snapshot.components)
+    html += """
+    </body>
+    </html>
+    """
+    return html
+}
+
+private func renderModulesSection(_ modules: [ModuleStatus]) -> String {
+    var section = "<h2>Modules (\(modules.count))</h2>\n"
+    guard !modules.isEmpty else {
+        return section + "<p>No module health recorded.</p>\n"
+    }
+    section += """
+    <table>
+    <thead><tr><th>Module</th><th>Health</th><th>Detail</th></tr></thead>
+    <tbody>
+
+    """
+    for status in modules {
+        let health = status.health.actuatorLabel
+        let detail = status.health.failureDescription ?? ""
+        section += """
+        <tr><td><code>\(htmlEscaped(status.moduleName))</code></td>\
+        <td class="health-\(health)">\(health)</td>\
+        <td>\(htmlEscaped(detail))</td></tr>
+
+        """
+    }
+    section += "</tbody>\n</table>\n"
+    return section
+}
+
+private func renderComponentsSection(_ components: [ComponentDescriptor]) -> String {
+    var section = "<h2>Components (\(components.count))</h2>\n"
+    guard !components.isEmpty else {
+        return section + "<p>No components registered.</p>\n"
+    }
+    // Grouped by layer (Alula Core: the stereotype tag exists to
+    // feed exactly this grouping), registration order preserved within each.
+    for stereotype in Stereotype.actuatorSectionOrder {
+        let group = components.filter { $0.stereotype == stereotype }
+        guard !group.isEmpty else { continue }
+        section += """
+        <h3>\(stereotype.actuatorSectionTitle) (\(group.count))</h3>
+        <table>
+        <thead><tr><th>Type</th><th>Source module</th></tr></thead>
+        <tbody>
+
+        """
+        for component in group {
+            section += """
+            <tr><td><code>\(htmlEscaped(component.typeName))</code></td>\
+            <td>\(htmlEscaped(component.sourceModule))</td></tr>
+
+            """
+        }
+        section += "</tbody>\n</table>\n"
+    }
+    return section
+}
+
+/// Minimal, complete HTML escaping for text and attribute positions. Every
+/// dynamic string on the page passes through here — type names, module names,
+/// and error descriptions are all app-controlled input.
+func htmlEscaped(_ string: String) -> String {
+    var escaped = ""
+    escaped.reserveCapacity(string.count)
+    for character in string {
+        switch character {
+        case "&": escaped += "&amp;"
+        case "<": escaped += "&lt;"
+        case ">": escaped += "&gt;"
+        case "\"": escaped += "&quot;"
+        case "'": escaped += "&#39;"
+        default: escaped.append(character)
+        }
+    }
+    return escaped
+}

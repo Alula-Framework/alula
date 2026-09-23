@@ -5,10 +5,10 @@
 // prose breaks the build.
 
 import CoreMetrics
-import FlightCore
-import FlightSecurityCore
-import FlightTelemetryBridges
-import FlightWeb
+import AlulaCore
+import AlulaSecurityCore
+import AlulaTelemetryBridges
+import AlulaWeb
 import Logging
 import TelemetryMacros
 
@@ -119,7 +119,7 @@ func conditional(detailed: Bool) -> [TelemetryMetric] {
     }
 }
 
-struct AppModule: FlightModule {
+struct AppModule: AlulaModule {
     let telemetryMetrics: [TelemetryMetric] = [
         .distribution(Checkout.Stop.self, \.duration, unit: .milliseconds, tags: \.method)
     ]
@@ -147,7 +147,7 @@ func tracingAndLogs() throws {
 
     let tokens = try LogBridge(logger: Logger(label: "telemetry"))
         .log(QuerySpan.Exception.self, level: .error)
-        .log(prefix: "flight.sessions", level: .debug)
+        .log(prefix: "alula.sessions", level: .debug)
         .attach()
     _ = consume token
     _ = consume tokens
@@ -159,7 +159,7 @@ func bootstrapLogging() {
 
 // MARK: Choosing the backend explicitly
 
-struct MetricsModule: FlightModule {
+struct MetricsModule: AlulaModule {
     let metricsFactory: any MetricsFactory = PrometheusMetricsFactory()
 }
 

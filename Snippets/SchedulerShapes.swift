@@ -4,8 +4,8 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightScheduler
+import AlulaCore
+import AlulaScheduler
 import Foundation
 
 // snippet.hide

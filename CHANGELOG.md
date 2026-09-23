@@ -4,6 +4,52 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] - 2026-09-23
+
+Flight is now **Alula**. The name collided with the Flight School book series
+and the PHP Flight framework (D45). The organization is now
+[Alula-Framework](https://github.com/Alula-Framework), and GitHub redirects
+the old URLs. Apart from the rename, nothing about the framework changes.
+
+### Changed
+
+- **Breaking: every brand spelling is renamed.** Replace `Flight` with
+  `Alula`, `flight` with `alula`, and `FLIGHT_` with `ALULA_`.
+  - The package: `.package(url: "https://github.com/Alula-Framework/alula.git",
+    from: "0.36.0")`, with products under `package: "alula"`.
+  - Modules and types: `AlulaCore`, `AlulaWeb` and the others, plus `Alula.run`,
+    `AlulaMigrator` and the rest.
+  - Generated code: `alulaComposeModules` and `alulaRoutes`. Rebuild to
+    regenerate them.
+  - Configuration: `alula.yaml`, `alula-{env}.yaml`, `ALULA_ENV` and `ALULA_*`.
+  - Source markers: `// alula:hand-registered` and `// alula:module-registered`.
+  - The CLI is `alula`, and alula-data, alula-cli and alula-channels-js move
+    with it.
+  - Telemetry and metric names are `alula.*` and `alula_*`. Update your
+    dashboards and alerts.
+- **Breaking: pre-rename configuration is refused.**
+  - What refuses: `Configuration.load` with the default prefix throws
+    `ConfigLoadError.preRenameConfiguration` when `FLIGHT_ENV` is set without
+    `ALULA_ENV`, or when a `flight.yaml` or `flight-{env}.yaml` sits beside
+    the configuration. The error names every `FLIGHT_*` variable present.
+  - Why: an unset `ALULA_ENV` means `dev`, so ignoring these would have
+    started a production deploy with dev settings.
+  - To keep the old names on purpose, pass `prefix: ConfigPrefix("flight")`.
+
+### Upgrading a running deployment
+
+- **Sessions start over once.** Valkey key prefixes and session contents are
+  renamed, so everyone signs in again, and outstanding one-time links
+  (password reset, verification) stop working. Rate-limit windows reset.
+- **Upgrade the JavaScript client with the server.** The reserved channel
+  events are `alula:*`. During a rolling deploy, replicas on 0.35 and 0.36
+  don't see each other's broadcasts.
+- **Migrations need no action.** alula-data adopts an existing
+  `flight_migrations` ledger, and recorded checksums still verify. See
+  alula-data 0.11.0.
+- **Scheduler leases.** The default table is `alula_job_leases`. Create it in
+  a migration, or pass `table: "flight_job_leases"` to keep the old one.
+
 ## [0.35.0] - 2026-09-23
 
 The telemetry core moved out of Flight into a package of its own,

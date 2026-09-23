@@ -1,37 +1,37 @@
-# Flight
+# Alula
 
 A modular server-side framework for Swift. Dependency injection and
 application lifecycle at the bottom, HTTP and WebSockets above it, and
 real-time layers — PubSub, Channels, Presence — on top of those.
 
 One package, many products. Take only what you use: a JSON API needs
-`FlightWeb` and `FlightTransport`; a collaborative app adds `FlightChannels`
-and `FlightPresence`; a service behind an existing identity provider adds
-`FlightSecurityCore`.
+`AlulaWeb` and `AlulaTransport`; a collaborative app adds `AlulaChannels`
+and `AlulaPresence`; a service behind an existing identity provider adds
+`AlulaSecurityCore`.
 
 ## Products
 
 | Product | What it is |
 | --- | --- |
-| `FlightCore` | Modules, compile-time composition, application lifecycle. Everything else builds on this. |
-| `FlightConfig` / `FlightConfigCore` | Layered configuration over swift-configuration; `FlightConfigCore` is the dependency-free parser and vocabulary. |
-| `FlightWeb` | Routing, middleware, `RequestContext`, `Response`, WebSocket and SSE, and the `ServerTransport` seam. |
-| `FlightTransport` | The default transport, wrapping HummingbirdCore. A peer of any third-party transport — the only target that knows what the transport wraps. |
-| `FlightPubSub` | Topic-based publish/subscribe with a `DistributedPubSubAdapter` seam for cluster fan-out. |
-| `FlightChannels` | Per-connection lifecycle over PubSub and Web: join, leave, push, broadcast. |
-| `FlightPresence` | CRDT-merged "who is here", correct across a cluster without central coordination. |
-| `FlightSessions` | Server-side sessions: the store seam and the bounded in-memory default. The middleware and `context.session` are `FlightWeb`'s. |
-| `FlightRateLimit` | A GCRA rate limiter and its store seam. Not an HTTP concern: `FlightWeb`'s `RateLimiting` middleware is one consumer, a login throttle is another. |
-| `FlightWeb`'s `TrustedProxies` | The real client address behind a reverse proxy, resolved from `X-Forwarded-For` only as far as a configured trusted range reaches. |
-| `FlightWeb`'s `CSRFProtection` | Refuses a state-changing request without the session's own token. The synchronizer pattern, keyed off `FlightSessions`. |
-| `FlightWeb`'s `SecurityHeaders` | `nosniff`, `DENY` and a strict referrer policy on every response by default; HSTS and CSP when configured. Applied after every lane, so no route can drop them. |
-| `FlightActuator` | Health probes always on; a topology dashboard only where a development environment is declared, and behind authentication and a role when configured. |
-| `FlightSecurityCore` | Validates tokens your identity provider issued, and signs people in: against your own accounts (`PasswordSignIn`, throttled, Argon2id) or any OpenID Connect provider (`OIDCSignIn`), behind one `SignInProvider` seam so switching is a change to the module list. |
-| `FlightAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
-| `FlightTelemetryBridges` | Reporting for [swift-telemetry](https://github.com/Flight-Framework/swift-telemetry)'s typed events — which Flight's own subsystems emit — to swift-metrics, swift-distributed-tracing and swift-log, wired from `telemetry.*` by `FlightTelemetryModule`, which the Web, Sessions, Security and APNs modules bring with them. |
-| `FlightScheduler` / `FlightCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `FlightCronCore` is the dependency-free engine the macro validates with. |
-| `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `flight:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
-| `*Client` | Swift client halves: `FlightChannelsClient` for joining topics over a socket, `FlightPresenceClient` for applying presence state and diffs. |
+| `AlulaCore` | Modules, compile-time composition, application lifecycle. Everything else builds on this. |
+| `AlulaConfig` / `AlulaConfigCore` | Layered configuration over swift-configuration; `AlulaConfigCore` is the dependency-free parser and vocabulary. |
+| `AlulaWeb` | Routing, middleware, `RequestContext`, `Response`, WebSocket and SSE, and the `ServerTransport` seam. |
+| `AlulaTransport` | The default transport, wrapping HummingbirdCore. A peer of any third-party transport — the only target that knows what the transport wraps. |
+| `AlulaPubSub` | Topic-based publish/subscribe with a `DistributedPubSubAdapter` seam for cluster fan-out. |
+| `AlulaChannels` | Per-connection lifecycle over PubSub and Web: join, leave, push, broadcast. |
+| `AlulaPresence` | CRDT-merged "who is here", correct across a cluster without central coordination. |
+| `AlulaSessions` | Server-side sessions: the store seam and the bounded in-memory default. The middleware and `context.session` are `AlulaWeb`'s. |
+| `AlulaRateLimit` | A GCRA rate limiter and its store seam. Not an HTTP concern: `AlulaWeb`'s `RateLimiting` middleware is one consumer, a login throttle is another. |
+| `AlulaWeb`'s `TrustedProxies` | The real client address behind a reverse proxy, resolved from `X-Forwarded-For` only as far as a configured trusted range reaches. |
+| `AlulaWeb`'s `CSRFProtection` | Refuses a state-changing request without the session's own token. The synchronizer pattern, keyed off `AlulaSessions`. |
+| `AlulaWeb`'s `SecurityHeaders` | `nosniff`, `DENY` and a strict referrer policy on every response by default; HSTS and CSP when configured. Applied after every lane, so no route can drop them. |
+| `AlulaActuator` | Health probes always on; a topology dashboard only where a development environment is declared, and behind authentication and a role when configured. |
+| `AlulaSecurityCore` | Validates tokens your identity provider issued, and signs people in: against your own accounts (`PasswordSignIn`, throttled, Argon2id) or any OpenID Connect provider (`OIDCSignIn`), behind one `SignInProvider` seam so switching is a change to the module list. |
+| `AlulaAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
+| `AlulaTelemetryBridges` | Reporting for [swift-telemetry](https://github.com/Alula-Framework/swift-telemetry)'s typed events — which Alula's own subsystems emit — to swift-metrics, swift-distributed-tracing and swift-log, wired from `telemetry.*` by `AlulaTelemetryModule`, which the Web, Sessions, Security and APNs modules bring with them. |
+| `AlulaScheduler` / `AlulaCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `AlulaCronCore` is the dependency-free engine the macro validates with. |
+| `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
+| `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
 | `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
 Per-product documentation lives in [Docs/](Docs/), and
@@ -41,13 +41,13 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.35.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
 ```
 
 ```swift
 .target(name: "App", dependencies: [
-    .product(name: "FlightWeb", package: "flight"),
-    .product(name: "FlightTransport", package: "flight"),
+    .product(name: "AlulaWeb", package: "alula"),
+    .product(name: "AlulaTransport", package: "alula"),
 ])
 ```
 
@@ -60,23 +60,23 @@ enabled trait reaches.
 | Trait | Brings |
 | --- | --- |
 | `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack. Implies `Telemetry`. |
-| `Security` | `FlightSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
-| `APNS` | `FlightAPNS` — JWTKit, AsyncHTTPClient. Implies `Telemetry` and nothing else; a push-sending worker needs no HTTP server. |
-| `Telemetry` | `FlightTelemetryBridges` — swift-telemetry, swift-metrics and swift-distributed-tracing. |
+| `Security` | `AlulaSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
+| `APNS` | `AlulaAPNS` — JWTKit, AsyncHTTPClient. Implies `Telemetry` and nothing else; a push-sending worker needs no HTTP server. |
+| `Telemetry` | `AlulaTelemetryBridges` — swift-telemetry, swift-metrics and swift-distributed-tracing. |
 
 All are opt-in. Name what you want:
 
 ```swift
 // An HTTP service.
-.package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.35.0", traits: ["Web"])
+.package(url: "https://github.com/Alula-Framework/alula.git",
+         from: "0.36.0", traits: ["Web"])
 
 // …with authentication.
-.package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.35.0", traits: ["Security"])
+.package(url: "https://github.com/Alula-Framework/alula.git",
+         from: "0.36.0", traits: ["Security"])
 
 // Just composition and lifecycle — 7 resolved dependencies instead of 30.
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.35.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the
@@ -106,7 +106,7 @@ and asserting no gated dependency reached it.
 ## Backends
 
 Database and cache drivers deliberately live outside this package, in
-`flight-data`, so that nothing here forces a Postgres or Valkey dependency
+`alula-data`, so that nothing here forces a Postgres or Valkey dependency
 onto an application that does not use one.
 
 ## Requirements

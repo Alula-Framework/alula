@@ -1,0 +1,341 @@
+import AlulaChannelsProtocol
+import AlulaCore
+import AlulaPubSub
+import AlulaWeb
+import Logging
+
+/// Channels' `WebSocketUpgradeHandler`: owns one upgraded WebSocket
+/// for its lifetime — decoding frames, routing them through a
+/// `SocketSession` to per-topic `Channel`s, writing everything outbound
+/// through one serialized writer, and enforcing heartbeat liveness.
+///
+/// One instance per connection: the route handler constructs it during the
+/// upgrade request, which is where per-connection identity (the principal,
+///) enters. Built by `ChannelSockets.handler(principal:)` — what a
+/// `@WebSocketRoute` method returns, and what a `channels.socketRoute(_:)`
+/// value produces.
+/// The channels stack a socket route needs, as one injectable value.
+///
+/// A declared route **injects** this rather than resolving three components
+/// out of every upgrade request:
+///
+///     @Controller
+///     struct SocketController {
+///         @Inject var sockets: ChannelSockets
+///
+///         @WebSocketRoute("/socket")
+///         func socket(_ context: RequestContext) async throws -> ChannelSocketHandler {
+///             sockets.handler(principal: try await verify(context))
+///         }
+///     }
+///
+/// `AlulaChannelsModule` builds it and provides it, so these are the same
+/// instances the composition root wired — not a lookup of them.
+public struct ChannelSockets: Sendable {
+    let router: ChannelRouter
+    let pubsub: any PubSub
+    let configuration: ChannelsConfiguration
+    let broadcaster: ChannelBroadcaster
+
+    public init(
+        router: ChannelRouter,
+        pubsub: any PubSub,
+        configuration: ChannelsConfiguration,
+        broadcaster: ChannelBroadcaster
+    ) {
+        self.router = router
+        self.pubsub = pubsub
+        self.configuration = configuration
+        self.broadcaster = broadcaster
+    }
+
+    /// A handler for one connection.
+    public func handler(principal: (any ChannelPrincipal)? = nil) -> ChannelSocketHandler {
+        ChannelSocketHandler(
+            router: router, pubsub: pubsub, configuration: configuration,
+            broadcaster: broadcaster, principal: principal)
+    }
+}
+
+public struct ChannelSocketHandler: WebSocketUpgradeHandler {
+    private let router: ChannelRouter
+    private let pubsub: any PubSub
+    private let configuration: ChannelsConfiguration
+    private let broadcaster: ChannelBroadcaster
+    private let principal: (any ChannelPrincipal)?
+
+    public init(
+        router: ChannelRouter,
+        pubsub: any PubSub,
+        configuration: ChannelsConfiguration,
+        broadcaster: ChannelBroadcaster,
+        principal: (any ChannelPrincipal)? = nil
+    ) {
+        self.router = router
+        self.pubsub = pubsub
+        self.configuration = configuration
+        self.broadcaster = broadcaster
+        self.principal = principal
+    }
+
+
+    public func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+        // Bounded: an unbounded queue lets one client that stopped reading
+        // grow without limit until the server runs out of memory.
+        //
+        // Carries pre-encoded text, not `Envelope` values: `Socket.enqueue`
+        // encodes single-target sends, and `SocketSession.pump` forwards
+        // `ChannelBroadcaster`'s precomputed frame directly — so encoding
+        // has already happened by the time anything reaches this queue, and
+        // the writer below is pure I/O.
+        let (outbound, outboundContinuation) = AsyncStream<String>.makeStream(
+            bufferingPolicy: .bufferingNewest(configuration.outboundBufferSize))
+        // Built before the socket because the socket needs to reach it: an
+        // outbound queue that overflows asks for a close rather than
+        // discarding frames a client could never know it missed.
+        let (finished, finishedContinuation) = AsyncStream<CloseIntent>.makeStream()
+        let socket = Socket(
+            principal: principal,
+            logger: context.logger,
+            outbound: outboundContinuation,
+            overflow: configuration.outboundOverflow,
+            requestClose: { code, reason in
+                finishedContinuation.yield(
+                    CloseIntent(code: WebSocketCloseCode(code), reason: reason))
+            }
+        )
+        let session = SocketSession(
+            router: router,
+            pubsub: pubsub,
+            socket: socket,
+            outbound: outboundContinuation,
+            logger: context.logger,
+            broadcaster: broadcaster,
+            dispatch: configuration.dispatch,
+            maxTopics: configuration.maxTopicsPerSocket
+        )
+        context.logger.debug("channel socket opened", metadata: [
+            "socket": "\(socket.id)",
+            "principal": "\(principal?.subject ?? "<anonymous>")",
+        ])
+
+        // Three tasks per connection, all owned by this call and joined
+        // before it returns — the socket's whole session lives under its
+        // request `Scope`:
+        //
+        // - writer: drains the one outbound queue to the transport. The
+        //   queue finishing (teardown does that) is its normal exit; a send
+        //   failure (peer gone mid-write) an early one.
+        // - watchdog: closes sockets that go silent past the heartbeat
+        //   timeout.
+        // - frame loop: reads, decodes, routes — strictly one envelope at a
+        //   time, preserving per-socket message order end to end.
+        //
+        // Exit coordination cannot rely on the transport finishing the
+        // frame stream after a *server-initiated* close: the half-open
+        // connection (the case heartbeats exist for) never acknowledges the
+        // close handshake. So both the writer and the frame loop announce
+        // their exit on `finished`; whichever fires first, the handler
+        // cancels the frame loop (AsyncStream iteration is
+        // cancellation-aware), tears down idempotently, drains the writer,
+        // and joins everything.
+        //
+        // What travels on `finished` is the *close intent* — the code and
+        // reason the peer is owed — and the close frame is written by this
+        // function, once, after everything is joined. It used to be written
+        // by whichever task decided to close, and that task is the one this
+        // coordination then cancels: `writer` announcing its exit woke the
+        // handler, which cancelled `frameLoop` while `frameLoop` was inside
+        // `connection.close(…)`. The write threw `CancellationError` into a
+        // `try?`, but the transport's state machine had already moved to
+        // "closing" — so the later close was a no-op, no close frame ever
+        // reached the wire, and every server-initiated close (4000 heartbeat
+        // timeout, 4400 protocol violation, 1003 binary frame, and the 1000
+        // of a graceful `alula:close`) arrived at the client as an
+        // abnormal 1006. Deciding here, and closing from a task nothing
+        // cancels, is what makes the documented codes observable.
+        let writer = Task { [configuration] in
+            for await text in outbound {
+                do {
+                    try await Self.send(text, over: connection, within: configuration.writeTimeout)
+                } catch is WriteTimedOut {
+                    // A peer that cannot take one frame in this long is not
+                    // going to take the next. The heartbeat watchdog cannot
+                    // catch this one: it counts *inbound* frames as liveness,
+                    // so a client that keeps heartbeating while never reading
+                    // looks alive to it while the writer is parked forever.
+                    context.logger.info(
+                        "closing channel socket: peer did not accept a frame in time",
+                        metadata: [
+                            "socket": "\(socket.id)",
+                            "timeout": "\(configuration.writeTimeout.map(String.init(describing:)) ?? "none")",
+                        ])
+                    finishedContinuation.yield(
+                        CloseIntent(
+                            code: WebSocketCloseCode(ChannelCloseCode.writeTimeout),
+                            reason: "peer did not accept a frame in time"))
+                    break
+                } catch {
+                    break  // connection gone; remaining outbound is undeliverable
+                }
+            }
+            // Deliberately silent: the outbound queue finishing is a
+            // *consequence* of teardown, never a reason to close. It used to
+            // yield `.normal` here, which raced every deliberate intent —
+            // `session.teardown()` finishes the queue, so the writer woke and
+            // could win "first exit wins" against the protocol-violation the
+            // frame loop had already decided on. The client then saw 1000
+            // where 4400 was documented. The one reason this task *does* own
+            // — a write timing out — is yielded above, before the break.
+            //
+            // Nothing is lost by staying quiet: whatever tore the session down
+            // also ends `connection.frames`, and the frame loop's own
+            // `.normal` covers the no-reason case.
+        }
+
+        let watchdog = Task { [configuration] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: configuration.heartbeatCheckInterval)
+                } catch {
+                    return // cancelled: session ended first
+                }
+                if await session.idleDuration > configuration.heartbeatTimeout {
+                    context.logger.info("closing silent channel socket", metadata: [
+                        "socket": "\(socket.id)",
+                    ])
+                    // Teardown finishes the outbound queue → the writer
+                    // drains and announces its exit → the handler unwinds,
+                    // and writes the close frame this intent names once the
+                    // drain is complete.
+                    await session.teardown()
+                    finishedContinuation.yield(
+                        CloseIntent(
+                            code: WebSocketCloseCode(ChannelCloseCode.heartbeatTimeout),
+                            reason: "heartbeat timeout"))
+                    return
+                }
+            }
+        }
+
+        let frameLoop = Task {
+            frames: for await frame in connection.frames {
+                await session.touch()
+                switch frame {
+                case .text(let text):
+                    let envelope: Envelope
+                    do {
+                        envelope = try Envelope(text: text)
+                    } catch {
+                        // Alula owns both clients: an undecodable
+                        // frame is a bug or an attack, not a compatibility
+                        // case. Close, with the protocol-violation code.
+                        context.logger.warning("undecodable channel frame", metadata: [
+                            "socket": "\(socket.id)", "error": "\(error)",
+                        ])
+                        // Intent first, teardown second: teardown finishes
+                        // the outbound queue and wakes the writer, and
+                        // whatever is recorded first is what the peer is told.
+                        finishedContinuation.yield(
+                            CloseIntent(
+                                code: WebSocketCloseCode(ChannelCloseCode.protocolViolation),
+                                reason: "invalid envelope"))
+                        await session.teardown()
+                        break frames
+                    }
+                    if case .close(let code, let reason) = await session.handle(envelope) {
+                        // Graceful close (alula:close): handle() already
+                        // tore down and finished the outbound queue. The
+                        // writer is drained before the close frame goes out —
+                        // below, where the frame is written.
+                        finishedContinuation.yield(CloseIntent(code: code, reason: reason))
+                        break frames
+                    }
+                case .binary:
+                    // JSON text frames only in v1; the binary codec is a
+                    // documented later addition, negotiated, never
+                    // sprung on a server.
+                    // Intent first, teardown second — see the text case.
+                    finishedContinuation.yield(
+                        CloseIntent(
+                            code: .unacceptableData,
+                            reason: "binary frames are not part of protocol v1"))
+                    await session.teardown()
+                    break frames
+                case .close(let code, let reason):
+                    // A peer's own close arrives as `.noStatus`: WSCore
+                    // consumes the code in its state machine, so there is
+                    // nothing to carry and `.normal` below is the right
+                    // reply. What the transport *synthesizes* is worth
+                    // carrying — `.goingAway` when this process is shutting
+                    // down, `.protocolError` when the stream ended abnormally.
+                    // Flattening those to `1000` told a client draining off a
+                    // node that everything had finished normally, which is
+                    // the same confusion `4408` was separated from `1000` to
+                    // avoid.
+                    if code == .goingAway || code == .protocolError {
+                        finishedContinuation.yield(CloseIntent(code: code, reason: reason))
+                    }
+                    break frames // peer closed; stream finishes right after
+                case .ping, .pong:
+                    continue // transport already answered; counts as liveness
+                }
+            }
+            finishedContinuation.yield(.normal)
+        }
+
+        // First exit wins; then unwind deterministically. Teardown is
+        // idempotent, so every path — peer close, alula:close, protocol
+        // violation, heartbeat timeout, task cancellation on server
+        // shutdown — runs `leave` for each joined channel exactly once.
+        var firstExit = finished.makeAsyncIterator()
+        let intent = await firstExit.next() ?? .normal
+        frameLoop.cancel()
+        await frameLoop.value
+        await session.teardown()
+        watchdog.cancel()
+        // The writer is joined *before* the close frame, so everything
+        // already queued — a `alula:close` ack, a last broadcast — is on the
+        // wire ahead of it.
+        await writer.value
+        await watchdog.value
+        try? await connection.close(code: intent.code, reason: intent.reason)
+        context.logger.debug("channel socket closed", metadata: ["socket": "\(socket.id)"])
+    }
+}
+
+/// One outbound frame took longer than ``ChannelsConfiguration/writeTimeout``.
+struct WriteTimedOut: Error {}
+
+/// Why a session ended, and what the peer is owed on the way out.
+///
+/// Carried from whichever task decided to end the session to the one place
+/// that writes the close frame — the handler itself, after every task is
+/// joined. See the note in `handle(upgraded:context:)` for why the close
+/// cannot be written by the deciding task.
+struct CloseIntent: Sendable {
+    let code: WebSocketCloseCode
+    let reason: String
+
+    /// The ordinary end: the peer closed, or the session simply finished.
+    static let normal = CloseIntent(code: .normalClosure, reason: "")
+}
+
+extension ChannelSocketHandler {
+    /// Sends one frame, giving up after `timeout`.
+    ///
+    /// Through ``AlulaCore/withAlulaTimeout(_:throwing:_:)`` rather than a
+    /// task group, for the reason that type is written down at length:
+    /// `WebSocketConnection.send` is a *closure* any transport supplies, so
+    /// nothing here can require it to respond to cancellation — and a group
+    /// awaits its children at scope exit, so one that does not would hang
+    /// this write despite the timeout. Exactly how `ClusteredPubSub`'s own
+    /// broadcast timeout failed to bound anything.
+    static func send(
+        _ text: String, over connection: WebSocketConnection, within timeout: Duration?
+    ) async throws {
+        try await withAlulaTimeout(timeout, throwing: WriteTimedOut()) {
+            try await connection.send(text)
+        }
+    }
+}

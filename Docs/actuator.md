@@ -1,6 +1,6 @@
-# Flight Actuator
+# Alula Actuator
 
-A lightweight, no-frills introspection surface for a running Flight app —
+A lightweight, no-frills introspection surface for a running Alula app —
 what components are registered, which modules are healthy, basic runtime facts —
 served over HTTP. This README covers usage and records the choices the
 implementation had to make.
@@ -10,29 +10,29 @@ implementation had to make.
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `FlightActuator` |
+| **Products** | `AlulaActuator` |
 | **Module** | `ActuatorModule.self` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
-            .product(name: "FlightActuator", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
+            .product(name: "AlulaActuator", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -40,22 +40,22 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightActuator
-import FlightCore
-import FlightTransport
-import FlightWeb
+import AlulaActuator
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [
-                FlightWebModule<FlightTransport>.self,
+                AlulaWebModule<AlulaTransport>.self,
                 ActuatorModule.self,
                 AppModule.self,
             ],
-            composedBy: flightComposeModules)
+            composedBy: alulaComposeModules)
     }
 }
 ```
@@ -69,20 +69,20 @@ dependency DAG. A module you write can declare framework modules in its own
 
 ## Usage
 
-Actuator is an ordinary `FlightModule` — registered like everything else,
+Actuator is an ordinary `AlulaModule` — registered like everything else,
 with no special access to Core or Web:
 
 ```swift
-import FlightActuator
+import AlulaActuator
 
-await Flight.run(
+await Alula.run(
     configuration: try Configuration.load(),
     modules: [
-        FlightWebModule<FlightTransport>.self,
+        AlulaWebModule<AlulaTransport>.self,
         ActuatorModule.self,
         AppModule.self,
     ],
-    composedBy: flightComposeModules
+    composedBy: alulaComposeModules
 )
 ```
 
@@ -90,23 +90,23 @@ await Flight.run(
 default, or the same data as JSON:
 
 ```yaml
-# flight.yaml
+# alula.yaml
 actuator:
   format: ssr   # or "json"
 ```
 
-(or `FLIGHT_ACTUATOR_FORMAT=json` via the env-var config layer). The key is
+(or `ALULA_ACTUATOR_FORMAT=json` via the env-var config layer). The key is
 read once at bootstrap. An absent key means SSR; a present-but-malformed
 value fails bootstrap loudly, naming the key and value — never a silent
-fallback (Flight Config).
+fallback (Alula Config).
 
 ## Access gating
 
 Three levels, decided at bootstrap and never re-read:
 
-Set with `FLIGHT_ACTUATOR_EXPOSURE`, or derived from `FLIGHT_ENV` when that
-is unset — **not** a `flight.yaml` key, unlike `actuator.format` above. The
-reason is below; writing `actuator: exposure:` into `flight.yaml` does
+Set with `ALULA_ACTUATOR_EXPOSURE`, or derived from `ALULA_ENV` when that
+is unset — **not** a `alula.yaml` key, unlike `actuator.format` above. The
+reason is below; writing `actuator: exposure:` into `alula.yaml` does
 nothing, silently.
 
 | exposure | Routes registered |
@@ -120,12 +120,12 @@ orchestrator needs them in production and an all-or-nothing gate is why
 production used to have none. Only the *dashboard* is gated further.
 
 `full` is the default in `dev`, `development`, `test` and `local` — when
-`FLIGHT_ENV` actually *says* so. **An unset `FLIGHT_ENV` is `health_only`**,
+`ALULA_ENV` actually *says* so. **An unset `ALULA_ENV` is `health_only`**,
 not `dev`: everywhere else an unset variable means development
 ([config](config.md)), but the question here is whether to publish an
 unauthenticated description of your topology, and "nobody set the variable"
-is not an answer worth acting on. Set `FLIGHT_ENV=dev` (or
-`FLIGHT_ACTUATOR_EXPOSURE=full`) to get the dashboard.
+is not an answer worth acting on. Set `ALULA_ENV=dev` (or
+`ALULA_ACTUATOR_EXPOSURE=full`) to get the dashboard.
 **Everywhere else the default is `health_only`** — an orchestrator needs a
 probe in production, and an all-or-nothing gate left production with none.
 
@@ -133,7 +133,7 @@ An unrecognised value fails bootstrap naming the key rather than falling back,
 for the reason given under [What gets published, and where](#what-gets-published-and-where): this decides
 whether an endpoint disclosing your topology exists.
 
-`FLIGHT_ACTUATOR_EXPOSURE` overrides it. That is an environment variable
+`ALULA_ACTUATOR_EXPOSURE` overrides it. That is an environment variable
 rather than a config key because it gates whether an endpoint that discloses
 your topology exists at all — a deployment decision Actuator reads from the raw
 environment, its one sanctioned exception to reading configuration instead.
@@ -143,7 +143,7 @@ reachable wants `actuator.dashboard-pipelines` (below). `health_only` is safe
 to expose: it answers `200`/`UP` or `503` and discloses nothing else.
 
 For tests and embedders, `ActuatorModule(environment:)` bypasses the
-`FLIGHT_ENV` read — construct it directly with the environment you want.
+`ALULA_ENV` read — construct it directly with the environment you want.
 
 ## JSON contract
 
@@ -185,14 +185,14 @@ Recorded here the same way sibling packages record theirs:
 
 1. **`ActuatorController` is a plain struct, hand-registered — not
    `@Controller`.** An early revision used `@Controller` and broke the
-   moment a real app depended on this package: Flight Core's registration
+   moment a real app depended on this package: Alula Core's registration
    plugin scans *every* recursive source-module dependency that sits atop
-   FlightCore — right for an app-owned library target, wrong for a starter
-   package with its own `FlightModule`. A downstream app's generated
+   AlulaCore — right for an app-owned library target, wrong for a starter
+   package with its own `AlulaModule`. A downstream app's generated
    composition root would try to build `ActuatorController` as one of its own
    graph nodes — bypassing the exposure gate entirely (whole point) and
    colliding with what `ActuatorModule` already does. Every sibling starter
-   (`flight-web`, `flight-pubsub`, `flight-channels`, `flight-data-postgres`)
+   (`alula-web`, `alula-pubsub`, `alula-channels`, `alula-data-postgres`)
    avoids this the same way: none of them put `@Component`/`@Controller` on
    their own infrastructure. `ActuatorModule` builds the controller and serves
    it through route values (`RouteRegistration`, the escape hatch `@GetRoute`
@@ -206,8 +206,8 @@ Recorded here the same way sibling packages record theirs:
    is gone with the container.
 3. **The gate's environment is a qualified component.** The dashboard reports
    the same environment the registration gate ran against, injected as
-   `FlightEnvironment` with qualifier `"flight.actuator"`, rather than
-   re-reading `FLIGHT_ENV` per request. The two can otherwise disagree
+   `AlulaEnvironment` with qualifier `"alula.actuator"`, rather than
+   re-reading `ALULA_ENV` per request. The two can otherwise disagree
    under the explicit-environment initializer.
 4. **`ModuleHealth.isFailed` (and friends) live here.** The design's own
    test sketch uses `health.isFailed`; Core keeps `ModuleHealth` minimal,
@@ -253,7 +253,7 @@ The default is `full` in `dev`, `development`, `test`, and `local`, and
 package does not recognize**.
 
 That last clause is the point. The gate used to be `environment != .prod`,
-which fails open twice over: an unset `FLIGHT_ENV` resolves to `dev`, and
+which fails open twice over: an unset `ALULA_ENV` resolves to `dev`, and
 `production`, `PROD`, `prd`, and `live` are all not-`.prod` too. Each of
 them published the dashboard — the module list, every registered
 component's fully-qualified type name, and failure messages —
@@ -262,11 +262,11 @@ Getting the environment name wrong now costs you a dashboard instead of
 leaking one.
 
 The allowlist closed the misspelled-name half of that and, for a while,
-left the other half exactly as it was: an unset `FLIGHT_ENV` still resolved
+left the other half exactly as it was: an unset `ALULA_ENV` still resolved
 to `dev`, `dev` was still on the allowlist, and a production deployment that
 never set the variable still served the whole dashboard. **A default is not
 a declaration.** Saying nothing now gets `health_only`; a development machine
-that wants the dashboard says so, with `FLIGHT_ENV=dev` or the override
+that wants the dashboard says so, with `ALULA_ENV=dev` or the override
 below.
 
 ### The health probes
@@ -302,14 +302,14 @@ lock-protected read of state something else already established.
 To opt a non-development environment into the dashboard:
 
 ```sh
-FLIGHT_ACTUATOR_EXPOSURE=full
+ALULA_ACTUATOR_EXPOSURE=full
 ```
 
-That is an environment variable rather than a `flight.yaml` key because it
+That is an environment variable rather than a `alula.yaml` key because it
 decides whether a topology-disclosing route exists *at all* — a deployment
 question Actuator answers from the raw environment, its one sanctioned
 exception to a module reading configuration instead. It is the env-var spelling
-of `actuator.exposure` under Flight Config's own convention. An unrecognized
+of `actuator.exposure` under Alula Config's own convention. An unrecognized
 value stops startup rather than quietly choosing for you.
 
 **Put authentication in front of it.** Two settings do it:
@@ -321,7 +321,7 @@ actuator:
 ```
 
 `dashboard-pipelines` names lanes exactly as a route's `pipelines:` does;
-`authenticated` is the lane `FlightSecurityModule` declares, so a signed-in
+`authenticated` is the lane `AlulaSecurityModule` declares, so a signed-in
 principal is required before the dashboard renders. `dashboard-roles` runs
 the same check as a `roles:` route — 401 with no credential, 403 with the
 wrong one. Roles need a lane that establishes identity; on one that doesn't,

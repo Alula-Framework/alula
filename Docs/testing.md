@@ -1,6 +1,6 @@
-# Testing a Flight application
+# Testing an Alula application
 
-The reason for the dependency injection is this page. A Flight application is
+The reason for the dependency injection is this page. An Alula application is
 meant to be testable without a socket, a database, or a clock — you run the
 real controllers, the real routing and the real middleware, and replace only
 the parts that would reach outside the process.
@@ -22,7 +22,7 @@ request, so a fake is just a value passed in:
 
 ```swift
 let repo = InMemoryUsers(users: [ada])
-let client = try TestClient(routes: UserController.flightRoutes { _ in
+let client = try TestClient(routes: UserController.alulaRoutes { _ in
     UserController(users: UserService(repository: repo))
 })
 
@@ -84,7 +84,7 @@ There is no "compose everything but swap one" — and none is needed. A
 full-composition test composes the real modules:
 
 ```swift
-let app = try Flight.assemble(configuration: config, modules: [appModule])
+let app = try Alula.assemble(configuration: config, modules: [appModule])
 ```
 
 and a test that needs a fake builds the component under test directly (above),
@@ -98,13 +98,13 @@ real modules, for exactly this reason.
 
 Each layer ships its own test support, and none of them need a server.
 
-### HTTP — `FlightWebTesting`
+### HTTP — `AlulaWebTesting`
 
 `TestClient` for in-process requests, `RequestContext.mock` for direct handler
 calls, and `InMemoryTransport` when you want the transport seam without a
 socket.
 
-### PubSub — `FlightPubSubTesting`
+### PubSub — `AlulaPubSubTesting`
 
 `InMemoryCluster` stands in for the wire between nodes, so fan-out across a
 cluster can be tested in a unit suite. Each call to `makeAdapter()` is another
@@ -119,7 +119,7 @@ let nodeB = cluster.makeAdapter()
 `RecordingAdapter` is the simpler tool when you only need to see what was
 published — its `broadcasts` property is every `Message` that went out.
 
-### Channels — `FlightChannelsTesting`
+### Channels — `AlulaChannelsTesting`
 
 `InMemoryChannelTransport` connects a real `ChannelClient` to a real server
 in-process — the whole join/push/reply protocol with no WebSocket.
@@ -128,24 +128,24 @@ itself rather than an application on top of it.
 
 ```swift
 let client = ChannelClient(
-    url: URL(string: "flight-test:///socket")!,
+    url: URL(string: "alula-test:///socket")!,
     transport: InMemoryChannelTransport(testClient: testClient, query: "token=…"))
 ```
 
-### Presence — `FlightPresenceClient`
+### Presence — `AlulaPresenceClient`
 
-`ChannelPresence` maintains the presence list from `flight:presence_state` and
-`flight:presence_diff` messages, so a test asserts on the list rather than on
+`ChannelPresence` maintains the presence list from `alula:presence_state` and
+`alula:presence_diff` messages, so a test asserts on the list rather than on
 the wire.
 
-### Data — `FlightDataTesting`
+### Data — `AlulaDataTesting`
 
 `InMemoryDataSource` and `InMemoryDataModule` stand in for a database.
 `DataSourceConformance` is a contract suite every data source must satisfy —
 run it against your own adapter and it will tell you where the behaviour
 diverges.
 
-### Sessions — `FlightSessionsTesting`
+### Sessions — `AlulaSessionsTesting`
 
 `RecordingSessionStore` is a working store that also records every `load`,
 `save` and `delete`, so a test can assert what a request did to its session
@@ -153,7 +153,7 @@ and read the record back. `SessionRuntime` takes a clock, so sliding
 renewal and expiry are tested by moving it rather than by sleeping. A handler
 called directly gets an empty session from `RequestContext.mock(session:)`.
 
-### Cache — `FlightCacheTesting`
+### Cache — `AlulaCacheTesting`
 
 `RecordingCache` is a working in-memory cache that also records what was
 asked of it, so a test can assert something *was cached* — or evicted —
@@ -185,5 +185,5 @@ testing a driver rather than an application — the packages that own those
 drivers carry a `scripts/test.sh` that starts throwaway servers, runs the
 suite and cleans up.
 
-An application built on Flight should not need one: depend on a protocol,
+An application built on Alula should not need one: depend on a protocol,
 pass a fake, and let the driver's own package prove the driver works.

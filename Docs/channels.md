@@ -1,16 +1,16 @@
-# Flight Channels
+# Alula Channels
 
 The stateful protocol layer between a raw WebSocket and topic-based
 messaging: clients join named topics, exchange messages bidirectionally with
 per-topic server handler logic, and receive fan-out from anything that
 publishes to those topics. Scope modeled on Phoenix Channels, wire protocol
-Flight's own.
+Alula's own.
 
 It sits exactly between two things that already exist:
 
-- **Below:** Flight Web's `WebSocketUpgradeHandler` owns the raw WebSocket.
+- **Below:** Alula Web's `WebSocketUpgradeHandler` owns the raw WebSocket.
   Channels is one.
-- **Beside:** Flight PubSub does the fan-out. Channels routes and frames;
+- **Beside:** Alula PubSub does the fan-out. Channels routes and frames;
   PubSub delivers — on one node or twenty, invisibly.
 
 What Channels adds is the per-connection, per-topic session protocol:
@@ -21,31 +21,31 @@ join/leave, routing to handlers, replies, heartbeats, reconnection.
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `FlightChannels` |
-| **Module** | `FlightChannelsModule.self` |
-| **Pulls in** | `FlightPubSubModule` |
+| **Products** | `AlulaChannels` |
+| **Module** | `AlulaChannelsModule.self` |
+| **Pulls in** | `AlulaPubSubModule` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
-            .product(name: "FlightChannels", package: "flight"),
-            .product(name: "FlightPubSub", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
+            .product(name: "AlulaChannels", package: "alula"),
+            .product(name: "AlulaPubSub", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -53,34 +53,34 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightChannels
-import FlightCore
-import FlightPubSub
-import FlightTransport
-import FlightWeb
+import AlulaChannels
+import AlulaCore
+import AlulaPubSub
+import AlulaTransport
+import AlulaWeb
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [
-                FlightWebModule<FlightTransport>.self,
-                FlightChannelsModule.self,
+                AlulaWebModule<AlulaTransport>.self,
+                AlulaChannelsModule.self,
                 AppModule.self,
             ],
-            composedBy: flightComposeModules)
+            composedBy: alulaComposeModules)
     }
 }
 ```
 
 A socket has to be served, so an application using Channels also runs a web
-module and a transport — `FlightWebModule<FlightTransport>.self` — and mounts
+module and a transport — `AlulaWebModule<AlulaTransport>.self` — and mounts
 the socket with a `@WebSocketRoute`. See `Docs/web.md`.
 
 **Depend on the products of what it pulls in, too.** The generated composition
 root names every module in the DAG, so a target that lists only
-`FlightChannels` fails to build with `cannot find `FlightPubSubModule` in scope`
+`AlulaChannels` fails to build with `cannot find `AlulaPubSubModule` in scope`
 — from generated code, which is a confusing place to read it.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -91,19 +91,19 @@ dependency DAG. A module you write can declare framework modules in its own
 
 | Product | What | Depends on |
 |---|---|---|
-| `FlightChannels` | Server: `Channel`, `Socket`, `ChannelRouter`, `ChannelBroadcaster`, `ChannelSocketHandler`, `FlightChannelsModule` | Core, PubSub, Web |
-| `FlightChannelsProtocol` | The wire protocol alone: `Envelope`, `JSONValue`, reserved events, error reasons, close codes | nothing |
-| `FlightChannelsClient` | Swift reference client: `ChannelClient`, `ChannelHandle`, transport seam, reconnect-with-backoff-and-rejoin | Protocol, swift-log |
-| `FlightChannelsTesting` | `InMemoryChannelTransport` (client ↔ in-process server, no socket), `ChannelWireClient` (raw-envelope driver) | the above + WebTesting |
+| `AlulaChannels` | Server: `Channel`, `Socket`, `ChannelRouter`, `ChannelBroadcaster`, `ChannelSocketHandler`, `AlulaChannelsModule` | Core, PubSub, Web |
+| `AlulaChannelsProtocol` | The wire protocol alone: `Envelope`, `JSONValue`, reserved events, error reasons, close codes | nothing |
+| `AlulaChannelsClient` | Swift reference client: `ChannelClient`, `ChannelHandle`, transport seam, reconnect-with-backoff-and-rejoin | Protocol, swift-log |
+| `AlulaChannelsTesting` | `InMemoryChannelTransport` (client ↔ in-process server, no socket), `ChannelWireClient` (raw-envelope driver) | the above + WebTesting |
 
 The JS/TS reference client is
-[flight-channels-js](https://github.com/Flight-Framework/flight-channels-js)
-(`@flight-framework/channels` on npm) — same protocol, same versioning.
+[alula-channels-js](https://github.com/Alula-Framework/alula-channels-js)
+(`@alula-framework/channels` on npm) — same protocol, same versioning.
 
 ## Ordering and concurrency
 
 **Envelopes are handled in order within a topic, and concurrently across
-topics.** `flight.channels.max-concurrent-envelopes` (16 by default) bounds
+topics.** `alula.channels.max-concurrent-envelopes` (16 by default) bounds
 how many a single socket may have in flight; set it to `1` for the older
 behaviour, one envelope at a time socket-wide.
 
@@ -114,7 +114,7 @@ handler that took 200ms to answer a push on `room:1` delayed everything on
 socket.
 
 What is preserved is the ordering that a stateful protocol actually needs.
-`flight:join` followed by a push on the same topic still arrive in that order
+`alula:join` followed by a push on the same topic still arrive in that order
 — including when the push is sent before the join has been answered — and a
 `Channel` instance is never entered re-entrantly, so handlers keep the
 serialization they were written against. What is given up is ordering
@@ -129,7 +129,7 @@ Two consequences worth knowing:
   Because inbound frames pull rather than buffer (see `Docs/web.md`), that
   wait reaches the socket — a client flooding one connection is slowed by TCP
   rather than handed unbounded work to queue.
-- A teardown — `flight:close`, a heartbeat timeout, a protocol violation —
+- A teardown — `alula:close`, a heartbeat timeout, a protocol violation —
   cancels envelopes still in flight rather than draining them. Awaiting them
   would let one hung application handler block the very teardown that exists
   to get rid of it. A client that needs a push acknowledged before closing
@@ -138,7 +138,7 @@ Two consequences worth knowing:
 ## Backpressure and blast radius
 
 A socket's outbound queue is bounded by
-`flight.channels.outbound-buffer-size` (256 by default). It used to be
+`alula.channels.outbound-buffer-size` (256 by default). It used to be
 unbounded: a client that stopped reading — a backgrounded tab, a wedged
 connection, a phone in a tunnel — accumulated every message published to its
 topics with no ceiling, so one stalled subscriber could exhaust the server's
@@ -158,7 +158,7 @@ delivers each channel's fresh `initialState`, which is exactly the
 resynchronisation that dropping quietly denies it — and it needed no client
 change, because a transport-level close already drives reconnect-and-rejoin.
 
-`flight.channels.outbound-overflow: drop-oldest` restores the old behaviour,
+`alula.channels.outbound-overflow: drop-oldest` restores the old behaviour,
 and is right for a feed where only the latest value means anything — a cursor
 position, a metrics tick, a progress bar. It is wrong wherever a message is an
 *event* rather than a sample, because there the gap is the bug. An
@@ -172,20 +172,20 @@ close frame goes out.
 Nothing in the request path calls `precondition` any more. A reserved event
 name reaching `Socket.push` or a broadcast is refused and logged. It used to
 terminate the process — every other connected socket with it — because one
-caller passed a bad name, and while the framework filters `flight:`-prefixed
+caller passed a bad name, and while the framework filters `alula:`-prefixed
 events arriving in an envelope, an application deriving a name from client
 *payload* is an ordinary pattern that reached the assertion.
 
 `Socket.pushReserved` enforces the **opposite** rule — it refuses an event
-that is *not* `flight:`-namespaced, because sending reserved events is its
-entire purpose. It is `@_spi(FlightInternal)`, for Flight's own packages
+that is *not* `alula:`-namespaced, because sending reserved events is its
+entire purpose. It is `@_spi(AlulaInternal)`, for Alula's own packages
 layered on Channels (Presence today), and application code does not see it
 without an SPI import.
 
 ## Server usage
 
 ```swift
-import FlightChannels
+import AlulaChannels
 
 struct RoomChannel: Channel {
     let broadcaster: ChannelBroadcaster
@@ -213,19 +213,19 @@ struct RoomChannel: Channel {
     func leave(_ topic: String, socket: Socket) async { /* optional */ }
 }
 
-struct AppModule: FlightModule {
+struct AppModule: AlulaModule {
     // Listed to *include* Channels in the application. It is not an ordering
     // constraint: this module declares channels, so Channels is built from
     // them and therefore built second.
-    static var dependencies: [any FlightModule.Type] { [FlightChannelsModule.self] }
+    static var dependencies: [any AlulaModule.Type] { [AlulaChannelsModule.self] }
 
     // Channels are values this module holds. The composer collects `channels`
     // from every module declaring any and hands them all to
-    // FlightChannelsModule, so a package the framework has never heard of
+    // AlulaChannelsModule, so a package the framework has never heard of
     // contributes channels without the application enumerating it.
     let channels: [ChannelRegistration]
 
-    init(graph: FlightGraph) {
+    init(graph: AlulaGraph) {
         let chat = graph.chatRepository
         self.channels = [
             // The broadcaster arrives per join, in the `ChannelContext`.
@@ -258,7 +258,7 @@ struct SocketController {
 ```
 
 `channels.socketRoute("/socket") { ... }` builds the same upgrade route as a
-value — a `RouteRegistration` the composition root hands `FlightWebModule` —
+value — a `RouteRegistration` the composition root hands `AlulaWebModule` —
 and suits a test harness or a spike. An application is better served by the
 declared form: `@WebSocketRoute` is visible to the build-time scan and takes
 its dependencies through the type (`@Inject`) rather than looking them up.
@@ -280,14 +280,14 @@ await broadcaster.broadcast(topic: "room:42", event: "new_msg", payload: p, excl
 ## Swift client usage
 
 ```swift
-import FlightChannelsClient
+import AlulaChannelsClient
 
 let client = ChannelClient(url: url, transport: myTransport) // transport seam, see below
 try await client.connect()
 
 let room = client.channel("room:42")
 let initialState = try await room.join()               // the join gate answers
-let reply = try await room.push("new_msg", payload: ["body": "hi"])  // awaits flight:reply
+let reply = try await room.push("new_msg", payload: ["body": "hi"])  // awaits alula:reply
 try await room.send("typing", payload: ["on": true])   // fire-and-forget, ref: null
 
 for await message in await room.messages() {            // server pushes, as a stream
@@ -297,13 +297,13 @@ for await message in await room.messages() {            // server pushes, as a s
 
 Reconnection is client-driven: on a drop the client re-dials with
 `ReconnectPolicy` backoff and rejoins every joined topic; the fresh initial
-state arrives on `messages()` as a `flight:join` message. In-flight pushes
+state arrives on `messages()` as a `alula:join` message. In-flight pushes
 fail fast with `.disconnected`. Heartbeats run automatically; an unanswered
 heartbeat is treated as a dead connection.
 
 `ChannelClientTransport` is the one seam: implement `connect(to:)` over any
 WebSocket (the E2E suite shows a hummingbird `WSClient` adapter in ~60
-lines; `FlightChannelsTesting` ships the in-memory one).
+lines; `AlulaChannelsTesting` ships the in-memory one).
 
 ## Wire protocol — the contract all three artifacts version together
 
@@ -315,13 +315,13 @@ One envelope, both directions, JSON text frames in v1:
 
 - `ref` correlates request → reply; server pushes carry `ref: null`.
   All four keys are always present.
-- Reserved events: `flight:join`, `flight:leave`, `flight:reply`,
-  `flight:error` (payload `{"reason": "…"}`), `flight:heartbeat`,
-  `flight:close`. Everything else routes to the channel's `handle`.
-- Socket-level control events travel on the reserved topic `"flight"`,
+- Reserved events: `alula:join`, `alula:leave`, `alula:reply`,
+  `alula:error` (payload `{"reason": "…"}`), `alula:heartbeat`,
+  `alula:close`. Everything else routes to the channel's `handle`.
+- Socket-level control events travel on the reserved topic `"alula"`,
   which can never be joined.
-- Correlated success is `flight:reply` with the ref; correlated failure
-  (join rejected, handler error) is `flight:error` with the ref.
+- Correlated success is `alula:reply` with the ref; correlated failure
+  (join rejected, handler error) is `alula:error` with the ref.
 - Close codes beyond RFC 6455's set: `4000` heartbeat timeout, `4408` write
   timeout (the peer stopped reading — still talking, no longer listening),
   `4410` outbound overflow (reading, but slower than the rate published to
@@ -335,10 +335,10 @@ One envelope, both directions, JSON text frames in v1:
   `unmatched_topic`, `already_joined`, `not_joined`, `too_many_topics`,
   `reserved_topic`, `handler_error`, `invalid_event`.
 
-Channel traffic travels on the bus under `flight:channels:<topic>`, not on
+Channel traffic travels on the bus under `alula:channels:<topic>`, not on
 the topic string a client joined — `ChannelProtocol.busTopic(_:)` is the
 mapping, and Presence's own gossip has always been namespaced the same way
-(`flight:presence`). It used to share the application's namespace, and both
+(`alula:presence`). It used to share the application's namespace, and both
 directions of that collision were real: an application subscribing to
 `shipment:42` received Channels' internal frames as opaque JSON, and one
 *publishing* to `shipment:42` had its message dropped by every connected
@@ -374,7 +374,7 @@ may open a socket at all — and guards the upgrade, not any topic on it.
 
 ## How many topics one socket may hold
 
-`flight.channels.max-topics-per-socket` (64) bounds it. Every joined topic
+`alula.channels.max-topics-per-socket` (64) bounds it. Every joined topic
 costs a channel instance, a PubSub subscription, a fan-in task and an entry
 in the session's per-topic ordering — five allocations, all driven by client
 input, and nothing used to stop one connection asking for them without limit.
@@ -417,13 +417,13 @@ for it is rare.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `flight.channels.heartbeat-timeout-seconds` | `60` | A socket silent this long is closed (any frame counts as liveness) |
-| `flight.channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
-| `flight.channels.outbound-buffer-size` | `256` | Queued frames per socket before `outbound-overflow` applies |
-| `flight.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
-| `flight.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
-| `flight.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
-| `flight.channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
+| `alula.channels.heartbeat-timeout-seconds` | `60` | A socket silent this long is closed (any frame counts as liveness) |
+| `alula.channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
+| `alula.channels.outbound-buffer-size` | `256` | Queued frames per socket before `outbound-overflow` applies |
+| `alula.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
+| `alula.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
+| `alula.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
+| `alula.channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the
@@ -445,14 +445,14 @@ pushTimeout: .seconds(10), reconnect: .exponentialBackoff())`.
 ```swift
 let testClient = try TestClient(routes: [channels.socketRoute("/socket") { _ in nil }])
 let transport = InMemoryChannelTransport(testClient: testClient)
-let client = ChannelClient(url: URL(string: "flight-test:///socket")!, transport: transport)
+let client = ChannelClient(url: URL(string: "alula-test:///socket")!, transport: transport)
 ```
 
 Full stack — routing, upgrade, session, PubSub — in process. Every
 `connect` dispatches a fresh upgrade, so reconnect/rejoin paths are
 exercised for real. `ChannelWireClient` drives raw envelopes for
 wire-level assertions. Multi-node behavior is testable with
-`FlightPubSubTesting.InMemoryCluster` (see `MultiNodeTests`).
+`AlulaPubSubTesting.InMemoryCluster` (see `MultiNodeTests`).
 
 ## Design notes
 
@@ -462,7 +462,7 @@ wire-level assertions. Multi-node behavior is testable with
    simple cases, and takes no dependency on Security at all — a WebSocket
    layer should work with any notion of identity, or none.
 
-   `FlightSecurityCore` ships, and the two meet in application code:
+   `AlulaSecurityCore` ships, and the two meet in application code:
 
    ```swift
    extension Principal: @retroactive ChannelPrincipal {}
@@ -477,8 +477,8 @@ wire-level assertions. Multi-node behavior is testable with
    not enums — the design's call sites (`.ok`, `.ok(initialState:)`) need
    an overload an enum case can't provide; the shapes are otherwise the
    doc's.
-3. **`flight:error` answers correlated failures** (join rejected, handler
-   error) carrying the originating `ref`; `flight:reply` is success-only.
+3. **`alula:error` answers correlated failures** (join rejected, handler
+   error) carrying the originating `ref`; `alula:reply` is success-only.
    The doc lists both events without pinning the correlation rule; this
    split keeps "one obvious meaning per event" and lets clients reject the
    awaited promise/continuation directly.
@@ -492,14 +492,14 @@ wire-level assertions. Multi-node behavior is testable with
    completes the close handshake, so the frame loop is unblocked by task
    cancellation, not by the frame stream ending. Watchdog teardown
    finishes the outbound queue; the writer drains what was already queued
-   (a graceful `flight:close` ack is flushed before the close frame), then
+   (a graceful `alula:close` ack is flushed before the close frame), then
    everything is joined deterministically.
 6. **`ChannelBroadcaster.broadcast(…, excluding:)`** — not in the doc, but
    the "tell everyone else" shape every chat-like handler wants. Carried
-   as PubSub metadata (`flight.channels.origin`), filtered at the
+   as PubSub metadata (`alula.channels.origin`), filtered at the
    subscription pump, so it works across nodes unchanged.
 7. **Rejoin state delivery** (client): after auto-reconnect, the fresh
    initial state is announced on the channel's message stream as a
-   `flight:join` message (`ChannelMessage.isRejoin`). The original
+   `alula:join` message (`ChannelMessage.isRejoin`). The original
    `join()` caller got its state as the return value; the stream is the
    only live surface after a silent reconnect.

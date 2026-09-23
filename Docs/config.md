@@ -1,4 +1,4 @@
-# flight-config
+# alula-config
 
 Layered, environment-aware configuration for Swift servers, built on
 [swift-configuration](https://github.com/apple/swift-configuration).
@@ -20,13 +20,13 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.35.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
 ]
 ```
 
 ```swift
 .target(name: "MyApp", dependencies: [
-    .product(name: "FlightConfig", package: "flight")
+    .product(name: "AlulaConfig", package: "alula")
 ])
 ```
 
@@ -51,16 +51,16 @@ Highest precedence first:
 | Layer | Source | Purpose |
 |---|---|---|
 | Custom providers | `additionalProviders:` | Remote stores, secret managers — above everything else when supplied |
-| Environment variables | `FLIGHT_SERVER_PORT` | Deployment-time overrides and secrets |
-| Environment overlay | `flight-{env}.yaml` | What differs in staging, production, test |
-| Base | `flight.yaml` | Defaults that hold everywhere |
+| Environment variables | `ALULA_SERVER_PORT` | Deployment-time overrides and secrets |
+| Environment overlay | `alula-{env}.yaml` | What differs in staging, production, test |
+| Base | `alula.yaml` | Defaults that hold everywhere |
 
-`flight.yaml` must exist. The overlay is optional — an environment that
+`alula.yaml` must exist. The overlay is optional — an environment that
 changes nothing simply has no file.
 
 Both are resolved **relative to the process working directory**. Running
 `swift run` from the project root — the development path, and what the
-tutorial and `flight new` produce — puts them exactly where they are looked
+tutorial and `alula new` produce — puts them exactly where they are looked
 for. A process that launches from somewhere else, such as a container with a
 different `WORKDIR` or a service manager, passes the directory instead of
 relying on where it started:
@@ -71,7 +71,7 @@ let configuration = try Configuration.load(
 ```
 
 ```yaml
-# flight.yaml
+# alula.yaml
 server:
   port: 8080
 datasource:
@@ -80,7 +80,7 @@ datasource:
 ```
 
 ```yaml
-# flight-prod.yaml
+# alula-prod.yaml
 datasource:
   url: "${DATABASE_URL}"
   pool_size: 50
@@ -91,19 +91,19 @@ falls through to the next one.
 
 ### Environment variables
 
-A dotted key maps to an upper-snake-case variable with a `FLIGHT_` prefix:
+A dotted key maps to an upper-snake-case variable with a `ALULA_` prefix:
 
 ```
-server.port           →  FLIGHT_SERVER_PORT
-datasource.pool_size  →  FLIGHT_DATASOURCE_POOL_SIZE
+server.port           →  ALULA_SERVER_PORT
+datasource.pool_size  →  ALULA_DATASOURCE_POOL_SIZE
 ```
 
 Setting one overrides both files, with no configuration change required.
 
 ### Changing the prefix
 
-`flight` is one word, spelled four ways: `flight.yaml`, `flight-{env}.yaml`,
-`FLIGHT_ENV`, and the `FLIGHT_` on every variable. `ConfigPrefix` holds that
+`alula` is one word, spelled four ways: `alula.yaml`, `alula-{env}.yaml`,
+`ALULA_ENV`, and the `ALULA_` on every variable. `ConfigPrefix` holds that
 word once and derives all four, so they cannot drift apart:
 
 ```swift
@@ -111,9 +111,9 @@ let configuration = try Configuration.load(prefix: "myapp")
 // reads myapp.yaml, myapp-prod.yaml, MYAPP_ENV, MYAPP_SERVER_PORT
 ```
 
-Two reasons to want it. `FLIGHT_` is a short prefix to claim in a shared
-environment — two Flight services in one container, or a platform that already
-injects `FLIGHT_*`, need their own namespace. And a file named after the
+Two reasons to want it. `ALULA_` is a short prefix to claim in a shared
+environment — two Alula services in one container, or a platform that already
+injects `ALULA_*`, need their own namespace. And a file named after the
 framework rather than the application reads oddly in someone else's
 repository.
 
@@ -127,7 +127,7 @@ producing names nothing can override at deploy time.
 does not give that up. The prefix looks like a runtime value, but you write it
 as a literal in your own source, and that source is already scanned — so the
 build checks your keys against `myapp.yaml` exactly as it would against
-`flight.yaml`. Nothing is discovered from the filesystem: an unscanned prefix
+`alula.yaml`. Nothing is discovered from the filesystem: an unscanned prefix
 means the default name, never "whatever YAML is lying around".
 
 Two shapes are not knowable at build time, and both say so rather than passing
@@ -146,10 +146,10 @@ here.
 
 ## Environments
 
-`FLIGHT_ENV` selects the overlay. Unset means `dev`.
+`ALULA_ENV` selects the overlay. Unset means `dev`.
 
 ```swift
-FlightEnvironment.current()      // FLIGHT_ENV=staging → .staging
+AlulaEnvironment.current()      // ALULA_ENV=staging → .staging
 ```
 
 `dev`, `test`, `staging`, and `prod` ship with the package, but the type is
@@ -157,13 +157,13 @@ extensible — a deployment with its own environments adds them without waiting
 on a release:
 
 ```swift
-extension FlightEnvironment {
-    static let qa = FlightEnvironment("qa")     // loads flight-qa.yaml
+extension AlulaEnvironment {
+    static let qa = AlulaEnvironment("qa")     // loads alula-qa.yaml
 }
 ```
 
 A value that is not one of the built-ins resolves to itself rather than
-silently collapsing to `dev`. `FLIGHT_ENV=qa` looks for `flight-qa.yaml`; if
+silently collapsing to `dev`. `ALULA_ENV=qa` looks for `alula-qa.yaml`; if
 that file does not exist you get base-file values and a visibly absent
 overlay, rather than development configuration running under a
 production-shaped name.
@@ -187,7 +187,7 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 > when the key is absent, never when it is present and corrupt — silently
 > substituting a default there would hide exactly the failure this library
 > exists to surface. The value can come from the environment, so a deployment
-> typo (`FLIGHT_SERVER_PORT=eighty`) reaches this path and aborts the process
+> typo (`ALULA_SERVER_PORT=eighty`) reaches this path and aborts the process
 > at startup. If you need to survive a malformed value, use `getIfPresent` or
 > `get(_:as:)` and handle the error. The same holds for a key present in a
 > shape with no raw-string form, and for a provider that fails rather than
@@ -245,7 +245,7 @@ in any diagnostic dump:
 
 ```swift
 String(reflecting: provider)
-// FlightYAML[flight.yaml, 2 keys: db.host=localhost, db.password=<REDACTED>]
+// AlulaYAML[alula.yaml, 2 keys: db.host=localhost, db.password=<REDACTED>]
 ```
 
 The flag rides on the value itself, not just on that one dump, so an
@@ -275,12 +275,12 @@ column:
 
 ```
 Configuration key 'server.port' is not set in any source (active environment: prod).
-Add it to flight.yaml or flight-prod.yaml, or set the FLIGHT_SERVER_PORT
+Add it to alula.yaml or alula-prod.yaml, or set the ALULA_SERVER_PORT
 environment variable.
 ```
 
 ```
-flight.yaml:4:3: flow style ('[…]' / '{…}') is not supported by the Flight
+alula.yaml:4:3: flow style ('[…]' / '{…}') is not supported by the Alula
 YAML subset — quote the value if the character is literal
 ```
 
@@ -310,16 +310,16 @@ let configuration = try Configuration.load(
 
 ## Two modules
 
-`FlightConfig` is the runtime — the `Configuration` facade, the loader, the
+`AlulaConfig` is the runtime — the `Configuration` facade, the loader, the
 provider bridge. This is what an application imports.
 
-`FlightConfigCore` is the grammar and vocabulary: the YAML parser, `${VAR}`
-substitution, `ConfigDecodable`, the error types, `FlightEnvironment`. It has
+`AlulaConfigCore` is the grammar and vocabulary: the YAML parser, `${VAR}`
+substitution, `ConfigDecodable`, the error types, `AlulaEnvironment`. It has
 **no dependencies**, which matters because build tools link it to check
 configuration keys at compile time, and a build tool's dependencies are paid
 for by every consumer's build.
 
-Importing `FlightConfig` re-exports `FlightConfigCore`, so applications get
+Importing `AlulaConfig` re-exports `AlulaConfigCore`, so applications get
 the whole API from one import.
 
 ## What this is not
@@ -332,7 +332,7 @@ is the seam for them — a remote-secrets provider layers in through
 ## Documentation
 
 ```bash
-FLIGHT_BUILD_DOCS=1 swift package generate-documentation --target FlightConfig
+ALULA_BUILD_DOCS=1 swift package generate-documentation --target AlulaConfig
 ```
 
 ## License

@@ -1,0 +1,62 @@
+import Foundation
+
+/// The environment-variable layer — precedence layer 1, the layer that always
+/// wins. It is the standard "override anything at deploy time" escape
+/// hatch: container orchestrators, CI secrets, one-off local overrides.
+///
+/// As with `YAMLConfigSource`, the runtime load path no longer goes through
+/// this type: `ConfigurationLoader` builds swift-configuration's own
+/// `EnvironmentVariablesProvider` instead. What survives here, and is still
+/// load-bearing, is ``variableName(for:)`` — the key-to-variable transform,
+/// which `ConfigError.missingKey` uses to tell an operator which variable to
+/// set, and which the build plugin uses for the same reason.
+///
+/// Keys map to variable names via a fixed transform: uppercase, `.` → `_`,
+/// prefixed `ALULA_`. So `datasource.url` reads `ALULA_DATASOURCE_URL`,
+/// and `datasource.pool_size` reads `ALULA_DATASOURCE_POOL_SIZE`.
+///
+/// Two consequences of the transform being fixed and one-way:
+///
+/// - Config keys should stick to lowercase letters, digits, underscores, and
+///   dots — anything else (dashes, say) produces a variable name most shells
+///   cannot set.
+/// - The transform is not injective: `datasource.pool_size` and
+///   `datasource.pool.size` both read `ALULA_DATASOURCE_POOL_SIZE`. Spring's
+///   relaxed binding has the same property; don't define config keys that
+///   collide under it.
+///
+/// The process environment is snapshotted at `init` — the source never
+/// re-reads `ProcessInfo` afterwards, preserving `Configuration`'s
+/// immutability guarantee even if something else mutates the
+/// environment mid-alula.
+public struct EnvironmentVariablesSource: ConfigSource {
+    private let environment: [String: String]
+    private let prefix: ConfigPrefix
+
+    /// - Parameters:
+    ///   - environment: The variables to read, defaulting to a snapshot of the
+    ///     current process environment. Tests pass a plain dictionary instead
+    ///     of mutating the real one.
+    ///   - prefix: The name variables are prefixed with. Defaults to
+    ///     ``ConfigPrefix/default`` — `ALULA_`.
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        prefix: ConfigPrefix = .default
+    ) {
+        self.environment = environment
+        self.prefix = prefix
+    }
+
+    public func rawValue(for key: String) -> String? {
+        environment[prefix.variableName(for: key)]
+    }
+
+    /// The fixed key → variable-name transform at the default prefix:
+    /// uppercase, `.` → `_`, prefixed `ALULA_`. Public so error messages and
+    /// docs can tell users exactly which variable would satisfy a key.
+    ///
+    /// For a non-default prefix use ``ConfigPrefix/variableName(for:)``.
+    public static func variableName(for key: String) -> String {
+        ConfigPrefix.default.variableName(for: key)
+    }
+}

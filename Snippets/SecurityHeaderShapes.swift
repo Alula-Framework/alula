@@ -2,10 +2,10 @@
 // dashboard-access section claim, compiled. A rename that invalidates the
 // prose breaks the build.
 
-import FlightActuator
-import FlightCore
-import FlightWeb
-import FlightWebTesting
+import AlulaActuator
+import AlulaCore
+import AlulaWeb
+import AlulaWebTesting
 
 func securityHeaderShapes(configuration: Configuration) throws {
     // The policy in code, the same as `web.security-headers.*` in YAML.
@@ -15,7 +15,7 @@ func securityHeaderShapes(configuration: Configuration) throws {
         strictTransportSecurity: .init(
             maxAge: .seconds(63_072_000), includeSubdomains: true, preload: true),
         contentSecurityPolicy: "default-src 'self'")
-    _ = try FlightWebModule<InMemoryTransport>(
+    _ = try AlulaWebModule<InMemoryTransport>(
         configuration: configuration, securityHeaders: headers)
 
     // Read from configuration, as the web module does by default.

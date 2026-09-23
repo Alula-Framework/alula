@@ -13,13 +13,13 @@ declares. `opt.c` (the SIMD-accelerated variant, upstream's own manifest
 excludes it too) is not vendored — `ref.c`, portable C with no
 runtime CPU-feature detection, is the whole implementation here, and is
 what a security-relevant C dependency should be: bounded, auditable, and
-the same on every architecture Flight ships to.
+the same on every architecture Alula ships to.
 
 Unmodified, verbatim, dual CC0-1.0/Apache-2.0 per `LICENSE` in this
-directory — see D37 in flight's `DECISIONS.md` for why this is vendored
+directory — see D37 in alula's `DECISIONS.md` for why this is vendored
 rather than an external SwiftPM package dependency: the package this came
 from carries no semantic-version tags, so pinning it with `revision:`
-made every one of flight's own tagged releases with the `Security` trait
+made every one of alula's own tagged releases with the `Security` trait
 enabled unresolvable by a consumer using an ordinary `from:` requirement,
 SwiftPM refusing a version-pinned package's dependency on one that is not.
 Vendoring the six files removes the external dependency, and with it the

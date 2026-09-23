@@ -4,16 +4,16 @@
 // makes a signature change break the build rather than only mislead a reader —
 // this file already caught `InMemoryCluster(nodes:)`, which never existed.
 //
-// Only the helpers this package ships. flight-data's cache and data testing
+// Only the helpers this package ships. alula-data's cache and data testing
 // libraries are compiled by its own snippet.
-import FlightChannelsTesting
-import FlightCore
-import FlightPubSub
-import FlightPubSubTesting
-import FlightSessions
-import FlightSessionsTesting
-import FlightWeb
-import FlightWebTesting
+import AlulaChannelsTesting
+import AlulaCore
+import AlulaPubSub
+import AlulaPubSubTesting
+import AlulaSessions
+import AlulaSessionsTesting
+import AlulaWeb
+import AlulaWebTesting
 import Foundation
 
 // snippet.hide
@@ -31,7 +31,7 @@ func testingShapes() async throws {
     _ = controller.index(.mock())
 
     // A TestClient when the pipeline itself is under test — built from route
-    // values, the way a composition root hands them to FlightWebModule.
+    // values, the way a composition root hands them to AlulaWebModule.
     _ = try TestClient(routes: [])
 
     // PubSub: a cluster with no network, one adapter per node.
@@ -54,6 +54,6 @@ func testingShapes() async throws {
     _ = sessions.storedIDs
     _ = RequestContext.mock(session: Session())
 
-    // The cache helpers live in flight-data, so they are compiled by that
+    // The cache helpers live in alula-data, so they are compiled by that
     // package's snippet rather than this one.
 }

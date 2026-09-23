@@ -1,4 +1,4 @@
-# flight-core
+# alula-core
 
 Dependency injection and application bootstrap for Swift servers.
 
@@ -17,10 +17,10 @@ final class UserService: Sendable {
 @main
 struct App {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
             modules: [WebModule.self, DataModule.self],
-            composedBy: flightComposeModules
+            composedBy: alulaComposeModules
         )
     }
 }
@@ -30,15 +30,15 @@ struct App {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Flight-Framework/flight.git", from: "0.35.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
 ]
 ```
 
 ```swift
 .target(
     name: "MyApp",
-    dependencies: [.product(name: "FlightCore", package: "flight")],
-    plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+    dependencies: [.product(name: "AlulaCore", package: "alula")],
+    plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
 )
 ```
 
@@ -46,7 +46,7 @@ Requires **Swift 6.3+** — 6.2.x cannot resolve this package's traits.
 Runs on Linux and macOS 15+; building on a Mac needs the macOS 26 SDK,
 for the reason in the [README](../README.md#requirements).
 
-`Flight.run` is `bootstrap` that does not throw: it starts the application,
+`Alula.run` is `bootstrap` that does not throw: it starts the application,
 and if it *cannot* start it prints why and exits `1`. A `main` that throws
 instead reports the same message under `Fatal error: Error raised at top
 level`, a backtrace and a `Signal 4` — a configuration typo dressed as a
@@ -110,7 +110,7 @@ checks the graph before anything runs:
 
 - **Missing registrations** are reported at build time, not at first request.
 - **Dependency cycles** are reported with the cycle named.
-- **`@ConfigValue` keys** are checked against `flight.yaml`.
+- **`@ConfigValue` keys** are checked against `alula.yaml`.
 - **Existential bridges** are synthesized: a protocol with exactly one
   conformer is resolvable as `any Protocol` without hand-written glue.
 
@@ -119,21 +119,21 @@ with a comment, so the check does not have to choose between false positives
 and silence:
 
 ```swift
-// flight:hand-registered
+// alula:hand-registered
 @Inject var external: SomethingFromAnotherLibrary
 ```
 
 ### Types their own module registers
 
-The scan covers your target *and every Flight-based package it links*. That is
+The scan covers your target *and every Alula-based package it links*. That is
 usually what you want, but some types must not be registered just because a
 package is linked: whether they should exist at all is a runtime question —
 a configuration gate, or an optional subsystem the app may not have included.
 
-Mark those with `flight:module-registered`, above the declaration:
+Mark those with `alula:module-registered`, above the declaration:
 
 ```swift
-// flight:module-registered — FlightSecurityModule registers this.
+// alula:module-registered — AlulaSecurityModule registers this.
 @Middleware
 public struct Authentication: Sendable {
     @Inject var validator: (any TokenValidator)
@@ -160,8 +160,8 @@ A module declares what it needs and *holds* what it provides, built in its
 initializer:
 
 ```swift
-struct DataModule: FlightModule {
-    static let dependencies: [any FlightModule.Type] = [ConfigModule.self]
+struct DataModule: AlulaModule {
+    static let dependencies: [any AlulaModule.Type] = [ConfigModule.self]
 
     let dataSource: DataSource
     init(configuration: Configuration) throws {
@@ -188,12 +188,12 @@ client and a recording one — so the fix is to name the default rather than to
 give the types different names. In the module that lists both providers:
 
 ```swift
-struct AppModule: FlightModule {
-    static let includedModules: [any FlightModule.Type] = [
+struct AppModule: AlulaModule {
+    static let includedModules: [any AlulaModule.Type] = [
         PrimaryPoolModule.self, ReplicaPoolModule.self,
     ]
     // What an unqualified @Inject of a doubly-provided type resolves to.
-    static var defaultProviders: [any FlightModule.Type] { [PrimaryPoolModule.self] }
+    static var defaultProviders: [any AlulaModule.Type] { [PrimaryPoolModule.self] }
 }
 ```
 
@@ -238,7 +238,7 @@ struct AuthSettings {
 Keys are derived from the namespace and the property name, kebab-cased:
 `auth.issuer`, `auth.signing-key`, `auth.token-lifetime`. A property with a
 default reads as "use it only if the key is absent"; a property without one is
-**required**, and a required key missing from `flight.yaml` is a build error,
+**required**, and a required key missing from `alula.yaml` is a build error,
 not a first-request surprise. An explicit `@ConfigValue("other.key")` on a
 property overrides the derived name.
 
@@ -256,7 +256,7 @@ when configuration supplies a value.
 property carries it, the generated `description` renders that field as
 `<REDACTED>`, so a stray `logger.info("\(settings)")` or a crash report does
 not print it. It governs the settings object's own textual representation —
-marking the underlying key secret in Flight Config's diagnostic dump is a
+marking the underlying key secret in Alula Config's diagnostic dump is a
 separate mechanism, `Configuration.load(secrets:)`.
 
 ## Transactions
@@ -286,11 +286,11 @@ opens it.
 
 ## Testing
 
-`Flight.assemble` composes the modules and returns their services, without
+`Alula.assemble` composes the modules and returns their services, without
 running anything:
 
 ```swift
-let app = try Flight.assemble(configuration: config, modules: [appModule])
+let app = try Alula.assemble(configuration: config, modules: [appModule])
 ```
 
 A component takes what it needs as `@Inject` parameters, so swapping in a test
@@ -306,7 +306,7 @@ in, and never reaches for framework wiring to do it.
 ## Documentation
 
 ```bash
-FLIGHT_BUILD_DOCS=1 swift package generate-documentation --target FlightCore
+ALULA_BUILD_DOCS=1 swift package generate-documentation --target AlulaCore
 ```
 
 ## License

@@ -22,8 +22,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "GeneratedConsumer",
-            dependencies: [.product(name: "FlightCore", package: "flight")],
-            plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+            dependencies: [.product(name: "AlulaCore", package: "alula")],
+            plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
         )
     ]
 )

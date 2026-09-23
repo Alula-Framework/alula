@@ -4,9 +4,9 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightSessions
-import FlightWeb
+import AlulaCore
+import AlulaSessions
+import AlulaWeb
 
 struct TransferForm: Encodable, ResponseEncodable {
     let csrfToken: String

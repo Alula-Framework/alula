@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in flight-core.
+Thanks for your interest in alula-core.
 
 ## Getting set up
 
@@ -10,7 +10,7 @@ swift test
 ```
 
 No services or environment variables. The generator tests build and invoke
-the real `flight-registration-gen` executable, so the first run takes a little
+the real `alula-registration-gen` executable, so the first run takes a little
 longer.
 
 ## Before opening a pull request
@@ -19,8 +19,8 @@ longer.
 swift build -Xswiftc -warnings-as-errors
 swift test
 swift-format lint --recursive Sources Tests Plugins
-FLIGHT_CORE_BUILD_DOCS=1 swift package generate-documentation \
-    --target FlightCore --warnings-as-errors
+ALULA_CORE_BUILD_DOCS=1 swift package generate-documentation \
+    --target AlulaCore --warnings-as-errors
 ```
 
 ## What governs decisions here
@@ -48,10 +48,10 @@ lane fails the bootstrap sequence with a message.
 
 ## Testing
 
-`FlightCoreTests` covers the container, scopes, module ordering, and
-bootstrap. `FlightCoreMacroTests` pins macro expansions as fixtures — treat
+`AlulaCoreTests` covers the container, scopes, module ordering, and
+bootstrap. `AlulaCoreMacroTests` pins macro expansions as fixtures — treat
 those as normative; if an expansion changes, that is an API change.
 
-`FlightRegistrationGenTests` drives the generator end to end: a manifest in, a
+`AlulaRegistrationGenTests` drives the generator end to end: a manifest in, a
 generated file and diagnostics out. That is the contract a broken build would
 break, so test it there rather than through internal functions.

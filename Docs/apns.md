@@ -1,4 +1,4 @@
-# Flight APNS
+# Alula APNS
 
 An Apple Push Notification service client: one call, one delivery attempt,
 a typed answer. It mints and reuses the ES256 provider token, speaks HTTP/2
@@ -6,7 +6,7 @@ to the gateway, and turns Apple's reply into a receipt or an error that says
 the one thing an application must act on — whether the device token is dead.
 
 Hand-rolled over AsyncHTTPClient and JWTKit rather than wrapped around a
-push library, for the reason the JWKS fetch in Security Core is: Flight
+push library, for the reason the JWKS fetch in Security Core is: Alula
 owns orchestration, the cryptography is JWTKit's, and the HTTP is a couple
 of hundred lines that the hermetic test seam needs to own anyway.
 
@@ -15,50 +15,50 @@ of hundred lines that the hermetic test seam needs to own anyway.
 | | |
 |---|---|
 | **Trait** | `APNS` — brings JWTKit and AsyncHTTPClient, the same two packages `Security` brings, and nothing from `Web` |
-| **Products** | `FlightAPNS`; `FlightAPNSTesting` for tests |
-| **Module** | `FlightAPNSModule.self` |
+| **Products** | `AlulaAPNS`; `AlulaAPNSTesting` for tests |
+| **Module** | `AlulaAPNSModule.self` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["APNS"]),          // add "Web" if it also serves HTTP
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["APNS"]),          // add "Web" if it also serves HTTP
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightAPNS", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaAPNS", package: "alula"),
         ],
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
 
 ```swift
 // Sources/App/Main.swift
-import FlightAPNS
-import FlightCore
+import AlulaAPNS
+import AlulaCore
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
-            modules: [FlightAPNSModule.self, AppModule.self],
-            composedBy: flightComposeModules)
+            modules: [AlulaAPNSModule.self, AppModule.self],
+            composedBy: alulaComposeModules)
     }
 }
 ```
 
 ```yaml
-# flight.yaml
+# alula.yaml
 apns:
   key-id: ABC123DEFG
   team-id: DEF456GHIJ
-  private-key-path: /run/secrets/apns.p8     # or `private-key`, the PEM itself — FLIGHT_APNS_PRIVATE_KEY
+  private-key-path: /run/secrets/apns.p8     # or `private-key`, the PEM itself — ALULA_APNS_PRIVATE_KEY
   topic: com.example.app
   environment: sandbox                       # production is the default
 ```
@@ -158,14 +158,14 @@ topic succeed, that one token is bad, and forgetting it is right.
 `deviceTokenIsInvalid` treated all four reasons alike, so it's deprecated
 in favour of the two above.
 
-`flight_apns_sends` counts every send by `outcome`, which is `delivered`
-or Apple's reason string. `flight_apns_provider_tokens_minted` counts each
+`alula_apns_sends` counts every send by `outcome`, which is `delivered`
+or Apple's reason string. `alula_apns_provider_tokens_minted` counts each
 provider token signed. Apple refuses updates more often than every 20
 minutes, so a rising rate there warns before `TooManyProviderTokenUpdates`
 does. Both are telemetry events first (`APNSEvents`), and
-`FlightAPNSModule` contributes them as metrics, together with
-`flight_apns_send_duration` for send latency. In a test,
-`TelemetryTest.capture(prefix: "flight.apns")` shows what a send reported.
+`AlulaAPNSModule` contributes them as metrics, together with
+`alula_apns_send_duration` for send latency. In a test,
+`TelemetryTest.capture(prefix: "alula.apns")` shows what a send reported.
 See `Docs/telemetry.md`.
 
 The one retry the client performs itself is the one the protocol asks for:
@@ -175,7 +175,7 @@ policy depends on what the pushes are.
 
 ## Configuration reference
 
-All keys under `apns.` (env-var form `FLIGHT_APNS_*`), kebab-case.
+All keys under `apns.` (env-var form `ALULA_APNS_*`), kebab-case.
 
 | key | required | default | meaning |
 |---|---|---|---|
@@ -203,12 +203,12 @@ clock, a gateway restart — invalidates it early.
 
 AsyncHTTPClient's shared client, which negotiates HTTP/2 over TLS by ALPN
 and pools the connection between pushes. A client of the module's own,
-with tuned idle timeouts, would give `FlightAPNSModule` a `service`;
+with tuned idle timeouts, would give `AlulaAPNSModule` a `service`;
 nothing has needed it.
 
 ## Testing
 
-`RecordingAPNSTransport` from `FlightAPNSTesting` stands in for the gateway:
+`RecordingAPNSTransport` from `AlulaAPNSTesting` stands in for the gateway:
 it records every request and answers from a script.
 
 ```swift
@@ -241,5 +241,5 @@ is a cost with no payoff.
   plumbing.
 - **A device-token registry.** Which tokens belong to which account is
   application data.
-- **Other push services.** `FlightAPNS` is named for what it is; an FCM
+- **Other push services.** `AlulaAPNS` is named for what it is; an FCM
   client would be a sibling target, not a generalisation of this one.

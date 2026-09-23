@@ -1,4 +1,4 @@
-# Flight Sign-in
+# Alula Sign-in
 
 Signing people in, through a seam that does not care who checks the
 password. An application can start on its own accounts and move to
@@ -24,28 +24,28 @@ roles, the `.authenticated` lane, `requirePrincipal()` and the session.
 | | |
 |---|---|
 | **Trait** | `Security` |
-| **Products** | `FlightSecurityCore` |
-| **Module** | `FlightPasswordSignInModule.self` *or* `FlightOIDCSignInModule.self` |
-| **Pulls in** | `FlightSecurityModule`, `FlightSessionsModule`; password also `FlightRateLimitModule` |
+| **Products** | `AlulaSecurityCore` |
+| **Module** | `AlulaPasswordSignInModule.self` *or* `AlulaOIDCSignInModule.self` |
+| **Pulls in** | `AlulaSecurityModule`, `AlulaSessionsModule`; password also `AlulaRateLimitModule` |
 
 ```swift
-await Flight.run(
+await Alula.run(
     configuration: try Configuration.load(),
     modules: [
-        FlightWebModule<FlightTransport>.self,
-        FlightPasswordSignInModule.self,        // ← the one line a switch changes
+        AlulaWebModule<AlulaTransport>.self,
+        AlulaPasswordSignInModule.self,        // ← the one line a switch changes
         AppModule.self,
     ],
-    composedBy: flightComposeModules)
+    composedBy: alulaComposeModules)
 ```
 
 Both modules provide `signInProvider: any SignInProvider`. Listing both is
 refused at build time, because a type with two providers is ambiguous. That's
 the right answer to "which one signs people in?".
 
-`FlightSecurityModule` no longer needs a bearer-token validator when
+`AlulaSecurityModule` no longer needs a bearer-token validator when
 sessions are present. An application that signs browsers in and has no
-bearer API lists no `FlightOIDCModule`. A bearer token presented to it
+bearer API lists no `AlulaOIDCModule`. A bearer token presented to it
 anyway is an invalid credential rather than silently ignored.
 
 ## The routes, written once
@@ -212,13 +212,13 @@ token is used for that one UserInfo request and then dropped. The session
 holds the principal, the same as for every other sign-in. Signing out
 redirects to the provider's end-session endpoint when it has one.
 
-`FlightOIDCSignInModule` doesn't validate bearer tokens. List
-`FlightOIDCModule` beside it for an API that also accepts them. The two
+`AlulaOIDCSignInModule` doesn't validate bearer tokens. List
+`AlulaOIDCModule` beside it for an API that also accepts them. The two
 share the one `security.oidc` block.
 
 **Keycloak specifically** puts realm roles only in the access token by
 default. Add a *User Realm Role* mapper to the client with **Add to ID
-token** on, claim name `roles`. `CI/keycloak/flight-test-realm.json` is a
+token** on, claim name `roles`. `CI/keycloak/alula-test-realm.json` is a
 working example, and `CI/keycloak/start.sh` starts it for the integration
 suite.
 
@@ -274,7 +274,7 @@ any password change, by this link or another way, voids every reset link
 already sent. Every failure is the same `400`: unknown, used, expired,
 wrong purpose, or stale binding.
 
-`InMemoryOneTimeTokenStore` is for one replica. flight-data's Valkey store
+`InMemoryOneTimeTokenStore` is for one replica. alula-data's Valkey store
 shares tokens across replicas from 0.10.0.
 
 ## Signing out everywhere
@@ -288,7 +288,7 @@ stores support it.
 ## Metrics
 
 Everything here reports itself as telemetry events (`SignInEvents`), and
-`FlightSecurityModule` contributes the metrics below, which reach whatever
+`AlulaSecurityModule` contributes the metrics below, which reach whatever
 backend the application bootstraps. Every dimension is a closed set, never
 a subject, an address or a token, so the number of series stays fixed. A
 sign-in provider of your own can emit `SignInEvents.Attempt` too, which
@@ -296,13 +296,13 @@ puts it on the same dashboards as the built-in ones.
 
 | Counter | Dimensions |
 |---|---|
-| `flight_sign_in_attempts` | `provider` (`password`, `oidc`), `outcome` (`success`, `invalid_credentials`, `throttled`, `unavailable`, `invalid_callback`, `userinfo_subject_mismatch`, …) |
-| `flight_sign_in_duration` | `provider`: a timer, mostly password hashing for `password` |
-| `flight_sign_in_started` | `provider` |
-| `flight_sign_in_password_rehashes` | none |
-| `flight_sign_in_expired` | none: sign-ins that reached `sessions.authenticated-lifetime` |
-| `flight_one_time_tokens_issued` | `purpose` |
-| `flight_one_time_tokens_redeemed` | `purpose`, `outcome` (`redeemed`, `unknown_or_used`, `expired`, `wrong_purpose`, `binding_mismatch`) |
+| `alula_sign_in_attempts` | `provider` (`password`, `oidc`), `outcome` (`success`, `invalid_credentials`, `throttled`, `unavailable`, `invalid_callback`, `userinfo_subject_mismatch`, …) |
+| `alula_sign_in_duration` | `provider`: a timer, mostly password hashing for `password` |
+| `alula_sign_in_started` | `provider` |
+| `alula_sign_in_password_rehashes` | none |
+| `alula_sign_in_expired` | none: sign-ins that reached `sessions.authenticated-lifetime` |
+| `alula_one_time_tokens_issued` | `purpose` |
+| `alula_one_time_tokens_redeemed` | `purpose`, `outcome` (`redeemed`, `unknown_or_used`, `expired`, `wrong_purpose`, `binding_mismatch`) |
 
 A caller holding a bad link is told one thing. This is where the
 difference is kept. A rise in `binding_mismatch` means reset links are

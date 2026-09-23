@@ -1,9 +1,9 @@
-# Flight PubSub
+# Alula PubSub
 
-Topic-based publish/subscribe for Flight: a publisher sends a `Message` to a
+Topic-based publish/subscribe for Alula: a publisher sends a `Message` to a
 named topic; every subscriber to that topic receives it. That's the whole
 surface. It is the bottom of the Live family (Channels, Presence, Live all
-consume it) and the same distributed-coordination seam Flight Cloud's
+consume it) and the same distributed-coordination seam Alula Cloud's
 multi-node story needs. Modeled on
 `Phoenix.PubSub`.
 
@@ -19,27 +19,27 @@ multi-node story needs. Modeled on
 | | |
 |---|---|
 | **Trait** | none |
-| **Products** | `FlightPubSub` |
-| **Module** | `FlightPubSubModule.self` |
+| **Products** | `AlulaPubSub` |
+| **Module** | `AlulaPubSubModule.self` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0"),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0"),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightPubSub", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaPubSub", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -47,16 +47,16 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightCore
-import FlightPubSub
+import AlulaCore
+import AlulaPubSub
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
-            modules: [FlightPubSubModule.self, AppModule.self],
-            composedBy: flightComposeModules)
+            modules: [AlulaPubSubModule.self, AppModule.self],
+            composedBy: alulaComposeModules)
     }
 }
 ```
@@ -71,19 +71,19 @@ dependency DAG. A module you write can declare framework modules in its own
 ## Usage
 
 ```swift
-import FlightCore
-import FlightPubSub
+import AlulaCore
+import AlulaPubSub
 
 // `modules:` says which subsystems the application includes; the generated
 // composition root says how they are built, which is what lets PubSub take
-// its configuration. `flight new` writes the `composedBy:` argument.
-try await Flight.run(
+// its configuration. `alula new` writes the `composedBy:` argument.
+try await Alula.run(
     configuration: .load(),
-    modules: [FlightPubSubModule.self, AppModule.self],
-    composedBy: flightComposeModules
+    modules: [AlulaPubSubModule.self, AppModule.self],
+    composedBy: alulaComposeModules
 )
 
-// A consumer injects it; the composition root wires in FlightPubSubModule's bus:
+// A consumer injects it; the composition root wires in AlulaPubSubModule's bus:
 //   @Inject var pubsub: (any PubSub)
 
 // Subscribe — subscription lifetime IS the consuming task's lifetime.
@@ -128,8 +128,8 @@ unique and correctness does not depend on it: echo suppression matches on
 deliver to each other normally, and the collision is logged once per
 offending instance so an operator reading conflated logs finds out why.
 
-Every reserved metadata key (`flight.pubsub.origin`,
-`flight.pubsub.instance`) is stripped before delivery — on both the
+Every reserved metadata key (`alula.pubsub.origin`,
+`alula.pubsub.instance`) is stripped before delivery — on both the
 receiving and the publishing node. A subscriber never sees transport
 bookkeeping, and never sees a caller's imitation of it.
 
@@ -158,11 +158,11 @@ pubsub:
   broadcast_timeout: 5s       # or `never` to wait for the adapter indefinitely
 ```
 
-They are deployment knobs, so they live in `flight.yaml` with the other
-deployment knobs — `FlightPubSubModule(configuration:)` reads them in its
+They are deployment knobs, so they live in `alula.yaml` with the other
+deployment knobs — `AlulaPubSubModule(configuration:)` reads them in its
 initializer, where the composition root hands it the configuration. Until 0.13.0 they were constructor
 arguments that could not be reached: both entry points took
-`[any FlightModule.Type]` and instantiated with `init()`, so nothing a
+`[any AlulaModule.Type]` and instantiated with `init()`, so nothing a
 deployment wrote could set them, and the example here passed a module instance
 and did not compile.
 
@@ -173,7 +173,7 @@ setting exists to prevent.
 ## Multi-node
 
 Consumers never change: they code against `any PubSub`. A deployment becomes
-multi-node by handing `FlightPubSubModule` an adapter — it then builds a
+multi-node by handing `AlulaPubSubModule` an adapter — it then builds a
 `ClusteredPubSub` around the same local core instead of projecting it bare,
 and owns the relay that feeds it. No adapter means single node, which is the
 90% case and the default.
@@ -184,18 +184,18 @@ the container at `freeze()`. See "Writing an adapter module" below for what
 changed and why.
 
 `ClusteredPubSub` stamps every outgoing broadcast with an origin-node ID
-(reserved metadata key `flight.pubsub.origin`) and drops self-originated
+(reserved metadata key `alula.pubsub.origin`) and drops self-originated
 arrivals, so echoing transports (Redis pub/sub echoes to the publishing
 connection) still yield exactly-one local delivery. The stamp is stripped
 before delivery: subscribers see identical metadata at zero hops or one.
 
 ### Writing an adapter module
 
-An adapter package provides one `FlightModule` that provides an adapter. That
+An adapter package provides one `AlulaModule` that provides an adapter. That
 is the whole contract:
 
 ```swift
-public struct MyAdapterModule: FlightModule {
+public struct MyAdapterModule: AlulaModule {
     public let adapter: any DistributedPubSubAdapter
 
     public init(configuration: Configuration) throws {
@@ -205,7 +205,7 @@ public struct MyAdapterModule: FlightModule {
     public init() { preconditionFailure("MyAdapterModule takes its configuration.") }
 
     // Provides `adapter` as a value; the composition root matches it to
-    // FlightPubSubModule's `adapter:` parameter by type. Nothing is registered.
+    // AlulaPubSubModule's `adapter:` parameter by type. Nothing is registered.
 
     /// Only a connection of its own, if it has one. The relay is not yours.
     public var service: (any Service)? { nil }
@@ -216,13 +216,13 @@ The composition root hands the adapter to PubSub:
 
 ```swift
 let myAdapter = try MyAdapterModule(configuration: configuration)
-let pubsub = try FlightPubSubModule(configuration: configuration, adapter: myAdapter.adapter)
+let pubsub = try AlulaPubSubModule(configuration: configuration, adapter: myAdapter.adapter)
 ```
 
-which `flight new`'s `composedBy: flightComposeModules` writes for you.
+which `alula new`'s `composedBy: alulaComposeModules` writes for you.
 
 **This direction is the reverse of what it used to be**, and the reversal is
-the point. An adapter module used to declare `FlightPubSubModule` in
+the point. An adapter module used to declare `AlulaPubSubModule` in
 `dependencies` and expose `PubSubRelayService` as its own service — because
 PubSub decided at `freeze()` whether it was clustered by asking the container
 whether anyone had registered an adapter, a runtime scan answering a question
@@ -230,13 +230,13 @@ about how the application was assembled. That put three obligations on an
 adapter author, and forgetting the third gave a cluster that relayed nothing,
 with no error and no symptom until production.
 
-Now an adapter module is a *dependency* of `FlightPubSubModule`. It provides
+Now an adapter module is a *dependency* of `AlulaPubSubModule`. It provides
 an adapter and stops. PubSub takes it, builds the bus around it, and owns the
 relay — because PubSub is what holds both halves the relay needs, the adapter
 to drain and the local core to drain it into. The failure mode is gone rather
 than documented: there is nothing left to forget.
 
-`Tests/PubSub/FlightPubSubTests/ModuleTests.swift` contains a complete working
+`Tests/PubSub/AlulaPubSubTests/ModuleTests.swift` contains a complete working
 example (`InMemoryAdapterModule`), including two bootstrapped apps forming a
 cluster and shutting down gracefully.
 
@@ -271,7 +271,7 @@ yielding.
 
 ## Testing support
 
-`FlightPubSubTesting` ships:
+`AlulaPubSubTesting` ships:
 
 - `InMemoryCluster` — an in-process wire connecting any number of adapters;
   `makeAdapter()` per node, optional `echoesToOrigin` to simulate Redis-style
@@ -307,15 +307,15 @@ contract; observable semantics are exactly as specified.
 
 ## Building
 
-PubSub is a target of the `flight` package, not a package of its own, so it
+PubSub is a target of the `alula` package, not a package of its own, so it
 builds with the repository:
 
 ```
 swift build --enable-all-traits
-swift test  --enable-all-traits --filter FlightPubSubTests
+swift test  --enable-all-traits --filter AlulaPubSubTests
 ```
 
 A plain `swift build` at the root fails by design — the trait-gated targets
-find their dependencies pruned. Depends on `FlightCore`, `swift-log` and
+find their dependencies pruned. Depends on `AlulaCore`, `swift-log` and
 `swift-service-lifecycle`. Linux and macOS 15+ (`Synchronization.Mutex`, the
 same floor as Core).

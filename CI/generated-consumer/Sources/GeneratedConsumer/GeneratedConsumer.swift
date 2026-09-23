@@ -1,4 +1,4 @@
-import FlightCore
+import AlulaCore
 
 /// A configuration-reading component: the shape whose generated graph
 /// initializer throws, and therefore the one whose emitted `try` spelling has
@@ -24,7 +24,7 @@ struct GeneratedConsumer {
     static func main() throws {
         // Building is the test. Constructing the graph proves the emitted
         // initializer is callable as written, not merely parseable.
-        let graph = try FlightGraph(configuration: Configuration(values: ["app.name": "ci"]))
+        let graph = try AlulaGraph(configuration: Configuration(values: ["app.name": "ci"]))
         print(graph.greeter.greet())
     }
 }

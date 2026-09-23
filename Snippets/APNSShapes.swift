@@ -4,9 +4,9 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightAPNS
-import FlightAPNSTesting
-import FlightCore
+import AlulaAPNS
+import AlulaAPNSTesting
+import AlulaCore
 import Foundation
 import Logging
 
@@ -67,7 +67,7 @@ func apnsShapes(configuration: Configuration, apns: APNSClient, token: DeviceTok
     _ = try await apns.send(.background, to: token)
 
     // The module, built the way the composition root builds it.
-    let module = try FlightAPNSModule(configuration: configuration)
+    let module = try AlulaAPNSModule(configuration: configuration)
     _ = module.client.configuration.environment
 
     // Tests: the gateway, replaced by a recorder.

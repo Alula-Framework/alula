@@ -2,11 +2,11 @@
 
 Libraries say what happened. Applications decide what it becomes.
 
-Flight's subsystems emit typed events (a request was handled, a session
+Alula's subsystems emit typed events (a request was handled, a session
 was created, a sign-in failed) through
-[swift-telemetry](https://github.com/Flight-Framework/swift-telemetry), a
-package of its own. A library can emit without depending on Flight, and
-Flight is one application of it. This page covers what Flight adds: the
+[swift-telemetry](https://github.com/Alula-Framework/swift-telemetry), a
+package of its own. A library can emit without depending on Alula, and
+Alula is one application of it. This page covers what Alula adds: the
 events its subsystems emit, reporting them to swift-metrics,
 swift-distributed-tracing and swift-log, and the configuration that wires
 it. Declaring events, spans, handlers, metric definitions, testing, and the
@@ -14,7 +14,7 @@ rules that keep telemetry observational only are in swift-telemetry's
 README.
 
 ```swift
-.product(name: "FlightTelemetryBridges", package: "flight")      // trait "Telemetry"; Web and APNS imply it
+.product(name: "AlulaTelemetryBridges", package: "alula")      // trait "Telemetry"; Web and APNS imply it
 .product(name: "TelemetryMacros", package: "swift-telemetry")    // your own events
 .product(name: "TelemetryTesting", package: "swift-telemetry")   // capture in tests
 ```
@@ -25,9 +25,9 @@ not telemetry.
 
 ## If you're building an application
 
-You may have nothing to do. `FlightWebModule`, `FlightSessionsModule`,
-`FlightSecurityModule` and `FlightAPNSModule` depend on
-`FlightTelemetryModule`, so an application using any of them has it
+You may have nothing to do. `AlulaWebModule`, `AlulaSessionsModule`,
+`AlulaSecurityModule` and `AlulaAPNSModule` depend on
+`AlulaTelemetryModule`, so an application using any of them has it
 already. What it does depends on what you've bootstrapped:
 
 - **A metrics backend (`MetricsSystem.bootstrap`).** Every metric the
@@ -39,7 +39,7 @@ already. What it does depends on what you've bootstrapped:
 
 `telemetry.*` overrides either decision; see [Configuration](#configuration).
 
-**Bootstrap before `Flight.run`.** The decision is made at composition. A
+**Bootstrap before `Alula.run`.** The decision is made at composition. A
 backend bootstrapped later, say from another module's initializer, is still
 found when the module's service starts, but events emitted between
 composition and then are not reported. To choose the backend explicitly
@@ -47,32 +47,32 @@ rather than through the global, provide it from a module, and composition
 passes it in:
 
 ```swift
-struct MetricsModule: FlightModule {
+struct MetricsModule: AlulaModule {
     let metricsFactory: any MetricsFactory = PrometheusMetricsFactory()
 }
 ```
 
-### What Flight reports
+### What Alula reports
 
 | Metric | Kind | Tags | From |
 |---|---|---|---|
-| `flight_http_requests` | counter | `method`, `route`, `status` | `HTTPEvents.RequestHandled` |
-| `flight_http_request_duration` | timer (ms) | `method`, `route` | `HTTPEvents.RequestHandled` |
-| `flight_sessions_created` | counter | | `SessionEvents.Created` |
-| `flight_sessions_regenerated` | counter | | `SessionEvents.Regenerated` |
-| `flight_sessions_store_failures` | counter | `operation` | `SessionEvents.StoreFailed` |
-| `flight_sessions_revoked` | counter (sum) | | `SessionEvents.Revoked` |
-| `flight_sessions_revocation_failures` | counter | | `SessionEvents.RevocationFailed` |
-| `flight_sign_in_started` | counter | `provider` | `SignInEvents.Started` |
-| `flight_sign_in_attempts` | counter | `provider`, `outcome` | `SignInEvents.Attempt` |
-| `flight_sign_in_duration` | timer (ms) | `provider` | `SignInEvents.Attempt` |
-| `flight_sign_in_password_rehashes` | counter | | `SignInEvents.PasswordRehashed` |
-| `flight_sign_in_expired` | counter | | `SignInEvents.Expired` |
-| `flight_one_time_tokens_issued` | counter | `purpose` | `SignInEvents.TokenIssued` |
-| `flight_one_time_tokens_redeemed` | counter | `purpose`, `outcome` | `SignInEvents.TokenRedemption` |
-| `flight_apns_sends` | counter | `outcome` | `APNSEvents.Send` |
-| `flight_apns_send_duration` | timer (ms) | `outcome` | `APNSEvents.Send` |
-| `flight_apns_provider_tokens_minted` | counter | | `APNSEvents.ProviderTokenMinted` |
+| `alula_http_requests` | counter | `method`, `route`, `status` | `HTTPEvents.RequestHandled` |
+| `alula_http_request_duration` | timer (ms) | `method`, `route` | `HTTPEvents.RequestHandled` |
+| `alula_sessions_created` | counter | | `SessionEvents.Created` |
+| `alula_sessions_regenerated` | counter | | `SessionEvents.Regenerated` |
+| `alula_sessions_store_failures` | counter | `operation` | `SessionEvents.StoreFailed` |
+| `alula_sessions_revoked` | counter (sum) | | `SessionEvents.Revoked` |
+| `alula_sessions_revocation_failures` | counter | | `SessionEvents.RevocationFailed` |
+| `alula_sign_in_started` | counter | `provider` | `SignInEvents.Started` |
+| `alula_sign_in_attempts` | counter | `provider`, `outcome` | `SignInEvents.Attempt` |
+| `alula_sign_in_duration` | timer (ms) | `provider` | `SignInEvents.Attempt` |
+| `alula_sign_in_password_rehashes` | counter | | `SignInEvents.PasswordRehashed` |
+| `alula_sign_in_expired` | counter | | `SignInEvents.Expired` |
+| `alula_one_time_tokens_issued` | counter | `purpose` | `SignInEvents.TokenIssued` |
+| `alula_one_time_tokens_redeemed` | counter | `purpose`, `outcome` | `SignInEvents.TokenRedemption` |
+| `alula_apns_sends` | counter | `outcome` | `APNSEvents.Send` |
+| `alula_apns_send_duration` | timer (ms) | `outcome` | `APNSEvents.Send` |
+| `alula_apns_provider_tokens_minted` | counter | | `APNSEvents.ProviderTokenMinted` |
 
 The names from 0.33 haven't changed. Every tag is a closed set: a route
 *pattern* (`/users/:id`, never the path), a method, an outcome. That keeps
@@ -80,19 +80,19 @@ the number of series fixed however much traffic there is. A request nothing
 matched is tagged `unmatched`, so a scanner walking random paths adds one
 series, not thousands.
 
-`flight_http_request` is an event, not a span. The request's server span is
+`alula_http_request` is an event, not a span. The request's server span is
 already a tracing span, and a second one would trace every request twice.
 
 ## Contributing metrics
 
-A module contributes metrics by holding them. `FlightTelemetryModule`
+A module contributes metrics by holding them. `AlulaTelemetryModule`
 collects every included module's `[TelemetryMetric]`, the same way
-composition collects routes and channels (D15). That's how Flight's own
-modules declare theirs, and how yours, or a package Flight has never heard
+composition collects routes and channels (D15). That's how Alula's own
+modules declare theirs, and how yours, or a package Alula has never heard
 of, declares its own:
 
 ```swift
-struct AppModule: FlightModule {
+struct AppModule: AlulaModule {
     let telemetryMetrics: [TelemetryMetric] = [
         .distribution(Checkout.Stop.self, \.duration, unit: .milliseconds, tags: \.method)
     ]
@@ -144,7 +144,7 @@ and the fields as metadata. It checks the level before encoding anything.
 ```swift
 let tokens = try LogBridge(logger: Logger(label: "telemetry"))
     .log(QuerySpan.Exception.self, level: .error)
-    .log(prefix: "flight.sessions", level: .debug)
+    .log(prefix: "alula.sessions", level: .debug)
     .attach()
 ```
 
@@ -167,7 +167,7 @@ context its body runs in.
 
 ## Testing
 
-Flight's events are captured like any other:
+Alula's events are captured like any other:
 
 ```swift
 let attempts = await TelemetryTest.capture(SignInEvents.Attempt.self) {

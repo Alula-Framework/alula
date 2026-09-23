@@ -1,41 +1,41 @@
-# Flight Web
+# Alula Web
 
-The HTTP request lifecycle layer of Flight — routing, middleware, request and
+The HTTP request lifecycle layer of Alula — routing, middleware, request and
 response representation, WebSocket and Server-Sent Events, and the
 `ServerTransport` seam a concrete server plugs in underneath (the
 Phoenix/Bandit relationship, not bring-your-own-framework). Implements the
-flight-web design doc (as revised: §5.2 wraps a maintained low-level
-transport instead of hand-rolling HTTP; §5.6 containment) on top of Flight
-Core's `FlightModule` composition — through exactly one channel,
-`FlightModule`, like every other Flight package.
+alula-web design doc (as revised: §5.2 wraps a maintained low-level
+transport instead of hand-rolling HTTP; §5.6 containment) on top of Alula
+Core's `AlulaModule` composition — through exactly one channel,
+`AlulaModule`, like every other Alula package.
 
 ## Adding this module
 
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `FlightWeb`, `FlightTransport` |
-| **Module** | `FlightWebModule<FlightTransport>.self` |
+| **Products** | `AlulaWeb`, `AlulaTransport` |
+| **Module** | `AlulaWebModule<AlulaTransport>.self` |
 
 ```swift
 // Package.swift
 dependencies: [
     .package(
-        url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.35.0", traits: ["Web"]),
+        url: "https://github.com/Alula-Framework/alula.git",
+        from: "0.36.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "FlightCore", package: "flight"),
-            .product(name: "FlightWeb", package: "flight"),
-            .product(name: "FlightTransport", package: "flight"),
+            .product(name: "AlulaCore", package: "alula"),
+            .product(name: "AlulaWeb", package: "alula"),
+            .product(name: "AlulaTransport", package: "alula"),
         ],
-        // Required. It scans this target for the Flight macros and writes
-        // `flightComposeModules`; without it there is no composition root
-        // to pass to `Flight.run`.
-        plugins: [.plugin(name: "FlightRegistrationPlugin", package: "flight")]
+        // Required. It scans this target for the Alula macros and writes
+        // `alulaComposeModules`; without it there is no composition root
+        // to pass to `Alula.run`.
+        plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )
 ]
 ```
@@ -43,23 +43,23 @@ targets: [
 ```swift
 // Sources/App/Main.swift — *not* `main.swift`, which is top-level code and
 // cannot coexist with @main.
-import FlightCore
-import FlightTransport
-import FlightWeb
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
 
 @main
 struct Main {
     static func main() async {
-        await Flight.run(
+        await Alula.run(
             configuration: try Configuration.load(),
-            modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
-            composedBy: flightComposeModules)
+            modules: [AlulaWebModule<AlulaTransport>.self, AppModule.self],
+            composedBy: alulaComposeModules)
     }
 }
 ```
 
-Choosing a transport is choosing a module: `FlightWebModule` is generic over
-`ServerTransport`, and `FlightTransport` is the HummingbirdCore-backed one
+Choosing a transport is choosing a module: `AlulaWebModule` is generic over
+`ServerTransport`, and `AlulaTransport` is the HummingbirdCore-backed one
 this package ships. Any conforming transport is a peer.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -70,20 +70,20 @@ dependency DAG. A module you write can declare framework modules in its own
 
 | Product | Contents |
 |---|---|
-| `FlightWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `FlightWebModule`, `Sessions`/`FlightSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)), `TrustedProxies`/`clientAddress` (see [client-address.md](client-address.md)) |
-| `FlightTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Flight that knows what it wraps (§5.6) |
-| `FlightWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
+| `AlulaWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `AlulaWebModule`, `Sessions`/`AlulaSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)), `TrustedProxies`/`clientAddress` (see [client-address.md](client-address.md)) |
+| `AlulaTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Alula that knows what it wraps (§5.6) |
+| `AlulaWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
 
 ## Using it
 
 ```swift
-import FlightCore
-import FlightWeb
-import FlightTransport
+import AlulaCore
+import AlulaWeb
+import AlulaTransport
 
 @Controller
 struct UserController {
-    @Inject var userService: UserService          // Flight Core DI, unchanged
+    @Inject var userService: UserService          // Alula Core DI, unchanged
 
     @GetRoute("/users/:id")
     func getUser(_ context: RequestContext, id: UUID) async throws -> UserResponse {
@@ -194,9 +194,9 @@ signature cannot reach, and `request.queryParam("page")` still returns the raw
         }
     }
 
-    struct AppModule: FlightModule {
+    struct AppModule: AlulaModule {
         // The default lane, outermost first — provided as values the composition
-        // root hands FlightWebModule. The app's controllers and components are
+        // root hands AlulaWebModule. The app's controllers and components are
         // scanned by the build plugin and wired by the composition root; nothing
         // is registered here.
         let middleware = MiddlewareRegistration.lane(.default, [RequestLogging(), Authentication()])
@@ -204,16 +204,16 @@ signature cannot reach, and `request.queryParam("page")` still returns the raw
 
     @main struct Main {
         static func main() async {
-            await Flight.run(                             // prints why and exits 1 if it cannot start
+            await Alula.run(                             // prints why and exits 1 if it cannot start
                 configuration: try Configuration.load(),
-                modules: [FlightWebModule<FlightTransport>.self, AppModule.self],
-                composedBy: flightComposeModules          // generated by the build plugin
+                modules: [AlulaWebModule<AlulaTransport>.self, AppModule.self],
+                composedBy: alulaComposeModules          // generated by the build plugin
             )
         }
     }
 ```
 
-Transport settings come from the same `flight.yaml` everything else uses:
+Transport settings come from the same `alula.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,
 `server.max-request-body-bytes`, `server.max-websocket-frame-bytes`.
 
@@ -436,7 +436,7 @@ to guess — a server offering it picks between two wire formats sharing one
 name, and every client that sends `deflate` sends `gzip` too. Brotli is worth
 adding and needs its own system library, so it is a later additive case.
 
-This is the one part of Flight Web that links a C library: `CFlightZlib`, a
+This is the one part of Alula Web that links a C library: `CAlulaZlib`, a
 `systemLibrary` target over the system zlib. Lean images may need the headers
 (`zlib1g-dev` on Debian; the official Swift images carry them).
 
@@ -478,7 +478,7 @@ Cookie.expiring("session")                                       // deletion
 several headers.
 
 A cookie that carries state — a login, a cart, a notice for the next page —
-is a session, and `FlightSessionsModule` does the loading, the persisting and
+is a session, and `AlulaSessionsModule` does the loading, the persisting and
 the cookie for you: `context.session`, with a store seam and an in-memory
 default. See [sessions.md](sessions.md).
 
@@ -560,7 +560,7 @@ refuse fails startup, naming the key.
 HSTS is off by default because it cannot be recalled: a browser remembers
 it for `max-age`, whatever the server says afterwards. Browsers ignore it
 over plain HTTP, so it is sent however this process was reached — behind a
-TLS-terminating proxy, Flight sees HTTP while the browser saw HTTPS.
+TLS-terminating proxy, Alula sees HTTP while the browser saw HTTPS.
 
 ### Redirects
 
@@ -652,12 +652,12 @@ already parse it. For anything else, provide your own `WebCoders` — its
 
 ```swift
 // A module provides its own coders; the composition root hands them to
-// FlightWebModule, which takes them as its `coders:` parameter.
+// AlulaWebModule, which takes them as its `coders:` parameter.
 var coders = WebCoders.default
 coders.jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
 ```
 
-An application that provides its own keeps it; Flight only fills in the gap.
+An application that provides its own keeps it; Alula only fills in the gap.
 A misspelled `web.*` value fails at startup naming the key, not on the first
 request that happens to encode something.
 
@@ -696,7 +696,7 @@ Either mode needs `trust-roots-path`; demanding client certificates with
 nothing to verify them against is a startup error.
 
 Terminating TLS at nginx or a load balancer instead is equally supported —
-leave these keys out and Flight serves plaintext to the proxy. Either way,
+leave these keys out and Alula serves plaintext to the proxy. Either way,
 `Strict-Transport-Security` is `web.security-headers.hsts-max-age` — see
 *Security headers* above. WebSocket
 upgrades ride whatever the listener is doing, so `wss://` needs no separate
@@ -711,7 +711,7 @@ compile error at the generated registration, not a runtime race.
 Testing (§7) needs no socket:
 
 ```swift
-let client = try TestClient(routes: flightRoutes(graph))
+let client = try TestClient(routes: alulaRoutes(graph))
 #expect(await client.get("/users/999").status == .notFound)
 
 let socket = try await client.webSocket("/chat/lobby")   // in-process upgrade
@@ -723,16 +723,16 @@ let socket = try await client.webSocket("/chat/lobby")   // in-process upgrade
 `@Inject`/`@ConfigValue` properties — plus one **route factory per mapped
 method**, each of which builds the controller and runs one method as a
 `RouteRegistration` value. The route table is not a parallel mechanism: the
-composition root's `flightRoutes(_:)` calls those factories, `FlightWebModule`
+composition root's `alulaRoutes(_:)` calls those factories, `AlulaWebModule`
 validates the resulting values (conflicts and malformed patterns fail startup,
 naming both declaration sites) and builds the dispatch closure handed to the
 active transport. The controller itself is a scanned component, so it shows on
 an Actuator dashboard like any other.
 
-The build plugin side is Flight Core's existing `FlightRegistrationPlugin`,
+The build plugin side is Alula Core's existing `AlulaRegistrationPlugin`,
 generalized by one word: its scanner recognizes `@Controller` alongside
-`@Component` (a name-level change — Core references no Flight Web types), so the
-generated composition root's `flightRoutes(_:)` covers controllers, and route
+`@Component` (a name-level change — Core references no Alula Web types), so the
+generated composition root's `alulaRoutes(_:)` covers controllers, and route
 existence + path-pattern validity are compile-time information (`@GetRoute`
 rejects non-literal and malformed paths at the declaration site).
 
@@ -795,9 +795,9 @@ Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
    routing middleware *returns* the matched handler's response (and also
    records it in `context.response`); a chain that completes without
    answering yields `context.response`, which starts as 404.
-5. **HTTP/2 is deferred.** v1 of `FlightTransport` builds HummingbirdCore's
+5. **HTTP/2 is deferred.** v1 of `AlulaTransport` builds HummingbirdCore's
    HTTP/1.1 channel (keep-alive/pipelining); h2 needs a TLS configuration
-   surface Flight doesn't define yet. Nothing in the `ServerTransport`
+   surface Alula doesn't define yet. Nothing in the `ServerTransport`
    contract is version-shaped — h2 lands inside the transport without
    touching the seam.
 6. **Middleware registration mechanism.** The doc specifies the chain (§3)
@@ -841,15 +841,15 @@ Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
 ## Layout
 
 ```
-Sources/Web/FlightWeb/             runtime: context, middleware, router, response
+Sources/Web/AlulaWeb/             runtime: context, middleware, router, response
                                encoding, SSE, upgrade hook, transport seam,
-                               FlightWebModule, macro declarations
-Sources/Web/FlightWebMacrosImpl/   compiler plugin: Controller + mapping markers
-Sources/Web/FlightTransport/       the default transport wrapping HummingbirdCore (§5.2, §5.6)
-Sources/Web/FlightWebTesting/      §7 test-support surface
-Tests/Web/FlightWebTests/          runtime suites (swift-testing)
-Tests/Web/FlightWebMacroTests/     §4 macro fixtures (XCTest, normative expansions)
-Tests/Web/FlightTransportTests/    real-socket HTTP/SSE/WebSocket integration
+                               AlulaWebModule, macro declarations
+Sources/Web/AlulaWebMacrosImpl/   compiler plugin: Controller + mapping markers
+Sources/Web/AlulaTransport/       the default transport wrapping HummingbirdCore (§5.2, §5.6)
+Sources/Web/AlulaWebTesting/      §7 test-support surface
+Tests/Web/AlulaWebTests/          runtime suites (swift-testing)
+Tests/Web/AlulaWebMacroTests/     §4 macro fixtures (XCTest, normative expansions)
+Tests/Web/AlulaTransportTests/    real-socket HTTP/SSE/WebSocket integration
 ```
 
 ### Connection timeouts
@@ -869,7 +869,7 @@ up, roughly four minutes.
 
 It takes two mechanisms because HummingbirdCore's own idle handler is
 installed from the upgrade channel's not-upgrading completion handler, which
-does not run until a head has decoded — so Flight adds a header-read timeout
+does not run until a head has decoded — so Alula adds a header-read timeout
 in front of it for the window before that. One setting drives both.
 
 **A long response is never affected.** Both bounds disarm once a request is
@@ -881,11 +881,11 @@ as long as they like. That is what makes a default safe.
 No HTTP/2 or HTTP/3 (HummingbirdCore supports HTTP/2 and the builder seam
 would take it; nothing here has needed it yet), no templating/SSR (a future
 consumer of the upgrade hook), no persistence
-(Flight Data), no runtime route-registration API (routes are the macro path;
+(Alula Data), no runtime route-registration API (routes are the macro path;
 a hand-built `RouteRegistration` value is the escape hatch beside it, exactly
 as a hand-written component sits beside `@Component`), and **no hand-rolled HTTP
-parsing** — `FlightTransport` wraps HummingbirdCore rather than reimplementing
+parsing** — `AlulaTransport` wraps HummingbirdCore rather than reimplementing
 HTTP/1.1 correctness, request-smuggling mitigations, and WebSocket protocol
-handling; Flight owns routing and dispatch, not byte-level protocol work.
+handling; Alula owns routing and dispatch, not byte-level protocol work.
 Vapor remains out of scope as a category mismatch (§5.1) — a full framework,
 not a transport.

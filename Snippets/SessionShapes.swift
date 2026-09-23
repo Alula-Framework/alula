@@ -4,9 +4,9 @@
 // This builds as part of `swift build`, so a rename that invalidates the
 // prose breaks the build.
 
-import FlightCore
-import FlightSecurityCore
-import FlightWeb
+import AlulaCore
+import AlulaSecurityCore
+import AlulaWeb
 import Foundation
 
 // snippet.hide
@@ -112,8 +112,8 @@ struct MyKeyValueClient: KeyValueClient {
 }
 // snippet.show
 
-struct KeyValueSessionsModule: FlightModule {
-    /// Matched by type to `FlightSessionsModule`'s `store:` parameter.
+struct KeyValueSessionsModule: AlulaModule {
+    /// Matched by type to `AlulaSessionsModule`'s `store:` parameter.
     let store: any SessionStore
 
     init(client: MyKeyValueClient) {
@@ -124,12 +124,12 @@ struct KeyValueSessionsModule: FlightModule {
 func sessionShapes(configuration: Configuration) throws {
     // The module, built the way the composition root builds it: from
     // configuration, with an optional store an adapter module provides.
-    let module = try FlightSessionsModule(configuration: configuration)
+    let module = try AlulaSessionsModule(configuration: configuration)
     _ = module.runtime.settings.cookieName
     _ = module.middleware
 
     // A store of your own is the seam, provided from a module by type.
-    struct MyStoreModule: FlightModule {
+    struct MyStoreModule: AlulaModule {
         let store: any SessionStore = InMemorySessionStore()
     }
     _ = MyStoreModule()

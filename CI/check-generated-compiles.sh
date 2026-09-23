@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Fails if the file flight-registration-gen emits does not compile.
+# Fails if the file alula-registration-gen emits does not compile.
 #
-# FlightRegistrationGenTests drives the real generator and asserts on its
+# AlulaRegistrationGenTests drives the real generator and asserts on its
 # diagnostics and its output text — the right contract for a build tool, and
 # the reason a non-compiling emission can pass every one of them. It did: the
 # graph initializer emitted `x ?? (try C())`, which Swift rejects because `??`
@@ -25,9 +25,9 @@ swift build --enable-all-traits
 
 # A check that cannot tell "compiled" from "never ran" is worse than no check:
 # a plugin that silently emitted nothing would sail through the build above.
-generated=$(find .build/plugins/outputs -name 'FlightRegistration.generated.swift' 2>/dev/null | head -1)
+generated=$(find .build/plugins/outputs -name 'AlulaRegistration.generated.swift' 2>/dev/null | head -1)
 if [ -z "$generated" ]; then
-  echo "::error::no FlightRegistration.generated.swift was produced — the plugin did not run"
+  echo "::error::no AlulaRegistration.generated.swift was produced — the plugin did not run"
   exit 1
 fi
 

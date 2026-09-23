@@ -42,7 +42,7 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.33.0")
+.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.34.0")
 ```
 
 ```swift
@@ -70,14 +70,14 @@ All are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.33.0", traits: ["Web"])
+         from: "0.34.0", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Flight-Framework/flight.git",
-         from: "0.33.0", traits: ["Security"])
+         from: "0.34.0", traits: ["Security"])
 
 // Just composition, lifecycle and telemetry — 8 resolved dependencies instead of 29.
-.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.33.0")
+.package(url: "https://github.com/Flight-Framework/flight.git", from: "0.34.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the

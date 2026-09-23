@@ -27,7 +27,7 @@ multi-node story needs. Modeled on
 dependencies: [
     .package(
         url: "https://github.com/Flight-Framework/flight.git",
-        from: "0.33.0"),
+        from: "0.34.0"),
 ],
 targets: [
     .executableTarget(

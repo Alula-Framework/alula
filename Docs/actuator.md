@@ -279,25 +279,61 @@ production with none:
 |---|---|
 | `GET /actuator/health` | The strict aggregate: `UP` only when every module is running. |
 | `GET /actuator/health/live` | Is the process wedged? A module that has not started yet does **not** count — a slow-starting pod answering `DOWN` here gets killed and restarted into the same slow start, forever. Only a module whose service threw counts, because that is what a restart can clear. |
-| `GET /actuator/health/ready` | Can it serve traffic? Strict: still starting, or failed, means no. |
+| `GET /actuator/health/ready` | Can it serve traffic? Strict: a module still starting or failed, a failing dependency check, or a process that has begun shutting down all mean no. |
 
 Each answers `200`/`UP` or `503`/`DOWN` with counts and nothing else — no
 component list, no type names, no failure text. They are safe to publish
 unauthenticated precisely because of what they leave out.
 
-Health inputs are Core's module lifecycle by default: a module is `running`
-once it is composed and `failed` if its `Service.run()` throws. A module that
-is up but cannot reach its database says so on the `ModuleHealthRegistry` the
-composition root provides:
+Health inputs are Core's module lifecycle: a module with no service is
+`running` once it is composed; one with a service is `notStarted` until that
+service is entered, and `failed` if it throws. (Before 0.37.0 every module was
+marked `running` at composition, so readiness said yes before anything had
+started.) A module that is up but has lost something it depends on can say so
+on the `ModuleHealthRegistry` the composition root provides:
 
 ```swift
 health.reportHealth(.failed(error), forModule: "DataModule")
 ```
 
-on whatever cadence suits it — a background check, a connection-pool
-callback. Nothing here polls, and no check runs on the request path, which is
-what removes the hung-check-and-timeout class of bug entirely: a probe is a
-lock-protected read of state something else already established.
+**Dependency checks.** Readiness also runs every `HealthCheck` a module
+contributes through a `healthChecks: [HealthCheck]` property. alula-data's
+datasource modules contribute their pool's ping, so a database that stops
+answering takes the process out of rotation. An application adds its own:
+
+```swift
+struct AppModule: AlulaModule {
+    let healthChecks: [HealthCheck] = [
+        HealthCheck(name: "payments-api", timeout: .seconds(1)) { try await payments.ping() },
+    ]
+}
+```
+
+Three rules keep this off the list of things that cause outages:
+
+- **Readiness only.** A failing check never fails liveness. Restarting a pod
+  does not bring a database back, and a fleet restarting at once makes the
+  outage worse.
+- **Bounded.** Each check has a timeout (two seconds by default) and counts
+  as failed past it, and one run is shared by every probe that arrives within
+  a second. An unauthenticated route polled every few seconds, or hammered,
+  costs one round trip per second, not one per request.
+- **Nameless on the wire.** The probe reports `checksFailed` as a count. The
+  check's name and failure reason go to the log, only when the check changes
+  state, because dependency names are topology.
+
+**Draining.** When graceful shutdown begins (`SIGTERM`), readiness answers
+`503` with `"draining": true` straight away, while the transport keeps
+serving. Set `lifecycle.drain-seconds` to how long your orchestrator takes to
+stop routing to a terminating instance. Kubernetes removes the endpoint
+asynchronously, so a few seconds is typical. Without it, the listener closes
+while traffic is still arriving.
+
+```yaml
+lifecycle:
+  drain-seconds: 5
+  shutdown-timeout-seconds: 25   # below terminationGracePeriodSeconds
+```
 
 To opt a non-development environment into the dashboard:
 

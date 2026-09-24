@@ -90,6 +90,8 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
     ///     `web.security-headers.*`: `nosniff`, `DENY` and a strict
     ///     referrer policy unless configured off; HSTS and CSP only when
     ///     configured.
+    ///   - webSocketOrigins: Which pages may open a WebSocket. Nil reads
+    ///     `web.websocket.allowed-origins`: same origin unless configured.
     public init(
         configuration: Configuration,
         routes: [RouteRegistration] = [],
@@ -98,7 +100,8 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
         coders: WebCoders? = nil,
         errorMapper: ErrorMapper? = nil,
         trustedProxies: TrustedProxies? = nil,
-        securityHeaders: SecurityHeaders? = nil
+        securityHeaders: SecurityHeaders? = nil,
+        webSocketOrigins: WebSocketOrigins? = nil
     ) throws {
         let resolvedCoders = try coders ?? WebCoders(configuration: configuration)
         let resolvedMapper = errorMapper ?? .none
@@ -106,6 +109,8 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
             try trustedProxies ?? TrustedProxies(configuration: configuration)
         let resolvedSecurityHeaders =
             try securityHeaders ?? SecurityHeaders(configuration: configuration)
+        let resolvedWebSocketOrigins =
+            try webSocketOrigins ?? WebSocketOrigins(configuration: configuration)
         self.configuration = configuration
         self.coders = resolvedCoders
         self.errorMapper = resolvedMapper
@@ -122,7 +127,8 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
             web: WebRuntime(
                 coders: resolvedCoders, errorMapper: resolvedMapper,
                 trustedProxies: resolvedTrustedProxies,
-                securityHeaders: resolvedSecurityHeaders),
+                securityHeaders: resolvedSecurityHeaders,
+                webSocketOrigins: resolvedWebSocketOrigins),
             logger: Logger(label: "alula.web"))
     }
 

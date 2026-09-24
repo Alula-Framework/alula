@@ -96,8 +96,10 @@ struct JSONRenderingTests {
 
     @Test("a healthy module omits 'error' entirely — it is not null-encoded")
     func healthyModuleOnTheWire() throws {
-        let app = try Alula.assemble(configuration: Configuration(), modules: [FailingServiceModule()])
-        let snapshot = ActuatorSnapshot(health: app.health, components: [], environment: .dev)
+        let health = ModuleHealthRegistry()
+        health.beginTracking(moduleNames: ["FailingServiceModule"])
+        health.reportHealth(.running, forModule: "FailingServiceModule")
+        let snapshot = ActuatorSnapshot(health: health, components: [], environment: .dev)
         let data = try JSONEncoder().encode(snapshot)
         let wire = try JSONDecoder().decode(SnapshotWire.self, from: data)
 

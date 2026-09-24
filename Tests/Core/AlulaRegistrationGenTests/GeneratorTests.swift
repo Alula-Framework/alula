@@ -1801,6 +1801,58 @@ struct GeneratorTests {
         #expect(!result.generated.contains("processEnvironment:"))
     }
 
+    @Test("an all-defaulted initializer does not outrank one the composer can feed")
+    func suppliedArgumentsDecide() throws {
+        // Once defaults are omittable, `init(verbose:retries:limit:)` is
+        // satisfiable with nothing, and ranking by declared parameters would
+        // pick it over `init(configuration:)` — silently ignoring configuration.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaWeb
+            struct ThingModule: AlulaModule {
+            init(configuration: Configuration) throws {}
+            init(verbose: Bool = false, retries: Int = 3, limit: Int = 10) {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(configuration: .load(), modules: [ThingModule.self])
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(result.generated.contains("let thingModule = try ThingModule(configuration: configuration)"))
+    }
+
+    @Test("a parameter with a default is omitted, not a reason to discard the initializer")
+    func defaultedParameterIsOmitted() throws {
+        // ActuatorModule's real shape since 0.23.0. The defaulted `logger:`
+        // made its composition initializer unsatisfiable, every application
+        // fell back to `init()`, and Actuator ran with a private health
+        // registry — readiness always up — and an open dashboard whatever
+        // `actuator.dashboard-roles` said. Nothing failed.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaWeb
+            struct Logger { init(label: String) {} }
+            struct ActuatorModule: AlulaModule {
+            init() {}
+            init(processEnvironment: [String: String]) {}
+            init(configuration: Configuration, health: ModuleHealthRegistry = ModuleHealthRegistry(), logger: Logger = Logger(label: "x")) throws {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(configuration: .load(), modules: [ActuatorModule.self])
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(
+            result.generated.contains(
+                "let actuatorModule = try ActuatorModule(configuration: configuration, health: alulaHealth)"))
+    }
+
     // MARK: - Included modules
 
     @Test("the bootstrap list resolves transitively, dependencies first")

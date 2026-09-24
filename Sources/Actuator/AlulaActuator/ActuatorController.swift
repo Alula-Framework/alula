@@ -47,6 +47,12 @@ struct ActuatorController {
     /// thing that tracks it.
     let health: @Sendable () -> [ModuleStatus]
 
+    /// Whether graceful shutdown has begun — readiness answers no from then on.
+    let isDraining: @Sendable () -> Bool
+
+    /// Dependencies readiness asks about beyond module health.
+    let readinessChecks: ReadinessChecks
+
     let environment: AlulaEnvironment
     let format: ActuatorFormat
 
@@ -63,7 +69,7 @@ struct ActuatorController {
     /// reading, which is the readiness question; see ``liveness(_:)`` for the
     /// one an orchestrator should restart on.
     func health(_ context: RequestContext) async throws -> Response {
-        try respond(to: .readiness)
+        try await respond(to: .readiness)
     }
 
     /// Is this process wedged — should the orchestrator restart it?
@@ -73,7 +79,7 @@ struct ActuatorController {
     /// into the same slow start, forever. Only a module whose service threw
     /// counts, because that is the state a restart can actually clear.
     func liveness(_ context: RequestContext) async throws -> Response {
-        try respond(to: .liveness)
+        try await respond(to: .liveness)
     }
 
     /// Can this process serve traffic yet?
@@ -81,7 +87,7 @@ struct ActuatorController {
     /// Strict: a module still starting, or failed, means no. Identical to
     /// ``health(_:)``, and named so a deployment does not have to know that.
     func readiness(_ context: RequestContext) async throws -> Response {
-        try respond(to: .readiness)
+        try await respond(to: .readiness)
     }
 
     /// Which question a probe is asking. One endpoint answered both, and the
@@ -91,7 +97,7 @@ struct ActuatorController {
         case readiness
     }
 
-    private func respond(to probe: Probe) throws -> Response {
+    private func respond(to probe: Probe) async throws -> Response {
         // `health()` rather than a full `ActuatorSnapshot`: the snapshot also
         // copies the entire component descriptor table, and this path used
         // every bit of it to compute three integers — on the one route an
@@ -99,10 +105,15 @@ struct ActuatorController {
         let modules = health()
         let failed = modules.filter(\.health.isFailed).count
         let notStarted = modules.filter(\.health.isNotStarted).count
+        // Dependency checks and draining are readiness questions only: a
+        // restart brings back neither a database nor a process that is on its
+        // way out, so neither may fail liveness.
+        let draining = probe == .readiness && isDraining()
+        let checksFailed = probe == .readiness ? await readinessChecks.failedCount() : 0
         let up =
             switch probe {
             case .liveness: failed == 0
-            case .readiness: failed == 0 && notStarted == 0
+            case .readiness: failed == 0 && notStarted == 0 && checksFailed == 0 && !draining
             }
 
         struct Health: Encodable {
@@ -110,13 +121,17 @@ struct ActuatorController {
             let modules: Int
             let failed: Int
             let notStarted: Int
+            let checksFailed: Int?
+            let draining: Bool?
         }
         let body = try Self.encoder.encode(
             Health(
                 status: up ? "UP" : "DOWN",
                 modules: modules.count,
                 failed: failed,
-                notStarted: notStarted))
+                notStarted: notStarted,
+                checksFailed: probe == .readiness && !readinessChecks.isEmpty ? checksFailed : nil,
+                draining: draining ? true : nil))
         return .data(
             body, contentType: .json, status: up ? .ok : .serviceUnavailable)
     }

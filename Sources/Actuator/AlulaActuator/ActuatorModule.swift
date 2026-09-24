@@ -74,6 +74,11 @@ public struct ActuatorModule: AlulaModule {
     /// request, exactly as reading the container did.
     let health: ModuleHealthRegistry
 
+    /// What readiness asks beyond module health — every module's
+    /// `[HealthCheck]` contribution, collected by the composition root.
+    /// Private so the composer does not read it back as a contribution.
+    private let healthChecks: [HealthCheck]
+
     let environment: AlulaEnvironment
 
     /// Bootstrap path: the environment comes from `ALULA_ENV`, read via
@@ -93,11 +98,12 @@ public struct ActuatorModule: AlulaModule {
         configuration: Configuration,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        healthChecks: [HealthCheck] = [],
         logger: Logger = Logger(label: "alula.actuator")
     ) throws {
         self.init(
             processEnvironment: ProcessInfo.processInfo.environment,
-            components: components, health: health,
+            components: components, health: health, healthChecks: healthChecks,
             dashboardAccess: try ActuatorDashboardAccess(configuration: configuration),
             logger: logger)
         try installController(
@@ -112,12 +118,14 @@ public struct ActuatorModule: AlulaModule {
         processEnvironment: [String: String],
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        healthChecks: [HealthCheck] = [],
         dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "alula.actuator")
     ) {
         self.logger = logger
         self.components = components
         self.health = health
+        self.healthChecks = healthChecks
         self.dashboardAccess = dashboardAccess
         self.environment = .current(from: processEnvironment)
         self.exposureOverride = nil
@@ -142,12 +150,14 @@ public struct ActuatorModule: AlulaModule {
         environment: AlulaEnvironment,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        healthChecks: [HealthCheck] = [],
         dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "alula.actuator")
     ) {
         self.logger = logger
         self.components = components
         self.health = health
+        self.healthChecks = healthChecks
         self.dashboardAccess = dashboardAccess
         self.environment = environment
         self.exposureOverride = nil
@@ -170,6 +180,7 @@ public struct ActuatorModule: AlulaModule {
         exposure: ActuatorExposure,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
+        healthChecks: [HealthCheck] = [],
         format: ActuatorFormat = .ssr,
         dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "alula.actuator")
@@ -177,6 +188,7 @@ public struct ActuatorModule: AlulaModule {
         self.logger = logger
         self.components = components
         self.health = health
+        self.healthChecks = healthChecks
         self.dashboardAccess = dashboardAccess
         self.environment = environment
         self.exposureOverride = exposure
@@ -360,6 +372,8 @@ public struct ActuatorModule: AlulaModule {
             ActuatorController(
                 components: components + Self.ownComponents,
                 health: { [health] in health.statuses() },
+                isDraining: { [health] in health.isDraining },
+                readinessChecks: ReadinessChecks(checks: healthChecks, logger: logger),
                 environment: environment,
                 format: format))
     }

@@ -102,17 +102,24 @@ public final class WebRuntime: Sendable {
     /// so a hand-built runtime adds nothing unasked; `AlulaWebModule` reads
     /// `web.security-headers.*`, whose defaults are on.
     public let securityHeaders: SecurityHeaders
+    /// Which pages may open a WebSocket, checked by Dispatch before any lane
+    /// runs. `.anyOrigin` here so a hand-built runtime checks nothing unasked;
+    /// `AlulaWebModule` reads `web.websocket.allowed-origins`, whose default
+    /// is same-origin.
+    public let webSocketOrigins: WebSocketOrigins
 
     public init(
         coders: WebCoders = .default,
         errorMapper: ErrorMapper = .none,
         trustedProxies: TrustedProxies = .none,
-        securityHeaders: SecurityHeaders = .none
+        securityHeaders: SecurityHeaders = .none,
+        webSocketOrigins: WebSocketOrigins = .anyOrigin
     ) {
         self.coders = coders
         self.errorMapper = errorMapper
         self.trustedProxies = trustedProxies
         self.securityHeaders = securityHeaders
+        self.webSocketOrigins = webSocketOrigins
     }
 
     /// Package defaults — what a hand-built context uses.

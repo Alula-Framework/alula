@@ -7,6 +7,59 @@ wrong, say so and it changes.
 
 ---
 
+## D46 — Readiness asks dependencies, drains on shutdown, and a default is not a demand
+
+**Context.** A whole-framework audit on 2026-09-24 found readiness wrong three
+ways. Service-owning modules were `running` at composition. Nothing flipped
+on `SIGTERM`. alula-data's `DataSourceLiveness`, documented as "what
+Actuator reads", was read by nothing. Wiring the fix through the demo showed
+a fourth problem underneath: since 0.23.0 the composer had built
+`ActuatorModule()` for every application, because a defaulted `logger:` made
+its composition initializer look unsatisfiable. So Actuator had never seen
+the shared health registry, the components or `actuator.dashboard-*` in any
+generated app.
+
+**Chosen.**
+
+1. **The composer omits a defaulted parameter it cannot supply.** A default
+   is the author saying "you need not pass this". Until now one unmatched
+   default discarded the whole initializer. The regression test is
+   Actuator's real shape. The class of bug is the one GAPS.md opens with:
+   every check passed, because every test built `ActuatorModule` by hand.
+2. **Dependency checks are contributions** (`healthChecks: [HealthCheck]`,
+   D15's aggregate rule), not an Actuator-specific registry, so alula-data
+   contributes without alula knowing it exists. They are **readiness only**
+   (restarting does not revive a database), time-bounded, shared within a
+   one-second window (the route is unauthenticated), and counted, not named,
+   on the wire.
+3. **Draining is a service, not a transport feature.** `ServiceGroup` shuts
+   down in reverse start order, one service at a time, and waits for each.
+   A `DrainService` started last is therefore told first. It flips
+   readiness, then holds for `lifecycle.drain-seconds` while the transport,
+   next in line, still serves. No transport code changed, and a second
+   transport gets it for free.
+4. **WebSocket `Origin` is checked by default**, same-origin, before any
+   lane. A missing `Origin` passes, because only browsers carry ambient
+   cookies and browsers always send one. A hand-built `WebRuntime` checks
+   nothing, the same convention as `securityHeaders`.
+
+**Rejected.**
+- **Polling checks in the background and serving the cached state.** That
+  was the previous doc's stance ("nothing polls"). It costs a task per check
+  forever and still needs a timeout. The one-second reuse window gets the
+  same load bound on demand.
+- **A drain default above zero.** It would make every development `Ctrl-C`
+  wait. The setting is documented where the probes are.
+- **Checking `Origin` as middleware.** A route naming its own lanes skips
+  `.default` (the D38 lesson), and a refused handshake should not reach the
+  session layer at all.
+
+**Cost of reversing.** (1) is a few lines in the generator, but reversing it
+brings the inert Actuator back. (4) is one configuration line per
+deployment (`allowed-origins: "*"`).
+
+---
+
 ## D45 — Flight is now Alula, and what kept the old name
 
 **Context.** "Flight" collided with the Flight School book series and with

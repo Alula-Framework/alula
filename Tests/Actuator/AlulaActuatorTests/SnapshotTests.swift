@@ -72,19 +72,18 @@ struct SnapshotTests {
         #expect(status.health.failureDescription?.contains("flux capacitor") == true)
     }
 
-    @Test("configured modules report running health")
-    func configuredModulesRunning() throws {
+    @Test("a service-owning module is notStarted until its service runs")
+    func serviceOwnerNotStartedAfterAssembly() throws {
         let app = try Alula.assemble(
             configuration: Configuration(),
             modules: [FailingServiceModule()]
         )
-        // Assembly succeeded and the service has not run yet: .running
-        // (Alula Core — a module is running the moment it is part of the
-        // assembly, until its service throws).
+        // Assembly succeeded and the service has not run yet, so readiness
+        // must not count this module as up.
         let snapshot = ActuatorSnapshot(
             health: app.health, components: [], environment: .test)
         #expect(snapshot.modules.count == 1)
-        #expect(snapshot.modules[0].health.isRunning)
+        #expect(snapshot.modules[0].health.isNotStarted)
     }
 }
 

@@ -17,20 +17,29 @@ struct BootstrapTests {
         #expect(app.services.first?.moduleName == "FakeServerModule")
     }
 
-    @Test("every module reports .running after assembly")
-    func healthRunning() throws {
+    @Test("a service-less module is running at assembly; a service owner waits for its service")
+    func healthAfterAssembly() async throws {
         let logging = LoggingModule()
         let app = try Alula.assemble(
             configuration: Configuration(),
             modules: [logging, FakeServerModule(sink: logging.sink)])
-        let statuses = app.health.statuses()
-        #expect(statuses.count == 2)
-        for status in statuses {
-            guard case .running = status.health else {
-                Issue.record("\(status.moduleName) expected .running, got \(status.health)")
-                continue
-            }
+        func health(_ name: String) -> ModuleHealth? {
+            app.health.statuses().first { $0.moduleName == name }?.health
         }
+        #expect(app.health.statuses().count == 2)
+        #expect(health("LoggingModule") == .running)
+        // Reporting it running here made readiness answer yes before
+        // anything had started.
+        #expect(health("FakeServerModule") == .notStarted)
+
+        let entry = try #require(app.services.first)
+        let running = Task { try await entry.service.run() }
+        defer { running.cancel() }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while health("FakeServerModule") != .running, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(health("FakeServerModule") == .running)
     }
 
     @Test("a failing Service flips its module to .failed")

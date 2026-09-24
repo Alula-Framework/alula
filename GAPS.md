@@ -15,12 +15,13 @@ day it was started; its history moved with it. Entries closed overnight on
 first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
-**Still open, in rough priority order:** alula-web HTTP/2 (a design decision,
-not a task — see below); hangar composite-key associations; npm and Homebrew
-publishing; format debt — `alula` **1,725** violations and `alula-data`
-**1,064**, measured 2026-09-18, deliberately deferred because a bulk reformat
-corrupts the macro fixtures' expected-expansion strings and should land as its
-own reviewed change.
+**Still open, in rough priority order:** the functional gaps from the
+2026-09-24 audit (next section) — a durable job queue first; then alula-web
+HTTP/2 (a design decision, not a task — see below); hangar composite-key
+associations; npm and Homebrew publishing; format debt — `alula` **1,725**
+violations and `alula-data` **1,064**, measured 2026-09-18, deliberately
+deferred because a bulk reformat corrupts the macro fixtures' expected-expansion
+strings and should land as its own reviewed change.
 
 **Closed 2026-09-18:** two providers of one type, in alula **v0.21.0** —
 `@Inject(from:)` names a provider by module type and
@@ -122,6 +123,113 @@ bug.
 The generalisable part is the same each time — **test through the seam the
 production path uses, not around it** — plus a second rule these two add:
 when a feature can be inert, write the test that fails if it produces nothing.
+
+---
+
+## 0. Functional gaps — the 2026-09-24 audit
+
+Everything above this section is about whether the ecosystem does what it
+claims. This one asks what it does *not* claim: which capabilities an
+application developer expects from a mature server framework (Vapor,
+Hummingbird, Spring Boot, Phoenix, Rails) that Alula lacks. Five reviewers,
+one per area (HTTP, data, background work and messaging, core/operations/CLI,
+security), ran against alula 0.36.0, alula-data 0.11.0, hangar 0.9.2 and
+alula-cli `main`. Every absence claim below was checked by grep, and the
+first four were checked by hand as well. Items this file or DECISIONS.md
+already declined are not repeated.
+
+### ✅ Three defects, fixed in alula 0.37.0 / alula-data 0.12.0
+
+The audit set out to list missing features and found three things that were
+broken instead. Two of them are this file's opening defect class again: a
+check that looked present did nothing.
+
+- **Actuator was built with `init()` in every generated app, since 0.23.0.**
+  A defaulted `logger:` made the composer think `ActuatorModule`'s
+  composition initializer was unsatisfiable. It fell back silently to
+  `init()`, which meant:
+  - a private health registry, so readiness always said `UP`;
+  - no components on the dashboard;
+  - `actuator.format` ignored;
+  - the **0.30.0 dashboard role gate never applied**.
+
+  Every Actuator test built the module by hand, the seam the bug was behind.
+  Found only by reading the demo's generated composition file. The fix and
+  the regression test are in the generator (D46).
+- **Readiness lied twice.** Service-owning modules were `running` at
+  composition, and nothing changed on `SIGTERM`. They are now `notStarted`
+  until their service is entered. A drain service flips readiness to `503`
+  first and holds for `lifecycle.drain-seconds` while the transport still
+  serves.
+- **`DataSourceLiveness` shipped inert.** Its doc said "the surface Alula
+  Actuator reads"; nothing read it, so a dead Postgres reported healthy.
+  Datasource modules now contribute it as a `HealthCheck`, which readiness
+  runs. Verified live: stopping Postgres under the running demo turned
+  readiness `503` and left liveness `200`, and restarting it recovered.
+- **Cross-site WebSocket hijacking.** A handshake is a `GET`, so CSRF
+  exempts it, and CORS does not govern WebSockets, so a cookie-authenticated
+  socket was open to any page. `Origin` is now checked by default,
+  same-origin.
+
+### Open, ranked by how much an application feels it
+
+| # | Gap | Size | Why it matters |
+|---|---|---|---|
+| 1 | **Durable background job queue.** Needs enqueue, retry with backoff, dead-lettering, delay, uniqueness, concurrency limits and status. | L | Three of five reviewers named it first. The scheduler is cron-only, with no persistence and no retries (`Docs/scheduler.md`), and hangar has no `SKIP LOCKED`. Email, webhook delivery and push retries have nothing to stand on; APNs' own docs tell apps to write "a scheduled job that drains a table". |
+| 2 | **Email delivery seam** (`MailDelivery` protocol and an SMTP or provider adapter) | S–M | Blocks sign-in phase 3c: reset, verification, magic links. `OneTimeTokens`' doc example already calls a `mailer` that does not exist. |
+| 3 | **Outbound HTTP client** | M | APNs, OIDC and JWKS each use `HTTPClient.shared` directly. Nothing shared provides timeouts, retries, a test double or trace-context propagation, so traces stop at the process boundary. |
+| 4 | **Declarative request validation** with aggregated field errors in problem+json | M | Every handler throws one `422` at a time by hand. swift-changeset validates for writes but not for request bodies. |
+| 5 | **Per-route request deadlines** | M | Only idle and header-read timeouts exist. A stuck downstream call holds the handler open indefinitely, and no `503`/`504` comes back. |
+| 6 | **OpenAPI emission** | L | Cheaper here than anywhere else, because the build plugin already holds the route, parameter and body-type model. |
+| 7 | **Read replicas unreachable** from alula-data | M | Hangar routes reads to a replica, but `withRepo` pins one connection and nothing configures a replica. |
+| 8 | **Production observability defaults** | S–M | No JSON `LogHandler`, no log level from configuration, and no metrics or tracing backend in the templates. Outbound trace propagation is covered by #3. |
+| 9 | **Postgres-only clustering**: LISTEN/NOTIFY PubSub adapter, outbox | M | Running more than one replica requires Valkey today. |
+| 10 | **CLI stops at `new` and `migrate`** | M–L | No routes listing, dev watch mode, generators (including the planned `alula generate auth`), app-defined commands or Dockerfile. |
+
+**Smaller, by area** (S unless marked):
+
+- **HTTP:**
+  - Responses are JSON only: no `Accept` negotiation and no `406` (M).
+  - A `Decodable` body can't be decoded from multipart.
+  - No `If-Match` helper for PUT/PATCH, and no pagination envelope or `Link` headers.
+  - No idempotency keys (M) and no webhook HMAC verification.
+  - TLS certificates can't be reloaded without a restart (M).
+  - No WebSocket subprotocol negotiation, compression or server pings.
+  - A plain `OPTIONS` answers `405`, not `204`.
+- **Data:**
+  - No SQLite (L), and `InMemoryDataSource` cannot run queries.
+  - Hangar has no JSONB operators, full-text search, bulk upsert or keyset
+    pagination. `Pagination.swift`'s doc points at "cursor-based reads below"
+    that do not exist.
+  - No automatic timestamps, no tracing spans on queries, no seeding, and no
+    general distributed lock.
+  - No schema-diff migrations, and no Swift code inside migrations.
+- **Security:**
+  - Authorization is roles and scopes only: no policy or ownership checks (M).
+  - No MFA (TOTP planned for phase 5; WebAuthn L).
+  - No API-key validator (S–M).
+  - mTLS verifies the client certificate but never hands it to the request (M).
+  - No first-party JWT or refresh-token issuance (M).
+  - No audit trail carrying subject and address.
+  - No JSON depth or key-count limits.
+  - No breached-password check (belongs with phase 3c).
+  - A socket doesn't notice when its session is revoked.
+- **Messaging and integrations:**
+  - No FCM or Web Push (M each).
+  - No object storage or signed URLs (M).
+  - No i18n (M).
+  - No typed domain events or wildcard topics (M).
+  - Channels has no replay of messages sent while a client was disconnected (M).
+- **Core:**
+  - No optional `@Inject` and no conditional modules (M).
+  - No "compose everything, swap one" for tests (M).
+  - No start or stop hooks beyond `service`.
+  - Actuator has no build-info or env endpoint, and can't change log levels at runtime.
+
+**Deliberately not listed:** everything above marked *deliberate*, and the
+HTTP/WebSocket and security items declined in DECISIONS.md: templating,
+runtime route registration, a trie router, point-in-time revocation, and
+issuing tokens to third parties.
 
 ---
 

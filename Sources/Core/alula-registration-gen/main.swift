@@ -225,7 +225,7 @@ struct ScannedModule {
     /// because it cannot be built from its type. Neither "first" nor "prefer
     /// `init()`" picks correctly in both cases. The composer chooses the one
     /// it can actually supply.
-    let initializers: [(labels: [String], types: [String], throws: Bool)]
+    let initializers: [(labels: [String], types: [String], defaulted: [Bool], throws: Bool)]
     /// Dependency type names as written with `.self` dropped — the generic
     /// argument is **kept**, because `PostgresDataModule<PrimaryDataSource>`
     /// and `<Analytics>` are two modules (D27). This comment used to say the
@@ -382,7 +382,7 @@ final class ModuleVisitor: SyntaxVisitor {
         // The initializer a composer would call. `init()` conformances are
         // the ordinary case today; a module that has moved to owning its
         // components declares what it needs instead.
-        var initializers: [(labels: [String], types: [String], throws: Bool)] = []
+        var initializers: [(labels: [String], types: [String], defaulted: [Bool], throws: Bool)] = []
         for member in members.members {
             guard let initializer = member.decl.as(InitializerDeclSyntax.self) else { continue }
             let parameters = initializer.signature.parameterClause.parameters
@@ -392,12 +392,13 @@ final class ModuleVisitor: SyntaxVisitor {
                         $0.firstName.tokenKind == .wildcard ? "_" : $0.firstName.text
                     },
                     types: parameters.map { $0.type.trimmedDescription },
+                    defaulted: parameters.map { $0.defaultValue != nil },
                     throws: initializer.signature.effectSpecifiers?.throwsClause != nil
                 ))
         }
         // A module declaring none conforms through the protocol's own
         // requirement, which is `init()`.
-        if initializers.isEmpty { initializers = [(labels: [], types: [], throws: false)] }
+        if initializers.isEmpty { initializers = [(labels: [], types: [], defaulted: [], throws: false)] }
         // Stored properties, with an explicit type and reachable from the
         // composition root. Computed ones are excluded because `var service:
         // (any Service)?` is one, and a module's service is bootstrap's to
@@ -2628,25 +2629,40 @@ func emitComposer(into out: inout String) {
         var satisfiable = false
         var canThrow = false
         var needs: Set<String> = []
-        for candidate in (module?.initializers ?? [(labels: [], types: [], throws: false)])
+        for candidate in (module?.initializers ?? [(labels: [], types: [], defaulted: [], throws: false)])
             .sorted(by: { $0.labels.count > $1.labels.count })
         {
             var built: [String] = []
             var candidateNeeds: Set<String> = []
             var ok = true
-            for (label, type) in zip(candidate.labels, candidate.types) {
+            for (index, (label, type)) in zip(candidate.labels, candidate.types).enumerated() {
                 guard
                     let resolved = argument(
                         label: label, type: type, for: name, needing: &candidateNeeds)
-                else { ok = false; break }
+                else {
+                    // A parameter with a default is the module saying "you
+                    // need not supply this". Treating it as unsatisfiable
+                    // discarded the whole initializer: `ActuatorModule`'s
+                    // `logger: Logger = …` sent every application to `init()`,
+                    // which has no shared health registry, no components and
+                    // no dashboard access policy.
+                    if candidate.defaulted.indices.contains(index), candidate.defaulted[index] {
+                        continue
+                    }
+                    ok = false
+                    break
+                }
                 if let resolved { built.append(resolved) }
             }
-            if ok {
+            // The most arguments *supplied* wins, not the most declared: with
+            // defaults omittable, an all-defaulted test seam would otherwise
+            // outrank `init(configuration:)` and ignore the configuration.
+            // Ties keep the declared-count order above.
+            if ok, !satisfiable || built.count > arguments.count {
                 arguments = built
                 satisfiable = true
                 canThrow = candidate.throws
                 needs = candidateNeeds
-                break
             }
         }
         if !satisfiable {

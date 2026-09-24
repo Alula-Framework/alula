@@ -4,6 +4,66 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-09-24
+
+Three defects found by a whole-framework audit. Two of them left a check that
+looked present doing nothing.
+
+### Fixed
+
+- **Actuator never received the application's health, components or
+  configuration (since 0.23.0).** The build plugin treated a parameter with a
+  default value as one it could not supply. When 0.23.0 added `logger:` to
+  `ActuatorModule`'s composition initializer, every generated application fell
+  back to `ActuatorModule()`. The results:
+  - readiness read an empty registry and always answered `UP`;
+  - the dashboard listed no components;
+  - `actuator.format` was ignored;
+  - **the 0.30.0 `actuator.dashboard-pipelines` / `dashboard-roles`
+    protection never applied**, so the dashboard stayed open wherever it was
+    exposed.
+
+  The composer now omits a defaulted parameter it cannot supply, rather than
+  discarding the initializer. Rebuild to regenerate. Other modules with
+  defaulted parameters may now be built through a richer initializer than
+  before; that is the initializer their authors meant.
+- **Readiness answered yes before anything had started, and during shutdown.**
+  A module with a service is now `notStarted` until the service is entered.
+  On `SIGTERM`, readiness answers `503` (`"draining": true`) while the
+  transport keeps serving.
+- **Cross-site WebSocket hijacking.** WebSocket handshakes are now checked
+  against `Origin`, same-origin by default (see Added).
+
+### Added
+
+- `HealthCheck`: a dependency readiness asks about. It is a contribution: any
+  module holding `healthChecks: [HealthCheck]` adds to it. Checks are
+  time-bounded, shared across probes within a second, affect readiness only,
+  and are reported as a count (`checksFailed`), never by name. alula-data
+  0.12.0's datasource modules contribute their pool's ping, so a dead
+  database now fails readiness.
+- `lifecycle.drain-seconds` (default `0`): how long to keep serving after
+  `SIGTERM` while readiness says no. Set it so the orchestrator stops routing
+  before the listener closes.
+- `lifecycle.shutdown-timeout-seconds` (default: unbounded): the bound on
+  graceful shutdown, drain included. Past it, remaining services are
+  cancelled.
+- `WebSocketOrigins` and `web.websocket.allowed-origins`.
+  - The default: same-origin, with `403` otherwise. A handshake with no
+    `Origin` is allowed.
+  - A comma-separated list adds origins; `*` alone turns the check off.
+  - `X-Forwarded-Host` counts only from a peer in `web.trusted-proxies`.
+- `ModuleHealthRegistry.isDraining` / `beginDraining()`.
+
+### Upgrading
+
+- **A browser client served from another origin can no longer open sockets**
+  until that origin is listed in `web.websocket.allowed-origins`. Behind nginx
+  with its default `proxy_set_header Host`, add the proxy to
+  `web.trusted-proxies`.
+- Tests that asserted `.running` for a service-owning module straight after
+  `Alula.assemble` now see `.notStarted`.
+
 ## [0.36.0] - 2026-09-23
 
 Flight is now **Alula**. The name collided with the Flight School book series

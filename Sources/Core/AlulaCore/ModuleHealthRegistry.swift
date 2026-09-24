@@ -15,6 +15,7 @@ public final class ModuleHealthRegistry: Sendable {
     private struct State {
         var order: [String] = []
         var map: [String: ModuleHealth] = [:]
+        var draining = false
     }
     private let state = Mutex(State())
 
@@ -41,6 +42,18 @@ public final class ModuleHealthRegistry: Sendable {
             if state.map[moduleName] == nil { state.order.append(moduleName) }
             state.map[moduleName] = health
         }
+    }
+
+    /// `true` once graceful shutdown has begun. Readiness answers no from here
+    /// on, while the transport is still serving, so an orchestrator stops
+    /// routing to this process before it stops listening.
+    public var isDraining: Bool {
+        state.withLock { $0.draining }
+    }
+
+    /// Marks the process as shutting down. Idempotent; there is no way back.
+    public func beginDraining() {
+        state.withLock { $0.draining = true }
     }
 
     public func statuses() -> [ModuleStatus] {

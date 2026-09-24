@@ -64,11 +64,13 @@ func _alulaAssemble(
         )] = []
     for (name, module) in zip(names, instances) {
         // A module with no long-running service is "running" the moment it is
-        // part of the assembly; a service-owning one stays running unless its
-        // Service later throws (see HealthTrackingService).
-        health.set(name, .running)
+        // part of the assembly. A service-owning one stays `notStarted` until
+        // its service is actually entered (see HealthTrackingService) — marking
+        // it here made readiness answer yes before anything had started.
         if let service = module.service {
             services.append((name, service, module.serviceCompletion, module.serviceShutdownPhase))
+        } else {
+            health.set(name, .running)
         }
     }
 
@@ -143,23 +145,103 @@ private func _alulaBootstrap(
         return
     }
 
-    let group = ServiceGroup(  // step 9
-        configuration: .init(
-            services: app.services.map { entry in
-                ServiceGroupConfiguration.ServiceConfiguration(
-                    service: entry.service,
-                    // .failsApp → .cancelGroup: a server returning early is a
-                    // failure. .endsApp → graceful shutdown: bounded work done.
-                    successTerminationBehavior: entry.completion == .endsApp
-                        ? .gracefullyShutdownGroup
-                        : .cancelGroup
-                )
-            },
-            gracefulShutdownSignals: [.sigterm, .sigint],
-            logger: logger
+    let lifecycle = try LifecycleSettings(configuration: configuration)
+    var serviceConfigurations = app.services.map { entry in
+        ServiceGroupConfiguration.ServiceConfiguration(
+            service: entry.service,
+            // .failsApp → .cancelGroup: a server returning early is a
+            // failure. .endsApp → graceful shutdown: bounded work done.
+            successTerminationBehavior: entry.completion == .endsApp
+                ? .gracefullyShutdownGroup
+                : .cancelGroup
         )
-    )
-    try await group.run()
+    }
+    // Last to start, so first to be told to shut down: `ServiceGroup` shuts
+    // services down one at a time in reverse, waiting for each. The inbound
+    // transport is therefore still serving while this flips readiness and
+    // waits out `lifecycle.drain-seconds`.
+    serviceConfigurations.append(
+        .init(
+            service: DrainService(health: app.health, delay: lifecycle.drainDelay, logger: logger),
+            successTerminationBehavior: .ignore))
+
+    var groupConfiguration = ServiceGroupConfiguration(
+        services: serviceConfigurations,
+        gracefulShutdownSignals: [.sigterm, .sigint],
+        logger: logger)
+    groupConfiguration.maximumGracefulShutdownDuration = lifecycle.shutdownTimeout
+    try await ServiceGroup(configuration: groupConfiguration).run()  // step 9
+}
+
+/// `lifecycle.*`: how the process leaves.
+///
+/// ```yaml
+/// lifecycle:
+///   drain-seconds: 5              # readiness says no, transport keeps serving
+///   shutdown-timeout-seconds: 25  # then cancel whatever has not finished
+/// ```
+///
+/// `drain-seconds` exists for orchestrators that remove an endpoint some time
+/// after they send `SIGTERM` — Kubernetes among them. Without it the listener
+/// closes while traffic is still being routed here, and those requests fail.
+/// It defaults to zero, so a development `Ctrl-C` stays immediate.
+///
+/// `shutdown-timeout-seconds` bounds the whole graceful shutdown, drain
+/// included; past it, remaining services are cancelled. Unset means no bound —
+/// set it below the orchestrator's own grace period, so the process ends on
+/// its own terms rather than by `SIGKILL`.
+public struct LifecycleSettings: Sendable, Equatable {
+    public var drainDelay: Duration
+    public var shutdownTimeout: Duration?
+
+    public init(drainDelay: Duration = .zero, shutdownTimeout: Duration? = nil) {
+        self.drainDelay = drainDelay
+        self.shutdownTimeout = shutdownTimeout
+    }
+
+    /// Reads `lifecycle.*`. Throws on a negative or malformed value.
+    public init(configuration: Configuration) throws {
+        let drain = try configuration.getIfPresent("lifecycle.drain-seconds", as: Double.self) ?? 0
+        let timeout = try configuration.getIfPresent(
+            "lifecycle.shutdown-timeout-seconds", as: Double.self)
+        guard drain >= 0, (timeout ?? 1) > 0, drain.isFinite, (timeout ?? 1).isFinite else {
+            throw LifecycleSettingsError(drainSeconds: drain, shutdownTimeoutSeconds: timeout)
+        }
+        self.init(
+            drainDelay: .milliseconds(Int64(drain * 1000)),
+            shutdownTimeout: timeout.map { .milliseconds(Int64($0 * 1000)) })
+    }
+}
+
+struct LifecycleSettingsError: Error, CustomStringConvertible {
+    let drainSeconds: Double
+    let shutdownTimeoutSeconds: Double?
+
+    var description: String {
+        "lifecycle.drain-seconds must be zero or more and lifecycle.shutdown-timeout-seconds "
+            + "greater than zero (got \(drainSeconds) and "
+            + "\(shutdownTimeoutSeconds.map { "\($0)" } ?? "unset"))"
+    }
+}
+
+/// Waits for graceful shutdown, then marks the process draining and holds the
+/// shutdown sequence for the configured delay — see ``LifecycleSettings``.
+struct DrainService: Service {
+    let health: ModuleHealthRegistry
+    let delay: Duration
+    let logger: Logger
+
+    func run() async throws {
+        do {
+            try await gracefulShutdown()
+        } catch {
+            return  // cancelled rather than shut down: nothing to drain for
+        }
+        health.beginDraining()
+        guard delay > .zero else { return }
+        logger.info("draining before shutdown", metadata: ["delay": "\(delay)"])
+        try? await Task.sleep(for: delay)
+    }
 }
 
 /// Maps a Service's termination onto ModuleHealth with zero
@@ -171,6 +253,7 @@ struct HealthTrackingService: Service {
     let health: ModuleHealthRegistry
 
     func run() async throws {
+        health.set(moduleName, .running)
         do {
             try await inner.run()
         } catch {

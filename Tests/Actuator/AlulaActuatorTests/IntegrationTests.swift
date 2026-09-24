@@ -4,6 +4,7 @@ import AlulaWeb
 import AlulaWebTesting
 import Foundation
 import HTTPTypes
+import Synchronization
 import Testing
 
 /// The composed path: an `ActuatorModule` built the way the composition root
@@ -119,4 +120,79 @@ struct ProbeTests {
             #expect(response.bodyText.contains("\"status\":\"UP\""))
         }
     }
+
+    @Test("a failing dependency check fails readiness only, and names nothing")
+    func failingCheckFailsReadinessOnly() async throws {
+        struct DatabaseGone: Error {}
+        let health = ModuleHealthRegistry()
+        health.reportHealth(.running, forModule: "Fine")
+        let actuator = ActuatorModule(
+            environment: .dev, health: health,
+            healthChecks: [HealthCheck(name: "primary-postgres") { throw DatabaseGone() }])
+        let client = try TestClient(routes: actuator.routes)
+
+        // A restart does not bring a database back.
+        #expect(await client.get("/actuator/health/live").status == .ok)
+        let ready = await client.get("/actuator/health/ready")
+        #expect(ready.status == .serviceUnavailable)
+        #expect(ready.bodyText.contains("\"checksFailed\":1"))
+        // Dependency names are topology; the probe is unauthenticated.
+        #expect(!ready.bodyText.contains("primary-postgres"))
+    }
+
+    @Test("a check that hangs counts as failed once its timeout passes")
+    func hangingCheckTimesOut() async throws {
+        let health = ModuleHealthRegistry()
+        health.reportHealth(.running, forModule: "Fine")
+        let actuator = ActuatorModule(
+            environment: .dev, health: health,
+            healthChecks: [
+                HealthCheck(name: "stuck", timeout: .milliseconds(50)) {
+                    try await Task.sleep(for: .seconds(60))
+                }
+            ])
+        let client = try TestClient(routes: actuator.routes)
+        let started = ContinuousClock.now
+        #expect(await client.get("/actuator/health/ready").status == .serviceUnavailable)
+        #expect(ContinuousClock.now - started < .seconds(5))
+    }
+
+    @Test("passing checks leave readiness up, and runs are reused inside the window")
+    func passingChecksAreReused() async throws {
+        let health = ModuleHealthRegistry()
+        health.reportHealth(.running, forModule: "Fine")
+        let calls = Counter()
+        let actuator = ActuatorModule(
+            environment: .dev, health: health,
+            healthChecks: [HealthCheck(name: "db") { calls.increment() }])
+        let client = try TestClient(routes: actuator.routes)
+
+        for _ in 0..<5 {
+            #expect(await client.get("/actuator/health/ready").status == .ok)
+        }
+        // One run served all five: the probe is unauthenticated, and each run
+        // is a round trip to the dependency.
+        #expect(calls.value == 1)
+    }
+
+    @Test("draining fails readiness and leaves liveness alone")
+    func drainingFailsReadiness() async throws {
+        let health = ModuleHealthRegistry()
+        health.reportHealth(.running, forModule: "Fine")
+        let actuator = ActuatorModule(environment: .dev, health: health)
+        let client = try TestClient(routes: actuator.routes)
+        #expect(await client.get("/actuator/health/ready").status == .ok)
+
+        health.beginDraining()
+        let ready = await client.get("/actuator/health/ready")
+        #expect(ready.status == .serviceUnavailable)
+        #expect(ready.bodyText.contains("\"draining\":true"))
+        #expect(await client.get("/actuator/health/live").status == .ok)
+    }
+}
+
+final class Counter: Sendable {
+    private let count = Mutex(0)
+    func increment() { count.withLock { $0 += 1 } }
+    var value: Int { count.withLock { $0 } }
 }

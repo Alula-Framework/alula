@@ -525,6 +525,30 @@ keeps the values — and needs no rotation there: the regenerated id is what
 takes the session away from anyone who planted it, and a token is useless
 without the cookie it belongs to.
 
+### WebSocket origins
+
+CSRF protection exempts a WebSocket handshake, because it is a `GET`, and
+CORS does not apply to WebSockets at all. A browser opens a socket to any
+origin and sends that origin's cookies, so a socket authenticated from the
+session is open to every page its user visits (cross-site WebSocket
+hijacking) unless the server checks `Origin`.
+
+`AlulaWebModule` checks it on every upgrade route, before any lane runs. By
+default the `Origin` must be the host the request was addressed to; anything
+else gets `403`. A handshake with no `Origin` did not come from a browser page
+and is allowed. To accept other origins:
+
+```yaml
+web:
+  websocket:
+    allowed-origins: https://app.example.com, https://admin.example.com
+```
+
+`*` alone turns the check off. Use it only for sockets that never read a
+cookie. Behind a proxy that rewrites `Host` (nginx does by default), put the
+proxy in `web.trusted-proxies` so `X-Forwarded-Host` counts, or list the
+public origin here.
+
 ### Security headers
 
 Every response carries three headers unless configured off:

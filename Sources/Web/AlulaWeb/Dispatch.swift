@@ -383,10 +383,23 @@ public enum DispatchBuilder {
                 // transaction coordinator failing to bind, a pool exhausted
                 // before a handler ever runs — reaches here uncaught.
                 let response: Response
-                do {
-                    response = try await pipeline(context)
-                } catch {
-                    response = errorResponse(for: error, context: context)
+                if acceptsUpgrade(request),
+                    !web.webSocketOrigins.permits(request, trustedProxies: web.trustedProxies)
+                {
+                    // Before every lane: a refused handshake must not reach
+                    // the session or authentication layers it is trying to
+                    // borrow. See `WebSocketOrigins`.
+                    requestLogger.info(
+                        "cross-origin WebSocket handshake refused",
+                        metadata: ["origin": "\(request.headers[.origin] ?? "")"])
+                    response = .problem(
+                        status: .forbidden, message: "Cross-origin WebSocket handshake refused")
+                } else {
+                    do {
+                        response = try await pipeline(context)
+                    } catch {
+                        response = errorResponse(for: error, context: context)
+                    }
                 }
 
                 span.attributes["http.response.status_code"] = response.status.code

@@ -60,6 +60,10 @@ public struct RouteRegistration: Sendable {
 
     /// The fully-encoded handler thunk: body decoding and return-value
     /// encoding already applied by the macro expansion.
+    /// How long the request may take, middleware and handler together,
+    /// before the client gets a 503. See ``RequestTimeout``.
+    public let timeout: RequestTimeout
+
     public let handler: @Sendable (RequestContext) async throws -> Response
 
     public init(
@@ -69,8 +73,10 @@ public struct RouteRegistration: Sendable {
         source: String = "<direct>",
         pipelines: [PipelineLane] = [.default],
         bodyMode: BodyMode = .buffered(maxBytes: nil),
+        timeout: RequestTimeout = .default,
         handler: @escaping @Sendable (RequestContext) async throws -> Response
     ) {
+        self.timeout = timeout
         self.method = method
         self.path = path
         self.kind = kind
@@ -171,3 +177,59 @@ extension MiddlewareRegistration {
 }
 
 
+
+/// A route's request timeout.
+///
+/// ```swift
+/// @GetRoute("/report", timeout: .seconds(120))   // longer than the default
+/// @GetRoute("/poll", timeout: .none)             // long polling: no limit
+/// ```
+///
+/// `.default` is `web.request-timeout-seconds`, which is unset (no limit)
+/// unless configured. A WebSocket upgrade never has one, and a route
+/// streaming its request body only when it names its own, since an upload's
+/// length is the client's to decide.
+///
+/// The limit covers the middleware and the handler until the response is
+/// ready, not the time spent writing a streamed response body. Past it the
+/// client gets `503`, and the handler's task is cancelled.
+public struct RequestTimeout: Sendable, Equatable {
+    enum Value: Sendable, Equatable {
+        case inherit
+        case none
+        case limit(Duration)
+    }
+    let value: Value
+
+    /// Whatever `web.request-timeout-seconds` says.
+    public static let `default` = RequestTimeout(value: .inherit)
+    /// No limit, whatever the default.
+    public static let none = RequestTimeout(value: .none)
+
+    public static func seconds(_ seconds: Int) -> RequestTimeout {
+        RequestTimeout(value: .limit(.seconds(seconds)))
+    }
+
+    public static func milliseconds(_ milliseconds: Int) -> RequestTimeout {
+        RequestTimeout(value: .limit(.milliseconds(milliseconds)))
+    }
+
+    public static func duration(_ duration: Duration) -> RequestTimeout {
+        RequestTimeout(value: .limit(duration))
+    }
+
+    /// The limit that applies to a route of `kind` with `bodyMode`, given
+    /// the application's default `fallback`. Nil means no limit.
+    public func effective(
+        kind: RouteRegistration.Kind, bodyMode: RouteRegistration.BodyMode, fallback: Duration?
+    ) -> Duration? {
+        if kind.isUpgrade { return nil }
+        switch value {
+        case .none: return nil
+        case .limit(let duration): return duration
+        case .inherit:
+            if case .streaming = bodyMode { return nil }
+            return fallback
+        }
+    }
+}

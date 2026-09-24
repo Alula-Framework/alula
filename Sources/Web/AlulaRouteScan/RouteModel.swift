@@ -75,6 +75,8 @@ public struct ScannedRoute {
     /// The route's own `roles:` argument, verbatim. Added to the
     /// controller's rather than replacing them.
     public let rolesText: String?
+    /// The route's `timeout:` argument, verbatim; nil means the default.
+    public let timeoutText: String?
     /// Every role declaration that applies, controller's first. Each is an
     /// any-of check, and they compose as "and" by being separate checks —
     /// which is why this is a list rather than one merged array.
@@ -103,9 +105,9 @@ public enum RouteScanning {
         diagnostics: some RouteDiagnostics
     ) -> [(
         kind: RouteKind, path: String, maxBodyBytes: String?, pipelines: String?,
-        roles: String?, attribute: AttributeSyntax
+        roles: String?, timeout: String?, attribute: AttributeSyntax
     )] {
-        var found: [(RouteKind, String, String?, String?, String?, AttributeSyntax)] = []
+        var found: [(RouteKind, String, String?, String?, String?, String?, AttributeSyntax)] = []
         for element in function.attributes {
             guard let attribute = element.as(AttributeSyntax.self),
                 let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text,
@@ -125,6 +127,7 @@ public enum RouteScanning {
                     labeledArgumentText(of: attribute, named: "maxBodyBytes"),
                     labeledArgumentText(of: attribute, named: "pipelines"),
                     labeledArgumentText(of: attribute, named: "roles"),
+                    labeledArgumentText(of: attribute, named: "timeout"),
                     attribute
                 ))
         }
@@ -363,7 +366,7 @@ public enum RouteScanning {
             }
         }
 
-        return mappings.map { kind, path, maxBodyBytes, pipelines, roles, attribute in
+        return mappings.map { kind, path, maxBodyBytes, pipelines, roles, timeout, attribute in
             ScannedRoute(
                 kind: kind,
                 path: path,
@@ -375,6 +378,7 @@ public enum RouteScanning {
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,
                 rolesText: roles,
+                timeoutText: timeout,
                 attribute: attribute,
                 isAsync: effects?.asyncSpecifier != nil,
                 isThrows: effects?.throwsClause != nil,

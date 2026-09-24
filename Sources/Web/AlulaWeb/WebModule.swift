@@ -111,6 +111,12 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
             try securityHeaders ?? SecurityHeaders(configuration: configuration)
         let resolvedWebSocketOrigins =
             try webSocketOrigins ?? WebSocketOrigins(configuration: configuration)
+        let requestTimeout = try configuration.getIfPresent(
+            "web.request-timeout-seconds", as: Double.self)
+        if let requestTimeout, !(requestTimeout > 0) {
+            throw WebConfigurationError(
+                "web.request-timeout-seconds must be positive; it is \(requestTimeout)")
+        }
         self.configuration = configuration
         self.coders = resolvedCoders
         self.errorMapper = resolvedMapper
@@ -128,7 +134,8 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
                 coders: resolvedCoders, errorMapper: resolvedMapper,
                 trustedProxies: resolvedTrustedProxies,
                 securityHeaders: resolvedSecurityHeaders,
-                webSocketOrigins: resolvedWebSocketOrigins),
+                webSocketOrigins: resolvedWebSocketOrigins,
+                requestTimeout: requestTimeout.map { .milliseconds(Int64($0 * 1000)) }),
             logger: Logger(label: "alula.web"))
     }
 
@@ -170,4 +177,9 @@ struct WebHostService<Transport: ServerTransport>: Service {
         )
         try await transport.run()
     }
+}
+
+struct WebConfigurationError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
 }

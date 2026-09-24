@@ -123,11 +123,11 @@ whole application without binding a port.
 ### Controllers and routes
 
 - ``Controller(_:pipelines:roles:)``
-- ``GetRoute(_:maxBodyBytes:pipelines:roles:)``
-- ``PostRoute(_:maxBodyBytes:pipelines:roles:)``
-- ``PutRoute(_:maxBodyBytes:pipelines:roles:)``
-- ``PatchRoute(_:maxBodyBytes:pipelines:roles:)``
-- ``DeleteRoute(_:maxBodyBytes:pipelines:roles:)``
+- ``GetRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
+- ``PostRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
+- ``PutRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
+- ``PatchRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
+- ``DeleteRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
 - ``WebSocketRoute(_:pipelines:roles:)``
 - ``RouteRole``
 - ``PathParameterConvertible``

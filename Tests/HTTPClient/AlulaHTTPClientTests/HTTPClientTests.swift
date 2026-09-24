@@ -130,6 +130,35 @@ struct OutboundHTTPClientTests {
         #expect(injected == span.spanContext.spanID)
     }
 
+    @Test("inside a request deadline, the attempt timeout shrinks to the time left")
+    func deadlineClamps() async throws {
+        final class Capturing: OutboundHTTPTransport {
+            let seen = Mutex<[Duration]>([])
+            func send(_ request: OutboundRequest, timeout: Duration, maxResponseBytes: Int)
+                async throws -> OutboundResponse
+            {
+                seen.withLock { $0.append(timeout) }
+                return OutboundResponse(status: .ok)
+            }
+        }
+        let transport = Capturing()
+        let client = OutboundHTTPClient(transport: transport, policy: fast)
+        try await Deadline.$current.withValue(ContinuousClock.now.advanced(by: .seconds(2))) {
+            _ = try await client.get(url)
+        }
+        let used = try #require(transport.seen.withLock { $0.first })
+        #expect(used <= .seconds(2))
+        #expect(used > .seconds(1))
+
+        // Already past it: nothing is sent.
+        await #expect(throws: OutboundHTTPError.self) {
+            try await Deadline.$current.withValue(ContinuousClock.now.advanced(by: .seconds(-1))) {
+                _ = try await client.get(url)
+            }
+        }
+        #expect(transport.seen.withLock { $0.count } == 1)
+    }
+
     @Test("configuration is read and non-positive values refused")
     func configuration() throws {
         let policy = try OutboundHTTPPolicy(

@@ -4,6 +4,25 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0] - 2026-09-24
+
+Per-route request timeouts: gap #5 on the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **`timeout:` on the HTTP route macros**: `.seconds(n)`, `.milliseconds(n)`,
+  `.duration(d)` or `.none`. `web.request-timeout-seconds` is the default for
+  routes that name none, and it is unset (no limit) unless configured.
+- Past the limit the client gets `503`, and the handler is cancelled. The
+  answer never waits for a handler that ignores cancellation.
+- Upgrades have no limit. Streaming-body routes have one only when they name
+  it.
+- **`Deadline.current` / `Deadline.remaining`** (AlulaCore): the request's
+  deadline as a task-local, visible to everything it calls.
+- `OutboundHTTPClient` shrinks each attempt's timeout to `Deadline.remaining`,
+  and does not retry past it.
+- `RouteRegistration.timeout`, and `WebRuntime.requestTimeout`.
+
 ## [0.41.0] - 2026-09-24
 
 Declarative request validation: gap #4 on the 2026-09-24 audit (GAPS.md §0).

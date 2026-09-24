@@ -217,6 +217,35 @@ Transport settings come from the same `alula.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,
 `server.max-request-body-bytes`, `server.max-websocket-frame-bytes`.
 
+### Request timeouts
+
+A route can bound how long a request may take. Past the limit the client gets
+`503`, and the handler's task is cancelled:
+
+```swift
+@GetRoute("/report", timeout: .seconds(120))   // slower than the default
+@GetRoute("/poll", timeout: .none)             // long polling: no limit
+```
+
+```yaml
+web:
+  request-timeout-seconds: 30   # every route that does not name its own
+```
+
+Unset, there is no default limit, so an application upgrading sees no change
+until it opts in. The limit covers the middleware and the handler until the
+response is ready, not the time spent writing a streamed response. A
+WebSocket upgrade never has one. A route streaming its request body has one
+only when it names it, because an upload's length is the client's to decide.
+
+The answer does not wait for the handler. A handler blocked in code that
+ignores cancellation still lets the 503 go out on time, and cancellation
+reaches the handler as soon as it next checks.
+
+Inside the request, `Deadline.current` (AlulaCore) is the instant it must
+finish by, and `Deadline.remaining` the time left. `OutboundHTTPClient` uses
+it automatically: no attempt waits past it, and no retry sleeps past it.
+
 ### Validation
 
 A `body:` or `query:` type that conforms to `Validatable` is checked after

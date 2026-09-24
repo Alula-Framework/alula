@@ -107,14 +107,19 @@ public final class WebRuntime: Sendable {
     /// `AlulaWebModule` reads `web.websocket.allowed-origins`, whose default
     /// is same-origin.
     public let webSocketOrigins: WebSocketOrigins
+    /// The request timeout for routes that do not name their own. Nil (the
+    /// default): no limit. `AlulaWebModule` reads `web.request-timeout-seconds`.
+    public let requestTimeout: Duration?
 
     public init(
         coders: WebCoders = .default,
         errorMapper: ErrorMapper = .none,
         trustedProxies: TrustedProxies = .none,
         securityHeaders: SecurityHeaders = .none,
-        webSocketOrigins: WebSocketOrigins = .anyOrigin
+        webSocketOrigins: WebSocketOrigins = .anyOrigin,
+        requestTimeout: Duration? = nil
     ) {
+        self.requestTimeout = requestTimeout
         self.coders = coders
         self.errorMapper = errorMapper
         self.trustedProxies = trustedProxies

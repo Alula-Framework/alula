@@ -119,6 +119,10 @@ public macro Middleware() =
 //         func admin(_ context: RequestContext) -> Response { ... }
 //     }
 //
+// `timeout` bounds the request (see `RequestTimeout`): `.seconds(120)` for a
+// slow report, `.none` for long polling. Omitted, the route takes
+// `web.request-timeout-seconds`.
+//
 // Narrowing away a security lane without naming `.public` is a build
 // warning: dropping authentication by accident is the mistake worth
 // catching, and `.public` is how you say you meant it.
@@ -126,35 +130,35 @@ public macro Middleware() =
 @attached(peer)
 public macro GetRoute(
     _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
-    roles: [any RouteRole] = []
+    roles: [any RouteRole] = [], timeout: RequestTimeout = .default
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PostRoute(
     _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
-    roles: [any RouteRole] = []
+    roles: [any RouteRole] = [], timeout: RequestTimeout = .default
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PutRoute(
     _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
-    roles: [any RouteRole] = []
+    roles: [any RouteRole] = [], timeout: RequestTimeout = .default
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro PatchRoute(
     _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
-    roles: [any RouteRole] = []
+    roles: [any RouteRole] = [], timeout: RequestTimeout = .default
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "RouteMacro")
 
 @attached(peer)
 public macro DeleteRoute(
     _ path: String, maxBodyBytes: Int? = nil, pipelines: [PipelineLane]? = nil,
-    roles: [any RouteRole] = []
+    roles: [any RouteRole] = [], timeout: RequestTimeout = .default
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "RouteMacro")
 

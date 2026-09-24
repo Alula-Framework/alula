@@ -1,3 +1,4 @@
+import Synchronization
 import AlulaCore
 import Foundation
 import HTTPTypes
@@ -296,6 +297,15 @@ public enum DispatchBuilder {
                 else { return .buffered(maxBytes: nil) }
                 return match.route.bodyMode
             },
+            timeout: { request in
+                guard
+                    case .matched(let match) = router.route(
+                        method: request.method, path: request.path)
+                else { return web.requestTimeout }
+                return match.route.timeout.effective(
+                    kind: match.route.kind, bodyMode: match.route.bodyMode,
+                    fallback: web.requestTimeout)
+            },
             routePattern: { request in
                 switch router.route(method: request.method, path: request.path) {
                 case .matched(let match):
@@ -338,6 +348,7 @@ public enum DispatchBuilder {
         bodyMode: @escaping @Sendable (Request) -> RouteRegistration.BodyMode = { _ in
             .buffered(maxBytes: nil)
         },
+        timeout: @escaping @Sendable (Request) -> Duration? = { _ in nil },
         routePattern: @escaping @Sendable (Request) -> String? = { _ in nil },
         web: WebRuntime = .default,
         logger: Logger
@@ -394,6 +405,16 @@ public enum DispatchBuilder {
                         metadata: ["origin": "\(request.headers[.origin] ?? "")"])
                     response = .problem(
                         status: .forbidden, message: "Cross-origin WebSocket handshake refused")
+                } else if let limit = timeout(request) {
+                    response = await Self.respond(
+                        within: limit, context: context, logger: requestLogger
+                    ) {
+                        do {
+                            return try await pipeline(context)
+                        } catch {
+                            return errorResponse(for: error, context: context)
+                        }
+                    }
                 } else {
                     do {
                         response = try await pipeline(context)
@@ -433,6 +454,94 @@ extension HTTPField.Name {
 }
 
 /// Reads propagation headers out of `HTTPFields` for trace extraction.
+extension DispatchBuilder {
+    /// Runs `work` under a deadline and answers 503 when it passes.
+    ///
+    /// The work runs in its own task so the answer does not wait for it: a
+    /// handler blocked in code that ignores cancellation (a synchronous
+    /// library call, a lock) would otherwise hold the response for as long
+    /// as it blocks, which is the failure the limit exists to bound. The task
+    /// is cancelled either way. `Deadline.current` is set inside it for
+    /// anything the request calls.
+    static func respond(
+        within limit: Duration, context: RequestContext, logger: Logger,
+        _ work: @escaping @Sendable () async -> Response
+    ) async -> Response {
+        let deadline = ContinuousClock.now.advanced(by: limit)
+        let first = FirstResponse()
+        return await withCheckedContinuation { continuation in
+            first.install(continuation)
+            let timer = Task {
+                try await Task.sleep(until: deadline, clock: .continuous)
+                if first.resolve(context.coders.renderError(.serviceUnavailable, "Request timed out")) {
+                    logger.warning("request timed out", metadata: ["limit": "\(limit)"])
+                    first.fireTimeout()
+                }
+            }
+            let handler = Task {
+                let response = await Deadline.$current.withValue(deadline) { await work() }
+                if first.resolve(response) { timer.cancel() }
+            }
+            first.onTimeout { handler.cancel() }
+        }
+    }
+}
+
+/// Resumes a continuation with whichever response arrives first.
+final class FirstResponse: Sendable {
+    private struct State {
+        var continuation: CheckedContinuation<Response, Never>?
+        var pending: Response?
+        var done = false
+        var onTimeout: (@Sendable () -> Void)?
+        var timedOut = false
+    }
+    private let state = Mutex(State())
+
+    func install(_ continuation: CheckedContinuation<Response, Never>) {
+        let early = state.withLock { state -> Response? in
+            if let pending = state.pending { return pending }
+            state.continuation = continuation
+            return nil
+        }
+        if let early { continuation.resume(returning: early) }
+    }
+
+    /// True if this was the first.
+    @discardableResult
+    func resolve(_ response: Response) -> Bool {
+        let (winner, continuation) = state.withLock {
+            state -> (Bool, CheckedContinuation<Response, Never>?) in
+            guard !state.done else { return (false, nil) }
+            state.done = true
+            guard let continuation = state.continuation else {
+                state.pending = response
+                return (true, nil)
+            }
+            state.continuation = nil
+            return (true, continuation)
+        }
+        continuation?.resume(returning: response)
+        return winner
+    }
+
+    func onTimeout(_ action: @escaping @Sendable () -> Void) {
+        let alreadyFired = state.withLock { state -> Bool in
+            if state.timedOut { return true }
+            state.onTimeout = action
+            return false
+        }
+        if alreadyFired { action() }
+    }
+
+    func fireTimeout() {
+        state.withLock { state -> (@Sendable () -> Void)? in
+            state.timedOut = true
+            return state.onTimeout
+        }?()
+    }
+}
+
 struct HTTPFieldsExtractor: Extractor {
     func extract(key: String, from carrier: HTTPFields) -> String? {
         guard let name = HTTPField.Name(key) else { return nil }

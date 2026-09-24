@@ -177,6 +177,10 @@ public struct OutboundHTTPConfigurationError: Error, Sendable, CustomStringConve
 /// response is returned as it is, because waiting a minute inside a request
 /// helps nobody.
 ///
+/// **Deadlines.** Inside a request with a timeout (`Deadline.current`),
+/// each attempt's timeout shrinks to the time left, and no retry waits past
+/// it.
+///
 /// **Trace context** is whatever span is current (the server span, inside
 /// a request), injected into the outgoing headers by the application's
 /// instrument, so W3C `traceparent` reaches the next service.
@@ -214,16 +218,24 @@ public struct OutboundHTTPClient: Sendable {
         var request = request
         tracer.inject(span.context, into: &request.headers, using: HTTPFieldsInjector())
 
-        let timeout = request.timeout ?? policy.timeout
+        let configured = request.timeout ?? policy.timeout
         var attempt = 0
         while true {
             attempt += 1
+            // Inside a request with a deadline, never wait past it: the
+            // caller's client has already been answered by then.
+            let timeout = min(configured, Deadline.remaining ?? configured)
+            guard timeout > .zero else {
+                span.setStatus(SpanStatus(code: .error))
+                throw OutboundHTTPError.timedOut(.zero)
+            }
             do {
                 let response = try await transport.send(
                     request, timeout: timeout, maxResponseBytes: policy.maxResponseBytes)
                 if request.isIdempotent, attempt < policy.maxAttempts,
                     policy.retryStatuses.contains(response.status.code),
-                    let wait = retryDelay(response, attempt: attempt)
+                    let wait = retryDelay(response, attempt: attempt),
+                    wait < (Deadline.remaining ?? .seconds(Int64.max))
                 {
                     logger.debug(
                         "retrying",
@@ -236,6 +248,7 @@ public struct OutboundHTTPClient: Sendable {
                 return response
             } catch let error as OutboundHTTPError
                 where error.isRetryable && request.isIdempotent && attempt < policy.maxAttempts
+                    && (Deadline.remaining.map { $0 > .zero } ?? true)
             {
                 logger.debug("retrying", metadata: ["error": "\(error)", "host": "\(host)"])
                 try await Task.sleep(for: policy.backoff(after: attempt))

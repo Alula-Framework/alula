@@ -235,12 +235,14 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             bodyModeClause = ""
         }
 
+        let timeoutClause = route.timeoutText.map { ", timeout: \($0)" } ?? ""
+
         var lines: [String] = []
         lines.append(
             "static func \(factoryName(for: route, index: index))(_ make: @escaping @Sendable (AlulaWeb.RequestContext) throws -> Self) -> AlulaWeb.RouteRegistration {"
         )
         lines.append(
-            "    AlulaWeb.RouteRegistration(method: \"\(route.kind.httpMethod)\", path: \"\(path)\", kind: \(kind), source: String(reflecting: Self.self) + \".\(route.methodName)\"\(pipelinesClause)\(bodyModeClause)) { context in"
+            "    AlulaWeb.RouteRegistration(method: \"\(route.kind.httpMethod)\", path: \"\(path)\", kind: \(kind), source: String(reflecting: Self.self) + \".\(route.methodName)\"\(pipelinesClause)\(bodyModeClause)\(timeoutClause)) { context in"
         )
         for line in handlerLines {
             lines.append("        \(line)")

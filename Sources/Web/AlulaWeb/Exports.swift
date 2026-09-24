@@ -66,6 +66,7 @@ extension RouteRegistration {
         source: String = "<direct>",
         pipelines: [PipelineLane] = [.default],
         bodyMode: BodyMode = .buffered(maxBytes: nil),
+        timeout: RequestTimeout = .default,
         handler: @escaping @Sendable (RequestContext) async throws -> Response
     ) {
         // A method string this does not recognize is a build-generator bug
@@ -87,6 +88,7 @@ extension RouteRegistration {
             source: source,
             pipelines: pipelines,
             bodyMode: bodyMode,
+            timeout: timeout,
             handler: handler
         )
     }

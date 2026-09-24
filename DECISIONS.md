@@ -7,6 +7,35 @@ wrong, say so and it changes.
 
 ---
 
+## D51 — Request timeouts answer on time, whatever the handler does
+
+**Context.** GAPS.md §0 gap #5. Only the idle and header-read timeouts
+existed, so a stuck downstream call held a handler, and the client waiting
+on it, open indefinitely.
+
+**Chosen.**
+
+1. **The response does not wait for the handler.** The pipeline runs in its
+   own task, and dispatch resumes with whichever finishes first: the pipeline
+   or the timer. A structured race would wait for the child to end, and a
+   handler blocked in non-cooperative code would then hold the 503 for as long
+   as it blocks, which is the exact failure being bounded. The handler task is
+   cancelled. Its work may run on briefly after the client has been answered,
+   and that trade is accepted.
+2. **No default limit.** Existing long-polling and report routes would
+   otherwise start answering 503 on upgrade. `web.request-timeout-seconds`
+   opts in, and the docs recommend it.
+3. **The deadline travels as a task-local (`Deadline`, in AlulaCore), not on
+   `RequestContext`.** The context has a 128-byte layout budget with no
+   headroom (see the client-address notes). A task-local also reaches code
+   that never sees the context, such as the HTTP client or a repository.
+4. **503, not 504.** The server gave up on its own work, not on an upstream
+   it proxies.
+5. **Scope: pipeline until the response is ready.** A streamed response body
+   is paced by the client. Bounding it is `idle-timeout-seconds`'s job.
+
+---
+
 ## D50 — Validation is a protocol the decoder checks, and reports everything at once
 
 **Context.** GAPS.md §0 gap #4. Every handler checked its input by hand, one

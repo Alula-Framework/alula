@@ -69,6 +69,13 @@ let package = Package(
         .library(name: "AlulaCronCore", targets: ["AlulaCronCore"]),
         .library(name: "AlulaSchedulerTesting", targets: ["AlulaSchedulerTesting"]),
 
+        // MARK: Mail
+        // The mail seam and a development transport need nothing; the SMTP
+        // client needs NIO and TLS, so it sits behind the "SMTP" trait.
+        .library(name: "AlulaMail", targets: ["AlulaMail"]),
+        .library(name: "AlulaMailTesting", targets: ["AlulaMailTesting"]),
+        .library(name: "AlulaMailSMTP", targets: ["AlulaMailSMTP"]),
+
         // MARK: Queue
         // Durable background jobs: enqueue, retry, dead-letter. The seam is
         // dependency-free so alula-data can implement it with `traits: []`.
@@ -119,6 +126,10 @@ let package = Package(
         // JWTKit and AsyncHTTPClient again — the same two packages Security
         // brings, so a Security consumer resolves nothing new — and nothing
         // from Web.
+        .trait(
+            name: "SMTP",
+            description: "An SMTP client for AlulaMail: STARTTLS or implicit TLS, AUTH PLAIN/LOGIN."
+        ),
         .trait(
             name: "APNS",
             description: "Apple Push Notification service client.",
@@ -498,6 +509,37 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: Mail
+
+        .target(
+            name: "AlulaMail",
+            dependencies: [
+                "AlulaCore", "AlulaQueue",
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/Mail/AlulaMail",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AlulaMailTesting",
+            dependencies: ["AlulaMail"],
+            path: "Sources/Mail/AlulaMailTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AlulaMailSMTP",
+            dependencies: [
+                "AlulaCore", "AlulaMail",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["SMTP"])),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(traits: ["SMTP"])),
+                .product(
+                    name: "NIOSSL", package: "swift-nio-ssl", condition: .when(traits: ["SMTP"])),
+            ],
+            path: "Sources/Mail/AlulaMailSMTP",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Sessions
 
         // Dependency-free on purpose: alula-data implements `SessionStore`
@@ -665,6 +707,25 @@ let package = Package(
 
         // MARK: Tests
 
+        .testTarget(
+            name: "AlulaMailTests",
+            dependencies: [
+                "AlulaMail", "AlulaMailTesting", "AlulaQueue", "AlulaQueueTesting", "AlulaCore",
+            ],
+            path: "Tests/Mail/AlulaMailTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "AlulaMailSMTPTests",
+            dependencies: [
+                "AlulaMail", "AlulaCore",
+                .target(name: "AlulaMailSMTP", condition: .when(traits: ["SMTP"])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["SMTP"])),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(traits: ["SMTP"])),
+            ],
+            path: "Tests/Mail/AlulaMailSMTPTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "AlulaQueueTests",
             dependencies: [

@@ -16,7 +16,7 @@ first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
 **Still open, in rough priority order:** the functional gaps from the
-2026-09-24 audit (next section) — the email delivery seam next (the job queue is built, D47); then alula-web
+2026-09-24 audit (next section) — the outbound HTTP client next (the job queue and mail are built, D47/D48); then alula-web
 HTTP/2 (a design decision, not a task — see below); hangar composite-key
 associations; npm and Homebrew publishing; format debt — `alula` **1,725**
 violations and `alula-data` **1,064**, measured 2026-09-18, deliberately
@@ -176,7 +176,7 @@ check that looked present did nothing.
 | # | Gap | Size | Why it matters |
 |---|---|---|---|
 | 1 | ✅ *Built 2026-09-24 as alula 0.38.0 / alula-data 0.13.0 (D47); see Docs/queue.md.* ~~**Durable background job queue.**~~ Needs enqueue, retry with backoff, dead-lettering, delay, uniqueness, concurrency limits and status. | L | Three of five reviewers named it first. The scheduler is cron-only, with no persistence and no retries (`Docs/scheduler.md`), and hangar has no `SKIP LOCKED`. Email, webhook delivery and push retries have nothing to stand on; APNs' own docs tell apps to write "a scheduled job that drains a table". |
-| 2 | **Email delivery seam** (`MailDelivery` protocol and an SMTP or provider adapter) | S–M | Blocks sign-in phase 3c: reset, verification, magic links. `OneTimeTokens`' doc example already calls a `mailer` that does not exist. |
+| 2 | ✅ *Built 2026-09-24 as alula 0.39.0 (D48); see Docs/mail.md.* ~~**Email delivery seam**~~ (`MailDelivery` protocol and an SMTP or provider adapter) | S–M | Blocks sign-in phase 3c: reset, verification, magic links. `OneTimeTokens`' doc example already calls a `mailer` that does not exist. |
 | 3 | **Outbound HTTP client** | M | APNs, OIDC and JWKS each use `HTTPClient.shared` directly. Nothing shared provides timeouts, retries, a test double or trace-context propagation, so traces stop at the process boundary. |
 | 4 | **Declarative request validation** with aggregated field errors in problem+json | M | Every handler throws one `422` at a time by hand. swift-changeset validates for writes but not for request bodies. |
 | 5 | **Per-route request deadlines** | M | Only idle and header-read timeouts exist. A stuck downstream call holds the handler open indefinitely, and no `503`/`504` comes back. |

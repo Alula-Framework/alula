@@ -4,6 +4,40 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-09-24
+
+Email: gap #2 on the 2026-09-24 audit (GAPS.md §0). The sign-in flows still
+to come (password reset, email verification) need a way to deliver a link.
+
+### Added
+
+- **`AlulaMail`** (no trait).
+  - `MailMessage` and `MailAddress`, which refuse anything that could inject
+    a header or a recipient.
+  - The `MailTransport` seam.
+  - `Mailer.send` delivers now.
+  - `Mailer.sendLater(_:via:)` enqueues a `DeliverMail` job, run by
+    `mailer.deliveryHandler`. A 5xx is discarded; everything else is retried
+    for about a day.
+  - `MIMERenderer`: RFC 5322 with quoted-printable, multipart
+    alternative/mixed, RFC 2047 and RFC 2231.
+  - `LoggingMailTransport`, and `AlulaMailModule` with `mail.from`. Outside
+    `dev` and `test`, the module fails composition when no transport is
+    configured, unless `mail.transport: log`.
+- **`AlulaMailSMTP`** (new trait `SMTP`): an SMTP client on SwiftNIO.
+  - STARTTLS (required when asked for) or implicit TLS.
+  - `AUTH PLAIN`/`LOGIN`, SMTPUTF8, and one connection per message.
+  - `AlulaMailSMTPModule` reads `mail.smtp.*`.
+  - Credentials over plaintext are refused unless
+    `mail.smtp.allow-plaintext-auth: true`.
+- **`AlulaMailTesting`**: `RecordingMailTransport`.
+- CI runs the SMTP transport against Mailpit with STARTTLS required.
+
+### Fixed
+
+- A readiness test assumed five sequential probes finish within a second,
+  and failed on a slow CI runner. The reuse window is now tested directly.
+
 ## [0.38.0] - 2026-09-24
 
 A durable job queue, the first gap on the 2026-09-24 audit's list (GAPS.md

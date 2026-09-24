@@ -46,7 +46,7 @@ let package = Package(
     name: "versioned-consumer",
     platforms: [.macOS(.v15)],
     dependencies: [
-        .package(url: "file://$scratch/alula", from: "999.0.0", traits: ["Security", "APNS", "Telemetry"])
+        .package(url: "file://$scratch/alula", from: "999.0.0", traits: ["Security", "APNS", "SMTP", "Telemetry"])
     ],
     targets: [
         .executableTarget(
@@ -54,6 +54,7 @@ let package = Package(
             dependencies: [
                 .product(name: "AlulaSecurityCore", package: "alula"),
                 .product(name: "AlulaAPNS", package: "alula"),
+                .product(name: "AlulaMailSMTP", package: "alula"),
             ])
     ]
 )

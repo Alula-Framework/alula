@@ -170,9 +170,9 @@ struct ProbeTests {
         for _ in 0..<5 {
             #expect(await client.get("/actuator/health/ready").status == .ok)
         }
-        // One run served all five: the probe is unauthenticated, and each run
-        // is a round trip to the dependency.
-        #expect(calls.value == 1)
+        // How many runs that took depends on the machine's speed against the
+        // one-second window; `ReadinessChecksTests` pins the reuse itself.
+        #expect(calls.value >= 1)
     }
 
     @Test("draining fails readiness and leaves liveness alone")

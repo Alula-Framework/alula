@@ -7,6 +7,42 @@ wrong, say so and it changes.
 
 ---
 
+## D48 — Mail: a seam, a hand-rolled SMTP client, and refusing to start without a transport
+
+**Context.** GAPS.md §0 gap #2. Sign-in phase 3c (reset, verification) needs
+to deliver a link, and D39 had left "email delivery hook shape" open.
+
+**Chosen.**
+
+1. **A `MailTransport` seam taking a structured `MailMessage`, not raw
+   bytes.** A provider API wants fields; SMTP wants bytes. `MIMERenderer` is
+   public, so a transport of either kind is small.
+2. **SMTP hand-rolled on SwiftNIO and NIOSSL**, behind a new `SMTP` trait.
+   The dependency policy is Apple-adjacent and SSWG only, and no SMTP
+   library qualifies. The protocol subset a transactional sender needs
+   (EHLO, STARTTLS, AUTH, MAIL/RCPT/DATA) is small, and CI checks it against
+   a real server.
+3. **Failure classes decide retries.** Only a 5xx rejection of the sender,
+   a recipient or the content is permanent. **Authentication and TLS
+   failures are transient.** They are configuration mistakes, and treating
+   them as permanent would discard every mail queued while they are fixed.
+4. **No transport outside dev/test fails composition.** The alternative, a
+   log transport by default, gives the worst outcome: a production deploy
+   that starts, says nothing is wrong, and emails nobody their reset link.
+   `mail.transport: log` opts in on purpose.
+5. **`sendLater` is two explicit lines, not a module contribution.**
+   `AlulaMail` depends on `AlulaQueue`. If the mail module contributed
+   `queueHandlers`, every app linking mail would need the worker, or hit the
+   unconsumed-contribution error. The app adds `mailer.deliveryHandler`
+   itself.
+
+**Rejected.** A templating engine (Alula has none, deliberately). Connection
+pooling (transactional volume does not need it yet). Provider-specific
+transports in this release (each is small over the seam, so they are listed
+in Docs/mail.md as not yet done).
+
+---
+
 ## D47 — The job queue: at least once, two modules, fenced by attempt
 
 **Context.** GAPS.md §0's first gap. Three of five audit reviewers named it

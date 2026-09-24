@@ -21,6 +21,16 @@ jobs:
     # The official image pins the exact patch release. swift-actions/setup-swift
     # only accepts a minor version, and "6.2" was resolving to 6.2.1.
     container: swift:${{ matrix.swift }}
+    # A real SMTP server that insists on STARTTLS, so the SMTP transport's
+    # integration test runs here instead of skipping: the fake server in the
+    # unit suite cannot say whether a real MIME parser reads our messages.
+    services:
+      mailpit:
+        image: axllent/mailpit
+        env:
+          MP_SMTP_TLS_CERT: sans:mailpit
+          MP_SMTP_TLS_KEY: sans:mailpit
+          MP_SMTP_REQUIRE_STARTTLS: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +45,9 @@ jobs:
         run: swift build --enable-all-traits
 
       - name: Test
+        env:
+          ALULA_SMTP_TEST_HOST: mailpit
+          ALULA_SMTP_TEST_PORT: "1025"
         run: ./CI/run-tests.sh
 
       # A root build compiles every target regardless of traits, so it cannot
@@ -145,7 +158,8 @@ jobs:
                         AlulaAPNS AlulaAPNSTesting \
                         AlulaRateLimit AlulaRateLimitTesting \
                         AlulaTelemetryBridges \
-                        AlulaQueue AlulaQueueTesting; do
+                        AlulaQueue AlulaQueueTesting \
+                        AlulaMail AlulaMailTesting AlulaMailSMTP; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

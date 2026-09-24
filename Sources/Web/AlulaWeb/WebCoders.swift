@@ -111,6 +111,32 @@ public enum ProblemDetails {
     }
 }
 
+extension ProblemDetails {
+    struct ValidationBody: Encodable {
+        let status: Int
+        let title: String
+        let detail: String
+        let errors: [FieldError]
+    }
+
+    /// A ``ValidationFailure`` as RFC 9457 problem+json, with each field in
+    /// the `errors` extension member.
+    static func renderValidation(_ failure: ValidationFailure) -> Response {
+        let status = failure.httpStatus
+        let body = ValidationBody(
+            status: status.code, title: status.reasonPhrase,
+            detail: failure.errors.count == 1
+                ? "1 field is invalid" : "\(failure.errors.count) fields are invalid",
+            errors: failure.errors)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(body) else { return .status(status) }
+        var headers: HTTPFields = [:]
+        headers[.contentType] = "application/problem+json"
+        return .fixed(status: status, headers: headers, body: data)
+    }
+}
+
 extension WebCoders {
     /// Builds the coders from `web.*` configuration.
     ///

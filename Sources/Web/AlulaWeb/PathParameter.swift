@@ -138,7 +138,9 @@ public func decodeQuery<Value: Decodable>(
         // through `context.coders.formDecoder`, and a query string reaching
         // for its own instance meant the two could be configured apart
         // without anything saying so.
-        return try context.coders.formDecoder.decode(type, from: Data(query.utf8))
+        let value = try context.coders.formDecoder.decode(type, from: Data(query.utf8))
+        try validateIfValidatable(value)
+        return value
     } catch let error as DecodingError {
         throw HTTPError(.badRequest, queryErrorMessage(error, type: type))
     }

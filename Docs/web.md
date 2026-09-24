@@ -217,6 +217,52 @@ Transport settings come from the same `alula.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,
 `server.max-request-body-bytes`, `server.max-websocket-frame-bytes`.
 
+### Validation
+
+A `body:` or `query:` type that conforms to `Validatable` is checked after
+it decodes and before the handler runs:
+
+```swift
+struct Signup: Decodable, Validatable {
+    let name: String
+    let email: String
+    let age: Int
+    let pets: [Pet]
+
+    func validate(_ v: inout Validation) {
+        v.check("name", name, .notBlank, .length(max: 80))
+        v.check("email", email, .email)
+        v.check("age", age, .range(13...130))
+        v.each("pets", pets)          // Pet is Validatable too
+    }
+}
+```
+
+Every failing field is reported at once, as `422 Unprocessable Content`:
+
+```json
+{"status": 422, "title": "Unprocessable Content", "detail": "2 fields are invalid",
+ "errors": [{"field": "email", "message": "must be an email address"},
+            {"field": "pets[1].name", "message": "must not be blank"}]}
+```
+
+Decoding and validation answer different questions, and keep different
+statuses. A missing key or a string where a number belongs is a 400 from
+decoding. A well-formed value that makes no sense is a 422 from validation.
+Rules apply in order and the first failure per field wins, so a blank name is
+"must not be blank", not also "too short".
+
+The rules:
+- `notBlank`, `length(min:max:)`, `email`, `oneOf`, `matches`;
+- `range`, `min`, `max`;
+- `notEmpty`, `count(min:max:)`;
+- `ValidationRule.that(message) { … }` for anything else.
+
+An optional field is checked only when present. `require(_:_:_:)` records a
+cross-field condition ("end after start"), and `try value.validated()`
+validates anything by hand. With a custom error renderer, the message lists
+every field, since the `errors` member belongs to the problem+json shape.
+
 ### Roles protect routes
 
 A controller's roles apply to every route below it; a route's roles narrow

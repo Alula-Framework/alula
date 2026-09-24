@@ -7,6 +7,28 @@ wrong, say so and it changes.
 
 ---
 
+## D50 — Validation is a protocol the decoder checks, and reports everything at once
+
+**Context.** GAPS.md §0 gap #4. Every handler checked its input by hand, one
+`HTTPError(.unprocessableContent, …)` at a time.
+
+**Chosen.**
+- **A protocol, not a macro or property wrappers.** `validate(_:)` is plain
+  code: cross-field rules, conditionals and nested types need no special
+  syntax, and it is testable without a request. The body and query decoders
+  check the conformance at runtime, so every existing `body:`/`query:`
+  parameter gains it without a macro change.
+- **All failures at once**, in RFC 9457's extension-member style (`errors`).
+  One error per round trip is the gap this closes.
+- **400 for shape, 422 for meaning.** Decoding failures keep their 400. Only
+  a decoded but implausible value is a 422.
+- **No dependency on swift-changeset.** Changesets validate *writes* against
+  an entity. This validates *requests* against a DTO. The two overlap on a
+  few rules (email), and sharing them would make AlulaWeb depend on the data
+  layer.
+
+---
+
 ## D49 — The outbound HTTP client retries only what is safe to repeat
 
 **Context.** GAPS.md §0 gap #3. APNs, OIDC and JWKS each called

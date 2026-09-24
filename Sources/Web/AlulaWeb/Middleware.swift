@@ -108,6 +108,13 @@ public func errorResponse(for error: any Error, context: RequestContext) -> Resp
         return response
     }
     switch error {
+    case let failure as ValidationFailure:
+        let rendered = render(failure.httpStatus, failure.httpMessage)
+        // The default renderer's problem document gains the `errors` member;
+        // a custom renderer keeps its own shape, and the message lists every
+        // field regardless.
+        guard rendered.headers[.contentType] == "application/problem+json" else { return rendered }
+        return ProblemDetails.renderValidation(failure)
     case let routing as RoutingError:
         context.logger.error("request failed: \(routing.logDescription)")
         return render(routing.httpStatus, routing.httpMessage)

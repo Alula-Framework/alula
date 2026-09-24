@@ -255,18 +255,22 @@ public func decodeRequestBody<T: Decodable>(
     // Negotiation outside the decode's error wrapping: its 415 must reach
     // the wire as itself, never rewrapped into a decoding 400.
     let format = try negotiatedBodyFormat(of: context.request)
+    let value: T
     do {
         switch format {
         case .json:
-            return try context.coders.jsonDecoder.decode(type, from: context.request.body)
+            value = try context.coders.jsonDecoder.decode(type, from: context.request.body)
         case .form:
-            return try context.coders.formDecoder.decode(type, from: context.request.body)
+            value = try context.coders.formDecoder.decode(type, from: context.request.body)
         }
     } catch let error as DecodingError {
         throw BodyDecodingError(error.shortDescription)
     } catch {
         throw BodyDecodingError(String(describing: error))
     }
+    // Outside the wrapping above: a 422 must reach the wire as itself.
+    try validateIfValidatable(value)
+    return value
 }
 
 /// The raw-bytes escape hatch: a `body: Data` handler parameter receives

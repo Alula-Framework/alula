@@ -4,6 +4,29 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] - 2026-09-24
+
+Declarative request validation: gap #4 on the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **`Validatable`**. A `body:` or `query:` type that conforms is validated
+  after decoding and before the handler runs. Every failing field is reported
+  at once as a `422` problem+json, with an `errors` array of
+  `{field, message}`.
+- `Validation` supports:
+  - `check` with rules applied in order, the first failure per field
+    winning; optional fields are checked only when present;
+  - `require` for cross-field conditions;
+  - `nested` and `each`, reported as `pets[1].name`.
+- Rules:
+  - `notBlank`, `length`, `email`, `oneOf`, `matches`;
+  - `range`, `min`, `max`;
+  - `notEmpty`, `count`;
+  - `ValidationRule.that`.
+- `ValidationFailure` for validating by hand (`try value.validated()`). With a
+  custom error renderer, its message lists every field.
+
 ## [0.40.0] - 2026-09-24
 
 An outbound HTTP client: gap #3 on the 2026-09-24 audit (GAPS.md §0).

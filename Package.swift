@@ -69,6 +69,12 @@ let package = Package(
         .library(name: "AlulaCronCore", targets: ["AlulaCronCore"]),
         .library(name: "AlulaSchedulerTesting", targets: ["AlulaSchedulerTesting"]),
 
+        // MARK: HTTP client
+        // Calling other services: retries where safe, trace propagation.
+        // AsyncHTTPClient is a heavy dependency, so the "HTTPClient" trait.
+        .library(name: "AlulaHTTPClient", targets: ["AlulaHTTPClient"]),
+        .library(name: "AlulaHTTPClientTesting", targets: ["AlulaHTTPClientTesting"]),
+
         // MARK: Mail
         // The mail seam and a development transport need nothing; the SMTP
         // client needs NIO and TLS, so it sits behind the "SMTP" trait.
@@ -126,6 +132,10 @@ let package = Package(
         // JWTKit and AsyncHTTPClient again — the same two packages Security
         // brings, so a Security consumer resolves nothing new — and nothing
         // from Web.
+        .trait(
+            name: "HTTPClient",
+            description: "An outbound HTTP client: timeouts, safe retries, trace propagation."
+        ),
         .trait(
             name: "SMTP",
             description: "An SMTP client for AlulaMail: STARTTLS or implicit TLS, AUTH PLAIN/LOGIN."
@@ -509,6 +519,36 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: HTTP client
+
+        .target(
+            name: "AlulaHTTPClient",
+            dependencies: [
+                "AlulaCore",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "Instrumentation", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
+                .product(
+                    name: "ServiceContextModule", package: "swift-service-context", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "AsyncHTTPClient", package: "async-http-client", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "NIOFoundationCompat", package: "swift-nio", condition: .when(traits: ["HTTPClient"])),
+            ],
+            path: "Sources/HTTPClient/AlulaHTTPClient",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AlulaHTTPClientTesting",
+            dependencies: [
+                .target(name: "AlulaHTTPClient", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["HTTPClient"])),
+            ],
+            path: "Sources/HTTPClient/AlulaHTTPClientTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Mail
 
         .target(
@@ -707,6 +747,23 @@ let package = Package(
 
         // MARK: Tests
 
+        .testTarget(
+            name: "AlulaHTTPClientTests",
+            dependencies: [
+                "AlulaCore",
+                .target(name: "AlulaHTTPClient", condition: .when(traits: ["HTTPClient"])),
+                .target(name: "AlulaHTTPClientTesting", condition: .when(traits: ["HTTPClient"])),
+                .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaTransport", condition: .when(traits: ["Web"])),
+                .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "InMemoryTracing", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "Instrumentation", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
+                .product(name: "ServiceContextModule", package: "swift-service-context", condition: .when(traits: ["HTTPClient"])),
+            ],
+            path: "Tests/HTTPClient/AlulaHTTPClientTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "AlulaMailTests",
             dependencies: [

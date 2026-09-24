@@ -7,6 +7,38 @@ wrong, say so and it changes.
 
 ---
 
+## D49 — The outbound HTTP client retries only what is safe to repeat
+
+**Context.** GAPS.md §0 gap #3. APNs, OIDC and JWKS each called
+AsyncHTTPClient directly. Applications had nothing, so their traces stopped
+at the process boundary and each wrote its own retries.
+
+**Chosen.**
+
+1. **Idempotency decides retries**, inferred from the method, or asserted
+   with an `Idempotency-Key` header or `OutboundRequest.idempotent`. A POST
+   that timed out may have taken effect, so repeating it is the caller's
+   decision, never the client's.
+2. **A non-2xx is a response, not an error.** When retries run out, the last
+   response is returned. A caller that needs success says so with `decode`.
+   Throwing on every 404 makes "not found" handling a catch block.
+3. **`Retry-After` is capped (10 s), not obeyed blindly.** A server asking
+   for a minute gets its 429 handed back, rather than a request handler
+   sleeping for a minute.
+4. **The tracer is injectable** (default `InstrumentationSystem.tracer`), so
+   a test can see the span and the injected context without bootstrapping a
+   process-wide instrument.
+5. **Behind a trait.** AsyncHTTPClient is heavy, and most applications that
+   do not call out should not resolve it.
+
+**Rejected, for now.** A circuit breaker, which needs shared state per host
+and a policy discussion. `X-Request-ID` propagation, which needs the request
+id in task-local context first. Moving APNs, OIDC and JWKS onto this client,
+because their narrower seams work and are tested. All three are listed in
+Docs/http-client.md.
+
+---
+
 ## D48 — Mail: a seam, a hand-rolled SMTP client, and refusing to start without a transport
 
 **Context.** GAPS.md §0 gap #2. Sign-in phase 3c (reset, verification) needs

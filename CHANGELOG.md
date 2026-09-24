@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] - 2026-09-24
+
+An outbound HTTP client: gap #3 on the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **`AlulaHTTPClient`** (new trait `HTTPClient`).
+  - `OutboundHTTPClient` over AsyncHTTPClient, with a timeout on every
+    attempt.
+  - Retries only idempotent requests (`GET`, `HEAD`, `OPTIONS`, `PUT`,
+    `DELETE`, or anything with an `Idempotency-Key`). It retries on connection
+    failures, timeouts and 429/502/503/504, with jittered backoff, and honours
+    `Retry-After` up to 10 s.
+  - A client span per request, with trace context injected into the outgoing
+    headers. The span records the URL without its query string.
+  - A response size cap. A non-2xx is a response; `decode` demands success.
+  - `AlulaHTTPClientModule` reads `http-client.*`.
+- **`AlulaHTTPClientTesting`**: `StubHTTPTransport` answers from a closure or
+  a list, and records every attempt.
+- Wire tests run the real transport against a real Alula server.
+
 ## [0.39.0] - 2026-09-24
 
 Email: gap #2 on the 2026-09-24 audit (GAPS.md §0). The sign-in flows still

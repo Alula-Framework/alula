@@ -55,15 +55,16 @@ struct ChannelClientTests {
     @Test("a handler that never replies times the push out")
     func pushTimeout() async throws {
         let harness = try ClientHarness()
-        let client = harness.makeClient(
-            configuration: ChannelClientConfiguration(pushTimeout: .milliseconds(100))
-        )
+        let client = harness.makeClient()
         try await client.connect()
         let counter = client.channel("counter:1")
+        // The join keeps the default timeout: a client-wide 100 ms applied to
+        // it too, and on a slow CI runner the join timed out instead of the
+        // push under test.
         try await counter.join()
 
         await #expect(throws: ChannelClientError.timedOut) {
-            try await counter.push("silent")
+            try await counter.push("silent", timeout: .milliseconds(100))
         }
         await client.disconnect()
     }

@@ -4,6 +4,45 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0] - 2026-09-24
+
+Small gaps from the 2026-09-24 audit (GAPS.md §0, "Smaller, by area").
+
+### Added
+
+- **API keys** (AlulaSecurityCore): `APIKeys.issue` makes `<prefix>_<id>_<secret>`
+  keys, `APIKeyValidator` checks them as bearer tokens, and `APIKeyStore` /
+  `InMemoryAPIKeyStore` hold them.
+  - Only a SHA-256 digest of the secret is stored, and it is compared in
+    constant time.
+  - Revoked and expired keys are refused.
+  - A token without the prefix goes to an optional fallback validator.
+- **WebSocket subprotocols.** `WebSocketUpgradeHandler.subprotocols` lists
+  what a handler speaks. The first one the client offered is agreed in the
+  handshake and arrives as `WebSocketConnection.subprotocol`.
+- **Webhook signatures** (AlulaSecurityCore): `WebhookSignature` verifies
+  GitHub, Stripe, Standard Webhooks and plain HMAC-SHA256 signatures over the
+  raw body. It takes several secrets for rotation and refuses a signed
+  timestamp outside a tolerance window. `VerifyWebhookSignature` applies one
+  to a lane.
+- **`RequestContext.checkWritePreconditions(etag:lastModified:required:)`**
+  answers `412` to a write based on a stale `If-Match` or
+  `If-Unmodified-Since`, and `428` to one without either when `required`.
+- `server.websocket-ping-seconds` (default 30, `0` for none) sets how often
+  sockets are pinged. A socket that misses a pong is closed. The interval was
+  fixed at 30 seconds before, by the transport's default.
+
+### Changed
+
+- A plain `OPTIONS` on a known path answers `204` with `Allow`, where it
+  answered `405`. `Allow` now lists `OPTIONS` too, in both answers.
+
+### Tests
+
+- A JSON body nested 100,000 levels deep is pinned as a `400`. Foundation's
+  parser refuses nesting past 512 levels, which is why alula has no depth
+  limit of its own.
+
 ## [0.45.0] - 2026-09-24
 
 Application commands: the last framework piece of gap #10 on the 2026-09-24

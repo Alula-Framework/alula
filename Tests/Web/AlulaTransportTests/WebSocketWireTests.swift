@@ -1,8 +1,13 @@
+import protocol AlulaWeb.WebSocketUpgradeHandler
+import struct AlulaWeb.WebSocketConnection
+import struct AlulaWeb.RequestContext
+import struct AlulaWeb.RouteRegistration
 import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
 import NIOWebSocket
+import Synchronization
 import Testing
 
 /// Real-socket WebSocket sessions against a bound `AlulaTransport` (§6.1),
@@ -19,6 +24,8 @@ struct WebSocketWireTests {
     private func withWebSocket(
         port: Int,
         path: String,
+        headers: [(String, String)] = [],
+        response: (@Sendable (HTTPResponseHead) -> Void)? = nil,
         _ body: @escaping @Sendable (
             NIOAsyncChannelInboundStream<WebSocketFrame>,
             NIOAsyncChannelOutboundWriter<WebSocketFrame>
@@ -30,8 +37,9 @@ struct WebSocketWireTests {
         .connect(host: "127.0.0.1", port: port) { channel in
             channel.eventLoop.makeCompletedFuture {
                 let upgrader = NIOTypedWebSocketClientUpgrader<ClientUpgradeResult>(
-                    upgradePipelineHandler: { channel, _ in
-                        channel.eventLoop.makeCompletedFuture {
+                    upgradePipelineHandler: { channel, head in
+                        response?(head)
+                        return channel.eventLoop.makeCompletedFuture {
                             .websocket(
                                 try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(
                                     wrappingChannelSynchronously: channel
@@ -44,7 +52,7 @@ struct WebSocketWireTests {
                     version: .http1_1,
                     method: .GET,
                     uri: path,
-                    headers: HTTPHeaders([("Host", "localhost"), ("Content-Length", "0")])
+                    headers: HTTPHeaders([("Host", "localhost"), ("Content-Length", "0")] + headers)
                 )
                 let configuration = NIOTypedHTTPClientUpgradeConfiguration(
                     upgradeRequestHead: requestHead,
@@ -97,6 +105,32 @@ struct WebSocketWireTests {
                 #expect(echo.flatMap(self.text) == "echo: hi")
             }
         }
+    }
+
+    struct SubprotocolHandler: WebSocketUpgradeHandler {
+        var subprotocols: [String] { ["chat.v2"] }
+        func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+            try await connection.send(connection.subprotocol ?? "none")
+        }
+    }
+
+    @Test("the agreed subprotocol is in the 101 response")
+    func subprotocolOnTheWire() async throws {
+        let route = RouteRegistration(
+            method: .get, path: "/chat", kind: .upgrade(.webSocket), source: "t"
+        ) { context in .upgrade(handler: SubprotocolHandler(), context: context) }
+        let agreed = Mutex<String?>(nil)
+        try await withRunningServer(routes: [route]) { port in
+            try await withWebSocket(
+                port: port, path: "/chat", headers: [("Sec-WebSocket-Protocol", "chat.v1, chat.v2")],
+                response: { head in agreed.withLock { $0 = head.headers.first(name: "Sec-WebSocket-Protocol") } }
+            ) { inbound, _ in
+                var iterator = inbound.makeAsyncIterator()
+                let first = try await iterator.next()
+                #expect(first.flatMap(self.text) == "chat.v2")
+            }
+        }
+        #expect(agreed.withLock { $0 } == "chat.v2")
     }
 
     @Test func aBurstSurvivesASlowHandler() async throws {

@@ -404,6 +404,51 @@ struct WebSocketIntegrationTests {
         await socket.waitForServer()
     }
 
+    /// Says which subprotocol it got, then closes.
+    struct ChatProtocolHandler: WebSocketUpgradeHandler {
+        var subprotocols: [String] { ["chat.v2", "chat.v1"] }
+        func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+            try await connection.send(connection.subprotocol ?? "none")
+            try await connection.close()
+        }
+    }
+
+    @Test("the handler's preferred subprotocol among the client's offers is agreed")
+    func subprotocolNegotiation() async throws {
+        let route = RouteRegistration(
+            method: .get, path: "/chat", kind: .upgrade(.webSocket), source: "t"
+        ) { context in .upgrade(handler: ChatProtocolHandler(), context: context) }
+        let client = try TestClient(routes: [route])
+
+        for (offered, expected) in [
+            ("chat.v1, chat.v2", "chat.v2"), ("chat.v1", "chat.v1"), ("chat.v9", "none"),
+        ] {
+            let response = await client.execute(
+                Request(
+                    method: .get, path: "/chat",
+                    headers: [
+                        .connection: "Upgrade", .upgrade: "websocket",
+                        .secWebSocketKey: "dGhlIHNhbXBsZSBub25jZQ==", .secWebSocketVersion: "13",
+                        .secWebSocketProtocol: offered,
+                    ]))
+            guard case .upgrade(.webSocket(let upgrade)) = response else {
+                Issue.record("not an upgrade")
+                return
+            }
+            #expect(upgrade.subprotocol == (expected == "none" ? nil : expected))
+
+            let socket = try await client.webSocket(
+                "/chat", headers: [.secWebSocketProtocol: offered])
+            for await frame in socket.frames {
+                if case .text(let text) = frame {
+                    #expect(text == expected)
+                    break
+                }
+            }
+            await socket.waitForServer()
+        }
+    }
+
     @Test func nonUpgradeRouteRefusesWebSocket() async throws {
         let client = try TestClient(routes: userRoutes())
         await #expect(throws: TestClient.TestClientError.self) {

@@ -68,6 +68,19 @@ struct ValidationTests {
         #expect(response.bodyText == "welcome Ada")
     }
 
+    /// Foundation's parser refuses nesting past 512 levels before any
+    /// decoding starts, so a deeply nested body cannot exhaust the stack.
+    /// Pinned because alula relies on it rather than scanning bodies itself.
+    @Test("a body nested far too deep is a 400, not a crash")
+    func deepNesting() async throws {
+        let depth = 100_000
+        let body = #"{"name":"#.utf8 + Array(repeating: UInt8(ascii: "["), count: depth)
+            + Array(repeating: UInt8(ascii: "]"), count: depth) + #"}"#.utf8
+        let response = await (try client()).post(
+            "/v/signup", headers: [.contentType: "application/json"], body: Data(body))
+        #expect(response.status == .badRequest)
+    }
+
     @Test("every failing field is reported at once, as a 422 problem with errors")
     func allFieldsAtOnce() async throws {
         let response = try await client().post(

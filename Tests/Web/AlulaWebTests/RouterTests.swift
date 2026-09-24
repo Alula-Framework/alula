@@ -234,7 +234,19 @@ struct RoutingMiddlewareTests {
         let context = RequestContext.mock(method: .get, path: "/only-post")
         let response = try await router.responder(context)
         #expect(response.status == .methodNotAllowed)
-        #expect(response.headers[.allow] == "POST")
+        #expect(response.headers[.allow] == "POST, OPTIONS")
+    }
+
+    @Test("a plain OPTIONS on a known path is a 204 listing the methods")
+    func optionsIsAnswered() async throws {
+        let router = try Router(routes: [
+            RouteRegistration(method: .post, path: "/only-post", source: "t") { _ in .noContent }
+        ])
+        let known = try await router.responder(RequestContext.mock(method: .options, path: "/only-post"))
+        #expect(known.status == .noContent)
+        #expect(known.headers[.allow] == "POST, OPTIONS")
+        let unknown = try await router.responder(RequestContext.mock(method: .options, path: "/nope"))
+        #expect(unknown.status == .notFound)
     }
 
     @Test func thrownHandlerErrorsBecomeErrorResponses() async throws {

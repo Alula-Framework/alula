@@ -54,6 +54,14 @@ public struct AlulaTransportConfiguration: ServerTransportConfiguration {
     /// a handler that is genuinely bursty, and remember what it multiplies.
     public var webSocketReadAhead: Int
 
+    /// How often the server pings each WebSocket. A peer that has not
+    /// answered the previous ping by the next one is closed, which is how a
+    /// connection whose client vanished without a close (a phone going
+    /// out of coverage, a laptop lid shutting) is noticed at all. `nil` sends
+    /// no pings. Thirty seconds, which also keeps most proxies and load
+    /// balancers from dropping a quiet socket.
+    public var webSocketPingInterval: Duration?
+
     /// How long a connection may sit without completing a request before it
     /// is closed. `nil` waits forever, which is what this used to do.
     ///
@@ -181,6 +189,7 @@ public struct AlulaTransportConfiguration: ServerTransportConfiguration {
         maxRequestBodyBytes: Int = 1 << 20,
         maxWebSocketFrameBytes: Int = 1 << 20,
         webSocketReadAhead: Int = 1,
+        webSocketPingInterval: Duration? = .seconds(30),
         idleTimeout: Duration? = .seconds(60),
         tls: TLS? = nil,
         onBound: (@Sendable (_ port: Int) -> Void)? = nil
@@ -191,6 +200,7 @@ public struct AlulaTransportConfiguration: ServerTransportConfiguration {
         self.maxRequestBodyBytes = maxRequestBodyBytes
         self.maxWebSocketFrameBytes = maxWebSocketFrameBytes
         self.webSocketReadAhead = webSocketReadAhead
+        self.webSocketPingInterval = webSocketPingInterval
         self.idleTimeout = idleTimeout
         self.tls = tls
         self.onBound = onBound
@@ -205,6 +215,10 @@ public struct AlulaTransportConfiguration: ServerTransportConfiguration {
                 "server.max-request-body-bytes", as: Int.self) ?? 1 << 20,
             maxWebSocketFrameBytes: try configuration.getIfPresent(
                 "server.max-websocket-frame-bytes", as: Int.self) ?? 1 << 20,
+            // 0 turns pings off, as `idle-timeout-seconds: 0` turns that off.
+            webSocketPingInterval: try configuration.getIfPresent(
+                "server.websocket-ping-seconds", as: Int.self)
+                .map { $0 <= 0 ? nil : Duration.seconds($0) } ?? .seconds(30),
             // 0 disables it explicitly — an operator who wants no bound
             // should have to write that down rather than delete a line.
             idleTimeout: try configuration.getIfPresent(

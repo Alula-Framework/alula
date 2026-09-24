@@ -215,10 +215,11 @@ struct CORSTests {
             Request(
                 method: .options, path: "/api/items",
                 headers: [.origin: "https://app.example.com"]))
-        // Routed, and the router answers 405 with Allow — not swallowed as a
-        // preflight and answered 204.
-        #expect(response.status == .methodNotAllowed)
+        // Routed, and the router answers it with Allow — not swallowed as a
+        // preflight, which would carry the CORS headers.
+        #expect(response.status == .noContent)
         #expect(response.headers[.allow] != nil)
+        #expect(response.headers[.accessControlAllowMethods] == nil)
     }
 
     @Test("a lane without CORS does not get the headers")

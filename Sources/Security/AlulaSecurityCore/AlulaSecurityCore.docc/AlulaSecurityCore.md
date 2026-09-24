@@ -167,6 +167,18 @@ the whole story.
 - ``OneTimeTokens``
 - ``OneTimeTokenError``
 
+### Webhooks
+
+- ``WebhookSignature``
+- ``VerifyWebhookSignature``
+
+### API keys
+
+- ``APIKeys``
+- ``APIKeyStore``
+- ``InMemoryAPIKeyStore``
+- ``APIKeyValidator``
+
 ### Where keys come from
 
 - ``JWKSSource``

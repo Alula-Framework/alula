@@ -326,7 +326,13 @@ public struct Router: Sendable {
         case .notFound:
             return context.coders.renderError(.notFound, "Not Found")
         case .methodNotAllowed(let allow):
-            let allowed = allow.map(\.rawValue).joined(separator: ", ")
+            // Every known path answers OPTIONS (RFC 9110 §9.3.7): a 204
+            // listing what it accepts. A CORS preflight never gets here; the
+            // CORS middleware answers it first.
+            let allowed = (allow + [.options]).map(\.rawValue).joined(separator: ", ")
+            if context.request.method == .options {
+                return Response.noContent.settingHeader(.allow, allowed)
+            }
             return context.coders.renderError(.methodNotAllowed, "Method Not Allowed")
                 .settingHeader(.allow, allowed)
         case .matched:

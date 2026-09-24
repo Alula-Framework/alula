@@ -206,10 +206,15 @@ extension Response {
         handler: any WebSocketUpgradeHandler,
         context: RequestContext
     ) -> Response {
-        .upgrade(
+        let offered = context.request.headers[values: .secWebSocketProtocol]
+            .flatMap { $0.split(separator: ",") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        let agreed = handler.subprotocols.first { offered.contains($0) }
+        return .upgrade(
             .webSocket(
-                WebSocketUpgrade(handler: handler) { connection in
-                    try await handler.handle(upgraded: connection, context: context)
+                WebSocketUpgrade(handler: handler, subprotocol: agreed) { connection in
+                    try await handler.handle(
+                        upgraded: connection.agreeing(on: agreed), context: context)
                 }))
     }
 
@@ -291,12 +296,16 @@ public struct WebSocketUpgrade: Sendable {
     public let handler: any WebSocketUpgradeHandler
     /// Takes ownership of the upgraded connection for its lifetime.
     public let run: @Sendable (WebSocketConnection) async throws -> Void
+    /// What the handshake answers in `Sec-WebSocket-Protocol`; nil for no header.
+    public let subprotocol: String?
 
     public init(
         handler: any WebSocketUpgradeHandler,
+        subprotocol: String? = nil,
         run: @escaping @Sendable (WebSocketConnection) async throws -> Void
     ) {
         self.handler = handler
+        self.subprotocol = subprotocol
         self.run = run
     }
 }

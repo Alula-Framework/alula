@@ -183,19 +183,21 @@ check that looked present did nothing.
 | 6 | ✅ *Built 2026-09-24 as alula 0.43.0 (D52); see Docs/openapi.md.* ~~**OpenAPI emission**~~ | L | Cheaper here than anywhere else, because the build plugin already holds the route, parameter and body-type model. |
 | 7 | ✅ *Built 2026-09-24 as alula-data 0.14.0; see alula-data Docs/data-postgres.md, Read replicas.* ~~**Read replicas unreachable**~~ from alula-data | M | Hangar routes reads to a replica, but `withRepo` pins one connection and nothing configures a replica. |
 | 8 | ✅ *Built 2026-09-24 as alula 0.44.0 (D53): JSON logs and `logging.*`; exporters stay the application's choice; the demo template ships an `alula-prod.yaml`.* ~~**Production observability defaults**~~ | S–M | No JSON `LogHandler`, no log level from configuration, and no metrics or tracing backend in the templates. Outbound trace propagation is covered by #3. |
-| 9 | ✅ *Built 2026-09-24 as alula-data 0.15.0: `AlulaPubSubPostgres` over LISTEN/NOTIFY (payloads ≤ 8000 bytes). An outbox is still open.* ~~**Postgres-only clustering**~~: LISTEN/NOTIFY PubSub adapter, outbox | M | Running more than one replica requires Valkey today. |
-| 10 | ◐ *Mostly built 2026-09-24 in alula-cli: `alula dev`, `alula routes`, `alula generate controller`, a Dockerfile per template. Still open: `alula generate auth` (sign-in phase 4) and application-defined commands.* ~~**CLI stops at `new` and `migrate`**~~ | M–L | No routes listing, dev watch mode, generators (including the planned `alula generate auth`), app-defined commands or Dockerfile. |
+| 9 | ✅ *Built 2026-09-24 as alula-data 0.15.0: `AlulaPubSubPostgres` over LISTEN/NOTIFY (payloads ≤ 8000 bytes); the outbox as alula-data 0.16.0 (`Outbox`, `AlulaOutboxModule`).* ~~**Postgres-only clustering**~~: LISTEN/NOTIFY PubSub adapter, outbox | M | Running more than one replica requires Valkey today. |
+| 10 | ✅ *Built 2026-09-24: in alula-cli `alula dev`, `alula routes`, `alula generate controller`, `alula generate auth` and `alula run`, a Dockerfile per template; application commands as alula 0.45.0 (D54). `generate auth` is verified by hand, not in CI.* ~~**CLI stops at `new` and `migrate`**~~ | M–L | No routes listing, dev watch mode, generators (including the planned `alula generate auth`), app-defined commands or Dockerfile. |
 
 **Smaller, by area** (S unless marked):
 
 - **HTTP:**
   - Responses are JSON only: no `Accept` negotiation and no `406` (M).
   - A `Decodable` body can't be decoded from multipart.
-  - No `If-Match` helper for PUT/PATCH, and no pagination envelope or `Link` headers.
-  - No idempotency keys (M) and no webhook HMAC verification.
+  - ~~No `If-Match` helper for PUT/PATCH~~ *(built in 0.46.0)*, and no pagination envelope or `Link` headers.
+  - No idempotency keys (M). ~~No webhook HMAC verification.~~ *Built in 0.46.0.*
   - TLS certificates can't be reloaded without a restart (M).
-  - No WebSocket subprotocol negotiation, compression or server pings.
-  - A plain `OPTIONS` answers `405`, not `204`.
+  - ~~No WebSocket subprotocol negotiation, compression or server pings.~~
+    *Subprotocols and a configurable ping built in 0.46.0; pings already ran every
+    30 s by the transport's default. Compression (permessage-deflate) is still open.*
+  - ~~A plain `OPTIONS` answers `405`, not `204`.~~ *Built in 0.46.0.*
 - **Data:**
   - No SQLite (L), and `InMemoryDataSource` cannot run queries.
   - Hangar has no JSONB operators, full-text search, bulk upsert or keyset
@@ -207,11 +209,15 @@ check that looked present did nothing.
 - **Security:**
   - Authorization is roles and scopes only: no policy or ownership checks (M).
   - No MFA (TOTP planned for phase 5; WebAuthn L).
-  - No API-key validator (S–M).
+  - ~~No API-key validator (S–M).~~ *Built in 0.46.0. Still open: it cannot
+    fall back to `AlulaOIDCModule`'s validator, since that module provides
+    `any TokenValidator` itself.*
   - mTLS verifies the client certificate but never hands it to the request (M).
   - No first-party JWT or refresh-token issuance (M).
   - No audit trail carrying subject and address.
-  - No JSON depth or key-count limits.
+  - ~~No JSON depth or key-count limits.~~ *Not a gap: Foundation's parser refuses
+    nesting past 512 levels (pinned by a test in 0.46.0), and the body size limit
+    bounds key count.*
   - No breached-password check (belongs with phase 3c).
   - A socket doesn't notice when its session is revoked.
 - **Messaging and integrations:**

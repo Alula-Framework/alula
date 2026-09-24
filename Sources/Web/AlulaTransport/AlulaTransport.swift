@@ -106,7 +106,9 @@ public struct AlulaTransport: ServerTransport {
                     // which is the seam working.
                     switch upgrade {
                     case .webSocket(let webSocketUpgrade):
-                        return .upgrade([:]) { inbound, outbound, _ in
+                        var headers: HTTPFields = [:]
+                        headers[.secWebSocketProtocol] = webSocketUpgrade.subprotocol
+                        return .upgrade(headers) { inbound, outbound, _ in
                             try await Self.runUpgradedConnection(
                                 webSocketUpgrade,
                                 inbound: inbound,
@@ -133,6 +135,9 @@ public struct AlulaTransport: ServerTransport {
                     http1: .init(idleTimeout: idleTimeout),
                     ws: WebSocketServerConfiguration(
                         maxFrameSize: configuration.maxWebSocketFrameBytes,
+                        autoPing: configuration.webSocketPingInterval.map {
+                            .enabled(timePeriod: $0)
+                        } ?? .disabled,
                         validateUTF8: true
                     )
                 ),

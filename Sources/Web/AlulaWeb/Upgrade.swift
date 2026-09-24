@@ -18,6 +18,14 @@ import Foundation
 /// Alula Core, never the reverse — Web only ever sees this protocol, never
 /// a specific consumer's own types.
 public protocol WebSocketUpgradeHandler: Sendable {
+    /// The subprotocols this handler speaks (`Sec-WebSocket-Protocol`),
+    /// most preferred first. The first one the client also offered is
+    /// agreed in the handshake and handed over as
+    /// ``WebSocketConnection/subprotocol``. None agreed, and the handshake
+    /// carries no subprotocol, which a client that insisted on one treats
+    /// as a failure (RFC 6455 §4.1). Empty by default.
+    var subprotocols: [String] { get }
+
     /// Takes ownership of the now-upgraded connection for its lifetime.
     /// Alula Web's involvement ends the moment this is called — no further
     /// middleware runs, no response encoding happens on Web's side.
@@ -26,6 +34,10 @@ public protocol WebSocketUpgradeHandler: Sendable {
 
 /// The pre-generalization name, from when WebSocket was the only upgrade
 /// kind and the generic name did not yet have to be shared.
+extension WebSocketUpgradeHandler {
+    public var subprotocols: [String] { [] }
+}
+
 @available(*, deprecated, renamed: "WebSocketUpgradeHandler")
 public typealias ConnectionUpgradeHandler = WebSocketUpgradeHandler
 
@@ -71,6 +83,9 @@ public struct WebSocketCloseCode: Sendable, Equatable, RawRepresentable {
 public struct WebSocketConnection: Sendable {
     /// Inbound frames, protocol frames already handled by the transport.
     public let frames: WebSocketFrames
+    /// The subprotocol agreed in the handshake, from the handler's
+    /// ``WebSocketUpgradeHandler/subprotocols``; nil when none was.
+    public private(set) var subprotocol: String?
 
     private let sendFrame: @Sendable (WebSocketFrame) async throws -> Void
     private let closeConnection: @Sendable (WebSocketCloseCode, String) async throws -> Void
@@ -100,6 +115,12 @@ public struct WebSocketConnection: Sendable {
 
     /// Sends one frame. Throws `WebSocketError.connectionClosed` once the
     /// connection is gone.
+    func agreeing(on subprotocol: String?) -> WebSocketConnection {
+        var copy = self
+        copy.subprotocol = subprotocol
+        return copy
+    }
+
     public func send(_ frame: WebSocketFrame) async throws {
         try await sendFrame(frame)
     }

@@ -215,7 +215,8 @@ signature cannot reach, and `request.queryParam("page")` still returns the raw
 
 Transport settings come from the same `alula.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,
-`server.max-request-body-bytes`, `server.max-websocket-frame-bytes`.
+`server.max-request-body-bytes`, `server.max-websocket-frame-bytes`,
+`server.websocket-ping-seconds`.
 
 ### Request timeouts
 
@@ -541,6 +542,29 @@ Responses stream the same way. `Response.streaming` hands the producer a
 chunk, and reports a disconnected client at the next write — so a producer
 faster than its reader is slowed by it rather than buffered ahead of it.
 
+### Refusing lost updates
+
+Two clients read a document, both edit it, both save: the second save
+silently erases the first. `checkWritePreconditions` refuses the second with
+`412` when the client sends back the `ETag` it read:
+
+```swift
+@PutRoute("/documents/:id")
+func replace(_ context: RequestContext, id: UUID, body: DocumentBody) async throws -> Response {
+    guard let current = try await documents.find(id) else { throw HTTPError(.notFound) }
+    try context.checkWritePreconditions(etag: EntityTag(String(current.version)), required: true)
+    let saved = try await documents.replace(id, with: body, expecting: current.version)
+    return try .json(saved).settingHeader(.eTag, EntityTag(String(saved.version)).headerValue)
+}
+```
+
+`If-Match` compares strongly, and `If-Match: *` passes whenever the resource
+exists. `If-Unmodified-Since` is checked only without `If-Match`, and only
+when you pass `lastModified:`. `required: true` answers `428` to a write that
+sends neither, so leaving the header off does not skip the check. Make the
+write itself conditional too (`UPDATE … WHERE version = $1`): the check and
+the write are two statements, and another write can land between them.
+
 ### Cookies
 
 ```swift
@@ -599,6 +623,34 @@ token survives signing in — `Session.signIn(_:)` regenerates the id and
 keeps the values — and needs no rotation there: the regenerated id is what
 takes the session away from anyone who planted it, and a token is useless
 without the cookie it belongs to.
+
+### WebSocket subprotocols and pings
+
+A handler that speaks named subprotocols lists them, most preferred first:
+
+```swift
+struct ChatSocket: WebSocketUpgradeHandler {
+    var subprotocols: [String] { ["chat.v2", "chat.v1"] }
+
+    func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+        switch connection.subprotocol {
+        case "chat.v2": …
+        default: …        // "chat.v1", or nil when the client offered neither
+        }
+    }
+}
+```
+
+The first one the client also offered in `Sec-WebSocket-Protocol` goes back in
+the handshake and arrives as `connection.subprotocol`. When none match, the
+handshake names none, and a client that required one closes the socket
+itself (RFC 6455 §4.1).
+
+The server pings every socket every 30 seconds and closes one that has not
+answered the previous ping. Without that, a client that disappears without a
+close frame (a phone losing signal) holds its socket until TCP gives up,
+which can take hours. `server.websocket-ping-seconds` sets the interval, and
+`0` turns pings off.
 
 ### WebSocket origins
 

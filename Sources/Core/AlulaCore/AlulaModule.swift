@@ -67,6 +67,9 @@ public protocol AlulaModule {
     /// one-shot service — a batch job, a queue drain — would fail the whole
     /// group by finishing.
     var serviceCompletion: ServiceCompletionPolicy { get }
+
+    /// Tasks the application can run instead of serving. See ``CommandRegistration``.
+    var commands: [CommandRegistration] { get }
 }
 
 /// Where a module's service sits in the shutdown order.
@@ -110,6 +113,7 @@ extension AlulaModule {
     public var service: (any Service)? { nil }
     public var serviceCompletion: ServiceCompletionPolicy { .failsApp }
     public var serviceShutdownPhase: ServiceShutdownPhase { .standard }
+    public var commands: [CommandRegistration] { [] }
 
     /// Stable display name used for ComponentDescriptor.sourceModule and
     /// ModuleStatus.moduleName.

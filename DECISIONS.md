@@ -7,6 +7,27 @@ wrong, say so and it changes.
 
 ---
 
+## D54 — Commands run in the composed application with only its infrastructure started
+
+**Context.** GAPS.md §0 gap #10, the framework half. Maintenance tasks were
+separate executables that rebuilt the wiring by hand, or HTTP endpoints
+nobody should expose.
+
+**Chosen.**
+- **The same binary and composition.** A command gets every component the
+  server has, built the same way, so a task cannot drift from the code
+  paths it maintains.
+- **Only `.infrastructure` services start.** Pools and buses are what a task
+  borrows. The server, the scheduler and queue workers are what would make
+  running a task beside production dangerous: a second listener, or jobs
+  run twice.
+- **Arguments are raw strings.** An application that wants parsing brings
+  ArgumentParser into its own command. Alula has no opinion to impose.
+- **`serve` stays the default for no argument or a leading flag,** so no
+  existing deployment's command line changes meaning.
+
+---
+
 ## D53 — Logging is configured only when asked, and metrics exporters stay the application's
 
 **Context.** GAPS.md §0 gap #8. Production output was unstructured stdout,

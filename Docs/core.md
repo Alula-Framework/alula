@@ -259,6 +259,40 @@ not print it. It governs the settings object's own textual representation —
 marking the underlying key secret in Alula Config's diagnostic dump is a
 separate mechanism, `Configuration.load(secrets:)`.
 
+## Commands
+
+An application can run tasks instead of serving: a data fix, a report, a
+one-off import. A module declares them:
+
+```swift
+struct AppModule: AlulaModule {
+    let commands: [CommandRegistration]
+
+    init(graph: AlulaGraph) {
+        commands = [
+            CommandRegistration("prune-visits", abstract: "Delete visits older than 90 days") { context in
+                try await graph.visits.prune(olderThan: 90)
+            },
+        ]
+    }
+}
+```
+
+```sh
+swift run App commands             # list them (or: alula run commands)
+swift run App prune-visits         # run one  (or: alula run prune-visits)
+```
+
+A command runs in the application as composed, with every component it
+would have while serving. Only **infrastructure** services start (database
+pools, buses). The HTTP server, the scheduler and queue workers do not, so
+running one beside a live deployment adds no server and runs no jobs twice.
+`context.arguments` holds whatever followed the name. The process exits 0
+when the command returns, and 1, with the error, when it throws.
+
+With no arguments, with `serve`, or with a first argument that is a flag,
+the application serves exactly as before.
+
 ## Logging
 
 `Alula.run` sets up swift-log from configuration, before any module is

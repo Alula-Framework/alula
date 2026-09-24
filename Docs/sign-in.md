@@ -132,6 +132,12 @@ Provide the store from one of your modules as
 `let credentialStore: any CredentialStore`, and the password module takes it
 by type.
 
+An application with no accounts table yet can have one written for it:
+`alula generate auth` adds an `accounts` migration, a Postgres store, and
+the flows around sign-in (registration, email verification, password reset
+and change) to the project, as source it then owns. It needs alula-data's
+Postgres trait, `AlulaMail` and `AlulaQueue`.
+
 ### What the authenticator does for you
 
 `PasswordAuthenticator` is the part that is short to write and easy to get

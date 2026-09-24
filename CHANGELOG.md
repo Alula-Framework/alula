@@ -4,6 +4,29 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.0] - 2026-09-24
+
+Application commands: the last framework piece of gap #10 on the 2026-09-24
+audit (GAPS.md §0).
+
+### Added
+
+- **`CommandRegistration`**, contributed by any module through
+  `commands: [CommandRegistration]` (a new `AlulaModule` requirement,
+  defaulting to none).
+- `swift run App <name> [arguments]` runs the command with the application
+  composed and only its infrastructure services started. `swift run App commands`
+  lists them.
+- The process exits 0 when the command returns and 1 when it throws.
+- No argument, `serve`, or a leading flag serves as before.
+- alula-cli adds `alula run <name>`.
+
+### Fixed
+
+- `CredentialStore`'s documentation said alula-data ships a Postgres
+  credential store. It never has. It now points at `alula generate auth`,
+  which writes one into the project.
+
 ## [0.44.1] - 2026-09-24
 
 ### Fixed

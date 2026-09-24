@@ -60,8 +60,9 @@ public struct StoredCredential: Sendable, Equatable {
 }
 
 /// Where password sign-in looks accounts up. The application implements it
-/// over its own storage; alula-data ships a Postgres one for an application
-/// that has none yet.
+/// over its own storage. For an application that has none yet,
+/// `alula generate auth` writes one over a Postgres `accounts` table, with
+/// registration, email verification and password reset around it.
 ///
 /// Two operations, because that is all a sign-in needs: find by what the
 /// user typed, and save a stronger hash after a successful sign-in under

@@ -152,6 +152,19 @@ public enum Alula {
             // assemble writes module state into it. One shared reference,
             // created here and threaded to both.
             let health = ModuleHealthRegistry()
+            switch Invocation(arguments: Array(CommandLine.arguments.dropFirst())) {
+            case .serve:
+                break
+            case .listCommands:
+                let modules = try compose(configuration, health)
+                print(CommandListing.text(modules.flatMap(\.commands)))
+                exit(0)
+            case .command(let name, let arguments):
+                try await runCommand(
+                    name, arguments: arguments, configuration: configuration,
+                    modules: try compose(configuration, health), health: health, logger: logger)
+                exit(0)
+            }
             try await _alulaBootstrap(
                 configuration: configuration,
                 moduleInstances: try compose(configuration, health),

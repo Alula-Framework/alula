@@ -190,8 +190,13 @@ public struct OutboundHTTPClient: Sendable {
     let logger: Logger
     let tracer: (any Tracer)?
 
-    /// - Parameter tracer: Nil uses the one the application bootstrapped
-    ///   (`InstrumentationSystem.tracer`), read per request.
+    /// - Parameters:
+    ///   - transport: What sends each attempt: `AsyncHTTPTransport`, or a
+    ///     stub in tests.
+    ///   - policy: Timeouts, retries and the response size cap.
+    ///   - tracer: Nil uses the one the application bootstrapped
+    ///     (`InstrumentationSystem.tracer`), read per request.
+    ///   - logger: Where retries are noted, at debug level.
     public init(
         transport: any OutboundHTTPTransport, policy: OutboundHTTPPolicy = OutboundHTTPPolicy(),
         tracer: (any Tracer)? = nil, logger: Logger = Logger(label: "alula.http-client")

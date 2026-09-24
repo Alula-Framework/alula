@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.1] - 2026-09-24
+
+### Fixed
+
+- The documentation build failed from 0.40.0 on.
+  `OutboundHTTPClient.init` and `OpenAPIDocument.rendered` documented one
+  parameter each and not the rest, which DocC's `--warnings-as-errors`
+  refuses. No code changed.
+
 ## [0.44.0] - 2026-09-24
 
 Production logging: gap #8 on the 2026-09-24 audit (GAPS.md §0).

@@ -16,8 +16,12 @@ public struct OpenAPIDocument: Sendable {
 
     /// The full document: `openapi`, `info`, then the generated parts.
     ///
-    /// - Parameter snakeCaseKeys: Rename schema properties the way
-    ///   `web.json.key-strategy: snake-case` renames them on the wire.
+    /// - Parameters:
+    ///   - title: `info.title`.
+    ///   - version: `info.version`: the API's version, not Alula's.
+    ///   - description: `info.description`, when there is one.
+    ///   - snakeCaseKeys: Rename schema properties the way
+    ///     `web.json.key-strategy: snake-case` renames them on the wire.
     public func rendered(
         title: String, version: String, description: String? = nil, snakeCaseKeys: Bool = false
     ) throws -> Data {

@@ -69,6 +69,12 @@ let package = Package(
         .library(name: "AlulaCronCore", targets: ["AlulaCronCore"]),
         .library(name: "AlulaSchedulerTesting", targets: ["AlulaSchedulerTesting"]),
 
+        // MARK: Queue
+        // Durable background jobs: enqueue, retry, dead-letter. The seam is
+        // dependency-free so alula-data can implement it with `traits: []`.
+        .library(name: "AlulaQueue", targets: ["AlulaQueue"]),
+        .library(name: "AlulaQueueTesting", targets: ["AlulaQueueTesting"]),
+
         // Authentication: a resource server. Token *validation* only, with a
         // TokenValidator seam so any issuer can be brought instead.
         .library(name: "AlulaSecurityCore", targets: ["AlulaSecurityCore"]),
@@ -473,6 +479,25 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: Queue
+
+        .target(
+            name: "AlulaQueue",
+            dependencies: [
+                "AlulaCore",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+            ],
+            path: "Sources/Queue/AlulaQueue",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AlulaQueueTesting",
+            dependencies: ["AlulaQueue"],
+            path: "Sources/Queue/AlulaQueueTesting",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: Sessions
 
         // Dependency-free on purpose: alula-data implements `SessionStore`
@@ -640,6 +665,16 @@ let package = Package(
 
         // MARK: Tests
 
+        .testTarget(
+            name: "AlulaQueueTests",
+            dependencies: [
+                "AlulaQueue", "AlulaQueueTesting", "AlulaCore",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+            ],
+            path: "Tests/Queue/AlulaQueueTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "AlulaConfigTests",
             dependencies: ["AlulaConfig"],

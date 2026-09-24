@@ -7,6 +7,60 @@ wrong, say so and it changes.
 
 ---
 
+## D47 — The job queue: at least once, two modules, fenced by attempt
+
+**Context.** GAPS.md §0's first gap. Three of five audit reviewers named it
+independently. The scheduler's `.once` is at most once by design (D21,
+`PostgresJobCoordinator`'s own discussion). Nothing else in the ecosystem
+could hold work that must happen: email, webhooks, push retries.
+
+**Chosen.**
+
+1. **At least once, with leases renewed while running.** The other
+   choice, at most once, is the scheduler's, and for "send the receipt" it
+   means a crash loses the receipt silently. A lease that is renewed does
+   not need to guess how long a job takes. `lease-seconds` bounds only how
+   long a *dead* worker's jobs wait. Handlers must be idempotent; the docs
+   say so first.
+2. **Results fenced by attempt number.** `complete`, `retry` and `discard`
+   match `(id, attempt, state = running)`. A worker that stalled past its
+   lease cannot record over the worker that took the job over. The attempt
+   counter is the fencing token, and it already exists.
+3. **Two modules.** `AlulaQueueModule` provides `JobQueue`, and
+   `AlulaQueueWorkerModule` takes `[QueueHandler]`. Services inject the
+   queue, and handlers are built from the graph those services live in, so
+   one module doing both is a cycle (D16's lesson). The split also gives a
+   web tier that only enqueues, through `queue.worker.enabled: false`,
+   without a second module list. The worker module stays included, so the
+   unconsumed-contribution check stays quiet.
+4. **Claims filter by kind.** A worker never claims a job it has no handler
+   for, so a rolling deploy that adds a job kind cannot have old replicas
+   discard the new kind's jobs.
+5. **The seam is dependency-free and ungated.** alula-data takes alula with
+   `traits: []`, the same reason as `OneTimeTokenStore` (D40).
+6. **Postgres first, with transactional enqueue.** `FOR UPDATE SKIP LOCKED`
+   in one statement. `enqueue(_:in: Repo)` is the property no broker-backed
+   queue has: the job commits with the row that caused it.
+
+**Rejected.**
+- **One module doing both:** a cycle.
+- **A macro (`@QueueHandler` on component methods), for now.** The
+  scheduler's macro shipped inert once (GAPS.md's opening story). A
+  hand-written contribution goes through the composer's ordinary aggregate
+  path, which is already proven. The macro can come later as sugar over
+  that path.
+- **Telemetry in the first cut.** Outcomes are logged. Events and metrics
+  are listed as not yet done in `Docs/queue.md`, rather than half-done.
+- **Server-side time (`now()`) in the Postgres store.** The seam takes the
+  application's clock, so the in-memory store, Postgres and a test's moved
+  clock all mean the same "now". Node clock skew of seconds is small against
+  a 60-second lease.
+
+**Cost of reversing.** Low for everything except (1). Changing the delivery
+guarantee changes what every handler may assume.
+
+---
+
 ## D46 — Readiness asks dependencies, drains on shutdown, and a default is not a demand
 
 **Context.** A whole-framework audit on 2026-09-24 found readiness wrong three

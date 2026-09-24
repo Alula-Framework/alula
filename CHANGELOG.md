@@ -4,6 +4,36 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-09-24
+
+A durable job queue, the first gap on the 2026-09-24 audit's list (GAPS.md
+§0). Email, webhook delivery and push retries all needed somewhere to run
+that survives a restart. Until now the only answer was the scheduler, which
+promises at most once.
+
+### Added
+
+- **`AlulaQueue`** (no trait), with these parts:
+  - `QueuedJob`: a `Codable` payload.
+  - `JobQueue.enqueue(_:options:)`: delay, priority, unique key, queue.
+  - `QueueHandler.handle(_:timeout:_:)` contributions.
+  - `AlulaQueueModule`: provides the queue.
+  - `AlulaQueueWorkerModule`: runs the handlers, with per-queue concurrency,
+    lease renewal, pruning and graceful drain.
+  - `RetryPolicy`: exponential backoff with jitter; the default is 10
+    attempts, 15 s doubling to a 1 h cap.
+  - `DiscardJob`.
+  - The `QueueStore` seam, with `InMemoryQueueStore`.
+- Delivery is at least once. A dead worker's job is retried after
+  `queue.lease-seconds`, and results are fenced by attempt, so a slow worker
+  cannot overwrite a newer attempt's result.
+- **`AlulaQueueTesting`**: `QueueTestHarness` runs due jobs on demand on a
+  movable clock.
+- `queue.*` configuration, including `queue.worker.enabled` and
+  `queue.worker.only` for processes that only enqueue or run some queues.
+- The durable store is alula-data 0.13.0's `AlulaQueuePostgresModule`
+  (`FOR UPDATE SKIP LOCKED`, with enqueue inside your own transaction).
+
 ## [0.37.0] - 2026-09-24
 
 Three defects found by a whole-framework audit. Two of them left a check that

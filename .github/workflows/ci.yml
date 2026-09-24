@@ -144,7 +144,8 @@ jobs:
                         AlulaSessions AlulaSessionsTesting \
                         AlulaAPNS AlulaAPNSTesting \
                         AlulaRateLimit AlulaRateLimitTesting \
-                        AlulaTelemetryBridges; do
+                        AlulaTelemetryBridges \
+                        AlulaQueue AlulaQueueTesting; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

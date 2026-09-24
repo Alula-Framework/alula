@@ -25,8 +25,9 @@ one breaking release rather than a deprecation cycle.
 - the CLI (`alula`), alula-data, alula-cli and alula-channels-js with it.
 
 English uses of the word are not the brand and stay: "in flight",
-`inFlight`, `singleFlight`, `preflight`. The docs site keeps its name until
-a new one is chosen.
+`inFlight`, `singleFlight`, `preflight`. The docs site, flight-school, is
+now **Fledge** (`Alula-Framework/fledge`), because its old name was the
+book series' name.
 
 **What kept the old name, and why.** A name that a running system has
 already written somewhere durable is data, not branding:

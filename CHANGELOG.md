@@ -4,6 +4,26 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0] - 2026-09-24
+
+OpenAPI: gap #6 on the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **`AlulaOpenAPI`** (trait `Web`): `AlulaOpenAPIModule` serves an OpenAPI 3.1
+  document at `/openapi.json`. The build plugin writes it from the route
+  scan and the stored properties of the types routes take and return, so
+  there is nothing to annotate and nothing to drift.
+- What it covers:
+  - path, query and body parameters, and response schemas;
+  - `CodingKeys`, nested types and enums;
+  - `Validatable` bodies declaring their 422;
+  - `Loadable<T>` as nullable;
+  - `web.json.key-strategy: snake-case`.
+- Served in dev and test; elsewhere with `openapi.enabled: true`.
+- The build plugin emits the document only when an included module takes an
+  `OpenAPIDocument`, and it now reads plain `Codable` files for their shapes.
+
 ## [0.42.0] - 2026-09-24
 
 Per-route request timeouts: gap #5 on the 2026-09-24 audit (GAPS.md §0).

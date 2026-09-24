@@ -7,6 +7,38 @@ wrong, say so and it changes.
 
 ---
 
+## D52 — The OpenAPI document is written by the build, from source, and says where it cannot see
+
+**Context.** GAPS.md §0 gap #6. The audit called it unusually cheap here:
+the build plugin already parses every route's signature.
+
+**Chosen.**
+
+1. **Generated from source by the registration generator**, not from runtime
+   reflection or annotations. `Mirror` needs an instance and sees no
+   optionality or `CodingKeys`. Annotations drift. The generator already
+   parses the routes, and now also the stored properties of the types they
+   name, including files with no Alula attribute. That is the one cost it
+   adds to builds, and only for files mentioning `Codable`, `Decodable`,
+   `Encodable` or `enum`.
+2. **Emitted only when a module asks** (a parameter typed `OpenAPIDocument`,
+   supplied like Actuator's component list). Applications without the module
+   carry no document.
+3. **Honest about blind spots.** A type the build cannot see gets a
+   `description` saying so, not an invented schema. A `Response` return is
+   "a response". A document that looks complete and is wrong costs more than
+   one with marked gaps.
+4. **Dev and test only by default.** It is an unauthenticated map of the
+   service, the same posture as the Actuator dashboard.
+5. **Validated against the real demo** with `openapi-spec-validator`. The
+   generator tests assert its structure, and the validator proves conformance.
+
+**Rejected.** Adopting apple/swift-openapi-generator. It generates code *from*
+a document, which is the opposite direction, and a spec-first workflow is
+still open to any app that wants one.
+
+---
+
 ## D51 — Request timeouts answer on time, whatever the handler does
 
 **Context.** GAPS.md §0 gap #5. Only the idle and header-read timeouts

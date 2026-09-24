@@ -32,6 +32,7 @@ let package = Package(
         .library(name: "AlulaWeb", targets: ["AlulaWeb"]),
         .library(name: "AlulaTransport", targets: ["AlulaTransport"]),
         .library(name: "AlulaWebTesting", targets: ["AlulaWebTesting"]),
+        .library(name: "AlulaOpenAPI", targets: ["AlulaOpenAPI"]),
 
         // PubSub: Message, the DistributedPubSubAdapter seam, ClusteredPubSub.
         .library(name: "AlulaPubSub", targets: ["AlulaPubSub"]),
@@ -519,6 +520,19 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: OpenAPI
+
+        .target(
+            name: "AlulaOpenAPI",
+            dependencies: [
+                "AlulaCore",
+                .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
+                .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["Web"])),
+            ],
+            path: "Sources/Web/AlulaOpenAPI",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: HTTP client
 
         .target(
@@ -747,6 +761,18 @@ let package = Package(
 
         // MARK: Tests
 
+        .testTarget(
+            name: "AlulaOpenAPITests",
+            dependencies: [
+                "AlulaCore",
+                .target(name: "AlulaOpenAPI", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
+                "AlulaConfigCore",
+            ],
+            path: "Tests/Web/AlulaOpenAPITests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "AlulaHTTPClientTests",
             dependencies: [

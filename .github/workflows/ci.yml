@@ -160,7 +160,8 @@ jobs:
                         AlulaTelemetryBridges \
                         AlulaQueue AlulaQueueTesting \
                         AlulaMail AlulaMailTesting AlulaMailSMTP \
-                        AlulaHTTPClient AlulaHTTPClientTesting; do
+                        AlulaHTTPClient AlulaHTTPClientTesting \
+                        AlulaOpenAPI; do
             echo "::group::$target"
             swift package --enable-all-traits \
               --allow-writing-to-directory "./docs/$target" \

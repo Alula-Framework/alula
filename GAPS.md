@@ -16,7 +16,7 @@ first draft were **wrong** and are struck rather than deleted, because the
 useful thing about a wrong entry is knowing it was wrong.
 
 **Still open, in rough priority order:** the functional gaps from the
-2026-09-24 audit (next section) — OpenAPI emission next (queue, mail, HTTP client, validation and timeouts are built, D47–D51); then alula-web
+2026-09-24 audit (next section) — alula-data read replicas next (gaps 1–6 are built, D47–D52); then alula-web
 HTTP/2 (a design decision, not a task — see below); hangar composite-key
 associations; npm and Homebrew publishing; format debt — `alula` **1,725**
 violations and `alula-data` **1,064**, measured 2026-09-18, deliberately
@@ -180,7 +180,7 @@ check that looked present did nothing.
 | 3 | ✅ *Built 2026-09-24 as alula 0.40.0 (D49); see Docs/http-client.md.* ~~**Outbound HTTP client**~~ | M | APNs, OIDC and JWKS each use `HTTPClient.shared` directly. Nothing shared provides timeouts, retries, a test double or trace-context propagation, so traces stop at the process boundary. |
 | 4 | ✅ *Built 2026-09-24 as alula 0.41.0 (D50); see Docs/web.md, Validation.* ~~**Declarative request validation**~~ with aggregated field errors in problem+json | M | Every handler throws one `422` at a time by hand. swift-changeset validates for writes but not for request bodies. |
 | 5 | ✅ *Built 2026-09-24 as alula 0.42.0 (D51); see Docs/web.md, Request timeouts.* ~~**Per-route request deadlines**~~ | M | Only idle and header-read timeouts exist. A stuck downstream call holds the handler open indefinitely, and no `503`/`504` comes back. |
-| 6 | **OpenAPI emission** | L | Cheaper here than anywhere else, because the build plugin already holds the route, parameter and body-type model. |
+| 6 | ✅ *Built 2026-09-24 as alula 0.43.0 (D52); see Docs/openapi.md.* ~~**OpenAPI emission**~~ | L | Cheaper here than anywhere else, because the build plugin already holds the route, parameter and body-type model. |
 | 7 | **Read replicas unreachable** from alula-data | M | Hangar routes reads to a replica, but `withRepo` pins one connection and nothing configures a replica. |
 | 8 | **Production observability defaults** | S–M | No JSON `LogHandler`, no log level from configuration, and no metrics or tracing backend in the templates. Outbound trace propagation is covered by #3. |
 | 9 | **Postgres-only clustering**: LISTEN/NOTIFY PubSub adapter, outbox | M | Running more than one replica requires Valkey today. |

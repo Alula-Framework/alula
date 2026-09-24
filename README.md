@@ -33,6 +33,7 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `AlulaQueue` / `AlulaQueueTesting` | Background jobs: enqueue from anywhere, run in a worker at least once, retried with backoff, dead-lettered when they never succeed. Durable with alula-data's `AlulaQueuePostgres`. See [Docs/queue.md](Docs/queue.md). |
 | `AlulaMail` / `AlulaMailSMTP` / `AlulaMailTesting` | Email: a transport seam, header-injection-proof messages, MIME rendering, delivery through the job queue, and an SMTP client (trait `SMTP`). See [Docs/mail.md](Docs/mail.md). |
 | `AlulaHTTPClient` / `AlulaHTTPClientTesting` | Calling other services: timeouts, retries only where safe, trace propagation, response caps (trait `HTTPClient`). See [Docs/http-client.md](Docs/http-client.md). |
+| `AlulaOpenAPI` | An OpenAPI 3.1 document generated at build time from the route scan: no annotations, no drift. See [Docs/openapi.md](Docs/openapi.md). |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
 | `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |

@@ -160,6 +160,11 @@ struct ScannedControllerRoute {
     let isUpgrade: Bool
     let file: String
     let line: Int
+    /// The handler's inputs and output, as written — for the OpenAPI document.
+    var bodyTypeText: String? = nil
+    var queryTypeText: String? = nil
+    var pathParameters: [(name: String, typeText: String)] = []
+    var returnTypeText: String? = nil
 }
 
 /// Swallows what the scan reports.
@@ -696,7 +701,11 @@ final class ComponentVisitor: SyntaxVisitor {
                             route: route.pipelinesText, controller: controllerPipelines),
                         isUpgrade: route.kind.isUpgrade,
                         file: file,
-                        line: location.line
+                        line: location.line,
+                        bodyTypeText: route.bodyTypeText,
+                        queryTypeText: route.queryTypeText,
+                        pathParameters: route.pathParameters.map { ($0.name, $0.typeText) },
+                        returnTypeText: route.returnTypeText
                     )
                 )
             }
@@ -948,6 +957,7 @@ var moduleGraph: [ScannedModule] = []
 var bootstrapModules: [String] = []
 var scannedConfigPrefixes: [(text: String?, file: String, line: Int)] = []
 var extensionConformances: [(typeName: String, protocols: [String])] = []
+var schemaTypes: [SchemaDecl] = []
 for module in manifest.modules {
     for file in module.files {
         guard let source = try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
@@ -963,7 +973,12 @@ for module in manifest.modules {
         // this admits most real files, but the parse it saves was always the
         // cheap part; the filter's remaining job is skipping generated and
         // resource-adjacent sources.
-        guard
+        // Request and response types usually live in plain files with no
+        // Alula attribute; the OpenAPI document needs their shapes.
+        let declaresSchema =
+            source.contains("Codable") || source.contains("Decodable")
+            || source.contains("Encodable") || source.contains("enum ")
+        let scansComponents =
             ComponentVisitor.registrableAttributes.contains(where: { source.contains("@\($0)") })
                 || source.contains("extension")
                 // A module body declaring lanes, or carrying the
@@ -975,7 +990,13 @@ for module in manifest.modules {
                 // The application's `Configuration.load(prefix:)` — the base
                 // file name the @ConfigValue check verifies against.
                 || source.contains("Configuration.load")
-        else { continue }
+        guard scansComponents || declaresSchema else { continue }
+        if !scansComponents {
+            let collector = SchemaCollector()
+            collector.walk(Parser.parse(source: source))
+            schemaTypes += collector.types
+            continue
+        }
         if module.name == manifest.targetModuleName {
             for line in source.split(separator: "\n") {
                 let text = line.trimmingCharacters(in: .whitespaces)
@@ -988,6 +1009,11 @@ for module in manifest.modules {
             }
         }
         let tree = Parser.parse(source: source)
+        if declaresSchema {
+            let collector = SchemaCollector()
+            collector.walk(tree)
+            schemaTypes += collector.types
+        }
         let visitor = ComponentVisitor(module: module.name, file: file, tree: tree)
         visitor.walk(tree)
         components.append(contentsOf: visitor.components)
@@ -1954,6 +1980,9 @@ var graphRoots = GraphRoots()
 /// routes, as a value. The composer folds it into the `[RouteRegistration]`
 /// aggregate alongside whatever routes modules declare.
 var emittedRouteValues = false
+/// Set when an included module takes an `OpenAPIDocument`, so the document
+/// is emitted only for applications that serve one.
+var needsOpenAPIDocument = false
 
 /// True when this target emitted `alulaScheduledJobs(_:)`.
 var emittedScheduledJobValues = false
@@ -2505,6 +2534,11 @@ func emitComposer(into out: inout String) {
         if providedTypeKey(type) == "ModuleHealthRegistry" {
             return "\(label): alulaHealth"
         }
+        // The document the build derives from the scanned routes and types.
+        if providedTypeKey(type) == "OpenAPIDocument" {
+            needsOpenAPIDocument = true
+            return "\(label): .init(generatedJSON: alulaOpenAPIJSON())"
+        }
         // The graph is a value the composition root builds, not a module, so
         // it is not in `includedModules` — but a module can take it, and the
         // application's own module does.
@@ -2770,6 +2804,14 @@ func emitComposer(into out: inout String) {
     }
     out += "    ]\n"
     out += "}\n"
+    if needsOpenAPIDocument {
+        let document = OpenAPIBuilder(routes: routes, types: schemaTypes).json()
+        out += "\n/// The routes this build scanned, and the types they take and return, as\n"
+        out += "/// OpenAPI 3.1 `paths` and `components` — `AlulaOpenAPIModule` serves it.\n"
+        out += "func alulaOpenAPIJSON() -> String {\n"
+        out += "    ###\"\(document)\"###\n"
+        out += "}\n"
+    }
     for diagnostic in compositionDiagnostics {
         // Newlines have to be escaped, not emitted: a real one inside
         // `#error("…")` ends the string literal, and the generated file then

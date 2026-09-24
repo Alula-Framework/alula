@@ -4,6 +4,21 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0] - 2026-09-24
+
+Production logging: gap #8 on the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **`JSONLogHandler`** (AlulaCore) writes one JSON object per line.
+  - Metadata is flattened beside `timestamp`, `level`, `label` and `message`.
+  - A colliding key is prefixed `metadata.`, and errors add `source`.
+  - Lines are never interleaved.
+- **`logging.format` (`json`/`text`) and `logging.level`**, applied by
+  `Alula.run` before any module is built, and only when set. An application
+  bootstrapping swift-log itself is unaffected.
+- `LoggingSettings`.
+
 ## [0.43.0] - 2026-09-24
 
 OpenAPI: gap #6 on the 2026-09-24 audit (GAPS.md §0).

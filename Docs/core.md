@@ -259,6 +259,38 @@ not print it. It governs the settings object's own textual representation —
 marking the underlying key secret in Alula Config's diagnostic dump is a
 separate mechanism, `Configuration.load(secrets:)`.
 
+## Logging
+
+`Alula.run` sets up swift-log from configuration, before any module is
+built, when `logging.*` is set:
+
+```yaml
+logging:
+  format: json      # json | text
+  level: info       # trace | debug | info | notice | warning | error | critical
+```
+
+`json` writes one object per line, with metadata beside the fields rather
+than nested, so a pipeline indexes `request-id` or `job-id` without knowing
+Alula:
+
+```json
+{"label":"alula.web","level":"info","message":"request handled","method":"GET","path":"/users","request-id":"…","timestamp":"2026-09-24T10:00:07.123Z"}
+```
+
+Errors add `source` (file and line). Lines never interleave between
+concurrent tasks. Set the level per deployment through the environment:
+`ALULA_LOGGING_LEVEL=debug`.
+
+swift-log can be set up once per process, so an application that calls
+`LoggingSystem.bootstrap` itself should leave `logging.*` unset, and can use
+`JSONLogHandler` directly. With nothing set, nothing changes: swift-log's
+default handler, at its default level.
+
+Metrics and traces go wherever the application's backend sends them. See
+[telemetry.md](telemetry.md) for a Prometheus factory or an OpenTelemetry
+tracer, which are one module each.
+
 ## Transactions
 
 Transactions belong to your data layer, not to Core. With Hangar:

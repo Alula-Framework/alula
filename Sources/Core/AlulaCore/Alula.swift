@@ -140,6 +140,14 @@ public enum Alula {
     ) async -> Never {
         do {
             let configuration = try configuration()
+            // Before anything composes, so every module's logger gets the
+            // configured handler. The `logger` argument was made before this
+            // ran, so it is re-made under its own label.
+            var logger = logger
+            if let logging = try LoggingSettings(configuration: configuration) {
+                logging.bootstrap()
+                logger = Logger(label: logger.label)
+            }
             // The composition root owns the health registry: Actuator reads it,
             // assemble writes module state into it. One shared reference,
             // created here and threaded to both.

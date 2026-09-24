@@ -7,6 +7,30 @@ wrong, say so and it changes.
 
 ---
 
+## D53 — Logging is configured only when asked, and metrics exporters stay the application's
+
+**Context.** GAPS.md §0 gap #8. Production output was unstructured stdout,
+with no level from configuration and no exporters in the templates.
+
+**Chosen.**
+- **A JSON handler in AlulaCore, installed by `Alula.run` only when
+  `logging.*` is set.** swift-log's bootstrap is once-per-process and traps
+  on a second call, so installing a handler unconditionally would crash every
+  application that already bootstraps its own. Opt-in by configuration keeps
+  those working, and it gives an environment variable
+  (`ALULA_LOGGING_FORMAT=json`) to switch a deployment without touching code.
+- **Metadata flattened, not nested under `metadata`.** Log pipelines index
+  top-level keys, and `request-id` is the one people search by.
+- **No bundled metrics or tracing exporter.** A Prometheus endpoint or an
+  OTel exporter is one dependency the application chooses. Telemetry already
+  reports to whatever it bootstraps (`telemetry.md`). Bundling one would force
+  every application to resolve it.
+- **The templates carry the production shape** (an `alula-prod.yaml` overlay
+  with JSON logs, drain and timeouts), because defaults a project never sees
+  are defaults it never gets.
+
+---
+
 ## D52 — The OpenAPI document is written by the build, from source, and says where it cannot see
 
 **Context.** GAPS.md §0 gap #6. The audit called it unusually cheap here:

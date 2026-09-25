@@ -7,6 +7,36 @@ wrong, say so and it changes.
 
 ---
 
+## D58 — One code per problem, wherever it is found; startup failures are coded
+
+**Context.** Phase three of the diagnostics design (D56, D57): configuration,
+commands, OpenAPI, security composition and the startup report. Several
+problems can be found both by the build and at startup — a configuration key
+nobody set, two routes on one path — depending on what the build can see.
+
+**Chosen.**
+- **A problem keeps its code wherever it is found.** A key missing at startup
+  is ALU-CONFIG-5004, the build's code for it; a route conflict the router
+  finds is ALU-WEB-2001. The page says both places can report it. A reader
+  who searches the code finds one explanation.
+- **`Alula.run` reports three kinds of exit differently.** A command that ran
+  and threw is "command 'x' failed" (Relay #20); an unknown command is
+  ALU-CMD-7002 with the list; everything else "could not start", coded when
+  the framework owns it.
+- **Coding a startup error needs no dependency.** Configuration errors are
+  mapped in AlulaCore, which can see them; module settings errors adopt the
+  marker `ModuleConfigurationError` (ALU-CONFIG-5013, the module's message
+  after the code); anything else may return a `diagnosticCode` from
+  `StartupDiagnostic`, `nil` by default.
+- **OpenAPI gaps are warnings only when the document is served**, and a
+  deliberate `Response` is acknowledged with `// alula:undocumented-response`,
+  so the warning cannot become permanent noise.
+- **Two `TokenValidator` providers is ALU-SEC-6002**, not ALU-DI-1002: the
+  generic help (`defaultProviders`) would switch an authentication method off.
+
+**Rejected.** A code per module settings error: eighteen pages saying "fix the
+setting the message names".
+
 ## D57 — Macro diagnostics share the codes; routes collide by shape
 
 **Context.** Phase two of the diagnostics design (D56). The macros had

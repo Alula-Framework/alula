@@ -16,7 +16,7 @@ private let catalogFile = repositoryRoot.appendingPathComponent(
 
 private func pagesOnDisk() throws -> [String: String] {
     let names = try FileManager.default.contentsOfDirectory(atPath: pagesDirectory.path)
-        .filter { $0.hasSuffix(".md") }
+        .filter { $0.hasSuffix(".md") && $0 != "README.md" }
     var pages: [String: String] = [:]
     for name in names {
         pages[String(name.dropLast(3))] = try String(
@@ -44,6 +44,46 @@ private func catalogSource(_ pages: [String: String]) -> String {
     return out
 }
 
+private let indexFile = pagesDirectory.appendingPathComponent("README.md")
+
+/// The directory's index, which GitHub shows above the file list: every code
+/// and its title, by family, linked to its page.
+private func indexSource() -> String {
+    let families: [(prefix: String, name: String)] = [
+        ("ALU-DI", "Dependency injection and graph construction"),
+        ("ALU-WEB", "Controllers, routes, middleware, request binding"),
+        ("ALU-OAPI", "OpenAPI generation"),
+        ("ALU-CONFIG", "Configuration"),
+        ("ALU-SEC", "Security and authentication composition"),
+        ("ALU-CMD", "Commands"),
+        ("ALU-LIFE", "Lifecycle and module composition"),
+        ("ALU-SCHED", "Scheduled jobs"),
+    ]
+    var out = """
+        # Alula diagnostic codes
+
+        <!-- Generated from the pages in this directory — do not edit. Regenerate with:
+             ALULA_REGENERATE_DIAGNOSTICS=1 swift test --filter DiagnosticCatalogTests -->
+
+        Every error and warning Alula reports carries one of these codes. Each page
+        says what the code means, why Alula rejects it, and how to fix it;
+        `alula explain <code>` prints the same page offline. Hangar's query codes,
+        `HGR-QUERY-4xxx`, are documented in
+        [Hangar's repository](https://github.com/Alula-Framework/hangar/tree/main/Diagnostics).
+
+        """
+    for family in families {
+        let codes = DiagnosticCode.all.filter { $0.id.hasPrefix(family.prefix + "-") }
+            .sorted { $0.id < $1.id }
+        guard !codes.isEmpty else { continue }
+        out += "\n## \(family.name)\n\n| Code | Severity | |\n|---|---|---|\n"
+        for code in codes {
+            out += "| [\(code.id)](\(code.id).md) | \(code.severity.rawValue) | \(code.title) |\n"
+        }
+    }
+    return out
+}
+
 @Suite("Diagnostic catalog")
 struct DiagnosticCatalogTests {
     @Test("the compiled catalog is the pages in Diagnostics/, exactly")
@@ -54,6 +94,19 @@ struct DiagnosticCatalogTests {
         }
         let actual = try String(contentsOf: catalogFile, encoding: .utf8)
         #expect(actual == expected, "Catalog.generated.swift is stale: rerun with ALULA_REGENERATE_DIAGNOSTICS=1")
+    }
+
+    @Test("the directory index lists every code, exactly")
+    func indexIsCurrent() throws {
+        let expected = indexSource()
+        if ProcessInfo.processInfo.environment["ALULA_REGENERATE_DIAGNOSTICS"] == "1" {
+            try expected.write(to: indexFile, atomically: true, encoding: .utf8)
+        }
+        let actual = try String(contentsOf: indexFile, encoding: .utf8)
+        #expect(actual == expected, "Diagnostics/README.md is stale: rerun with ALULA_REGENERATE_DIAGNOSTICS=1")
+        for code in DiagnosticCode.all {
+            #expect(actual.contains("[\(code.id)](\(code.id).md)"), "\(code.id) is missing from the index")
+        }
     }
 
     @Test("every code has a page whose title and severity match, and every page a code")

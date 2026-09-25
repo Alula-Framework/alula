@@ -88,31 +88,31 @@ public struct PresenceConfiguration: Sendable, Equatable {
     }
 
     /// Keys, under Alula's usual dotted namespace:
-    /// - `alula.presence.node-name` (String, default: generated)
-    /// - `alula.presence.heartbeat-interval-seconds` (Double, default 5)
-    /// - `alula.presence.down-after-seconds` (Double, default 15)
-    /// - `alula.presence.permdown-after-seconds` (Double, default 300)
-    /// - `alula.presence.sweep-interval-seconds` (Double, default:
+    /// - `presence.node-name` (String, default: generated)
+    /// - `presence.heartbeat-interval-seconds` (Double, default 5)
+    /// - `presence.down-after-seconds` (Double, default 15)
+    /// - `presence.permdown-after-seconds` (Double, default 300)
+    /// - `presence.sweep-interval-seconds` (Double, default:
     ///   `down-after / 4`, floored at 0.1)
-    /// - `alula.presence.membership-fallback-after-seconds` (Double,
+    /// - `presence.membership-fallback-after-seconds` (Double,
     ///   default: `max(down-after * 4, 60)`; `0` disables the backstop)
-    /// - `alula.presence.max-entries-per-frame` (Int, default 10000; `0`
+    /// - `presence.max-entries-per-frame` (Int, default 10000; `0`
     ///   disables the bound)
     public init(configuration: Configuration) throws {
-        let nodeName = try configuration.getIfPresent("alula.presence.node-name", as: String.self)
+        let nodeName = try configuration.getIfPresent("presence.node-name", formerly: ["alula.presence.node-name"], as: String.self)
         // `getIfPresent`, never `get(_:default:)`: the latter traps on a
         // malformed value, and these are deployment settings — an
         // environment variable of `5s` stopped the process at boot instead
         // of failing it with the key named.
         let heartbeat = try configuration.getIfPresent(
-            "alula.presence.heartbeat-interval-seconds", as: Double.self) ?? 5.0
+            "presence.heartbeat-interval-seconds", formerly: ["alula.presence.heartbeat-interval-seconds"], as: Double.self) ?? 5.0
         let downAfter = try configuration.getIfPresent(
-            "alula.presence.down-after-seconds", as: Double.self) ?? 15.0
+            "presence.down-after-seconds", formerly: ["alula.presence.down-after-seconds"], as: Double.self) ?? 15.0
         let permdown = try configuration.getIfPresent(
-            "alula.presence.permdown-after-seconds", as: Double.self) ?? 300.0
-        let sweep = try configuration.getIfPresent("alula.presence.sweep-interval-seconds", as: Double.self)
+            "presence.permdown-after-seconds", formerly: ["alula.presence.permdown-after-seconds"], as: Double.self) ?? 300.0
+        let sweep = try configuration.getIfPresent("presence.sweep-interval-seconds", formerly: ["alula.presence.sweep-interval-seconds"], as: Double.self)
         let fallback = try configuration.getIfPresent(
-            "alula.presence.membership-fallback-after-seconds", as: Double.self)
+            "presence.membership-fallback-after-seconds", formerly: ["alula.presence.membership-fallback-after-seconds"], as: Double.self)
 
         // Finite as well as positive: `inf` parses as a Double, passes `> 0`,
         // and traps when it becomes a Duration.
@@ -134,7 +134,7 @@ public struct PresenceConfiguration: Sendable, Equatable {
             // An explicit 0 means "trust the monitor completely".
             membershipFallbackAfter: fallback.map { $0 > 0 ? .seconds($0) : nil },
             maxEntriesPerFrame: try configuration.getIfPresent(
-                "alula.presence.max-entries-per-frame", as: Int.self)
+                "presence.max-entries-per-frame", formerly: ["alula.presence.max-entries-per-frame"], as: Int.self)
                 .map { $0 > 0 ? $0 : nil } ?? 10_000
         )
     }

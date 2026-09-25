@@ -317,7 +317,7 @@ All keys live under `security.oidc.` (env-var form `ALULA_SECURITY_OIDC_*`):
 
 These keys shipped snake_case (`jwks_url`), following OIDC's own spec
 vocabulary, while every other namespace in Alula is kebab-case
-(`alula.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
+(`channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
 **Both spellings are read.** Kebab-case is canonical and wins if both are
 set; the snake_case spelling keeps working. The inconsistency was invisible
 until someone wrote `jwks-url` from habit and got the default instead of

@@ -219,11 +219,14 @@ public final class ClusteredPubSub: PubSub, Sendable {
             // A message from elsewhere wearing our node name means two nodes
             // share a nodeID. Suppression is unaffected, but an operator
             // reading logs or metrics is about to be misled, so say it once
-            // per offending instance rather than on every message.
+            // per offending instance rather than on every message — at
+            // warning, not error: nothing is broken, and error is the level
+            // an operator pages on (Relay #33: four nodes on one host, the
+            // default node ID being the host name, one page per peer).
             if let origin, origin == nodeID, let instance {
                 let unreported = reportedCollisions.withLock { $0.insert(instance).inserted }
                 if unreported {
-                    logger.error(
+                    logger.warning(
                         "another node is using this node's ID; logs and metrics will conflate them",
                         metadata: ["node": "\(nodeID)", "other-instance": "\(instance)"]
                     )

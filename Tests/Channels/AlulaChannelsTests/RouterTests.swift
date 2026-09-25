@@ -89,6 +89,34 @@ struct RouterTests {
         #expect(configuration.heartbeatCheckInterval == .milliseconds(50))
     }
 
+    @Test("channels.* keys are read, and the alula.channels.* spellings they replaced still are")
+    func keySpellings() throws {
+        let current = try ChannelsConfiguration(configuration: .init(values: [
+            "channels.heartbeat-timeout-seconds": "30", "channels.max-topics-per-socket": "8",
+        ]))
+        #expect(current.heartbeatTimeout == .seconds(30))
+        #expect(current.maxTopicsPerSocket == 8)
+        let former = try ChannelsConfiguration(configuration: .init(values: [
+            "alula.channels.heartbeat-timeout-seconds": "20",
+        ]))
+        #expect(former.heartbeatTimeout == .seconds(20))
+    }
+
+    /// These trapped at boot: `get(_:default:)` on a malformed value, and
+    /// `.seconds(inf)`.
+    @Test("a malformed or infinite channels interval fails configuration, not the process", arguments: [
+        ("channels.heartbeat-timeout-seconds", "60s"),
+        ("channels.heartbeat-timeout-seconds", "inf"),
+        ("channels.heartbeat-timeout-seconds", "0"),
+        ("channels.heartbeat-check-interval-seconds", "nan"),
+        ("channels.write-timeout-seconds", "inf"),
+    ])
+    func malformedIntervals(key: String, value: String) {
+        #expect(throws: (any Error).self) {
+            _ = try ChannelsConfiguration(configuration: .init(values: [key: value]))
+        }
+    }
+
     @Test("configuration defaults: 60s timeout, quarter-interval check")
     func configurationDefaults() throws {
         let configuration = try ChannelsConfiguration(configuration: .init())

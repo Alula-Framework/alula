@@ -154,9 +154,12 @@ Through the module, that and the cluster knobs are configuration:
 ```yaml
 pubsub:
   buffering: newest:1024      # or oldest:1024, or unbounded (the default)
-  node_id: api-3              # defaults to the host name
-  broadcast_timeout: 5s       # or `never` to wait for the adapter indefinitely
+  node-id: api-3              # defaults to the host name
+  broadcast-timeout: 5s       # or `never` to wait for the adapter indefinitely
 ```
+
+The snake_case spellings these keys shipped with, `node_id` and
+`broadcast_timeout`, are still read.
 
 They are deployment knobs, so they live in `alula.yaml` with the other
 deployment knobs — `AlulaPubSubModule(configuration:)` reads them in its

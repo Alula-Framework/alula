@@ -86,53 +86,79 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     }
 
     /// Keys, under Alula's usual dotted namespace:
-    /// - `alula.channels.heartbeat-timeout-seconds` (Double, default 60)
-    /// - `alula.channels.heartbeat-check-interval-seconds` (Double,
+    /// - `channels.heartbeat-timeout-seconds` (Double, default 60)
+    /// - `channels.heartbeat-check-interval-seconds` (Double,
     ///   default: a quarter of the timeout)
-    /// - `alula.channels.outbound-buffer-size` (Int, default 256)
-    /// - `alula.channels.write-timeout-seconds` (Double, default 30; 0
+    /// - `channels.outbound-buffer-size` (Int, default 256)
+    /// - `channels.write-timeout-seconds` (Double, default 30; 0
     ///   disables)
-    /// - `alula.channels.max-concurrent-envelopes` (Int, default 16; 1
+    /// - `channels.max-concurrent-envelopes` (Int, default 16; 1
     ///   means one envelope at a time socket-wide)
-    /// - `alula.channels.outbound-overflow` (`"close"` or `"drop-oldest"`,
+    /// - `channels.outbound-overflow` (`"close"` or `"drop-oldest"`,
     ///   default `"close"`)
-    /// - `alula.channels.max-topics-per-socket` (Int, default 64)
+    /// - `channels.max-topics-per-socket` (Int, default 64)
     public init(configuration: Configuration) throws {
-        let timeoutSeconds = configuration.get(
-            "alula.channels.heartbeat-timeout-seconds",
-            default: 60.0
-        )
+        // `getIfPresent` and a finiteness check, never `get(_:default:)`:
+        // that traps on a malformed value, and `.seconds(inf)` traps too — a
+        // deployment typo stopped the process at boot instead of naming the
+        // key.
+        func seconds(_ name: String) throws -> Double? {
+            guard let value = try configuration.getIfPresent(
+                "channels.\(name)", formerly: ["alula.channels.\(name)"], as: Double.self)
+            else { return nil }
+            guard value.isFinite else { throw ChannelsConfigurationError.invalidInterval(key: "channels.\(name)") }
+            return value
+        }
+        let timeoutSeconds = try seconds("heartbeat-timeout-seconds") ?? 60.0
+        guard timeoutSeconds > 0 else {
+            throw ChannelsConfigurationError.invalidInterval(key: "channels.heartbeat-timeout-seconds")
+        }
         let timeout = Duration.seconds(timeoutSeconds)
-        let checkSeconds = try configuration.getIfPresent(
-            "alula.channels.heartbeat-check-interval-seconds",
-            as: Double.self
-        )
+        let checkSeconds = try seconds("heartbeat-check-interval-seconds")
+        if let checkSeconds, checkSeconds <= 0 {
+            throw ChannelsConfigurationError.invalidInterval(key: "channels.heartbeat-check-interval-seconds")
+        }
         self.init(
             heartbeatTimeout: timeout,
             heartbeatCheckInterval: checkSeconds.map { .seconds($0) },
             outboundBufferSize: try configuration.getIfPresent(
-                "alula.channels.outbound-buffer-size", as: Int.self) ?? 256,
+                "channels.outbound-buffer-size", formerly: ["alula.channels.outbound-buffer-size"], as: Int.self) ?? 256,
             // 0 disables it explicitly — an operator who wants no bound
             // should write that down rather than delete a line.
-            writeTimeout: try configuration.getIfPresent(
-                "alula.channels.write-timeout-seconds", as: Double.self)
+            writeTimeout: try seconds("write-timeout-seconds")
                 .map { $0 <= 0 ? nil : Duration.seconds($0) } ?? .seconds(30),
             // 1 is the old socket-wide serialization, spelled as a bound
             // rather than as a separate mode — an operator who wants it back
             // writes the number down.
             dispatch: try configuration.getIfPresent(
-                "alula.channels.max-concurrent-envelopes", as: Int.self)
+                "channels.max-concurrent-envelopes", formerly: ["alula.channels.max-concurrent-envelopes"], as: Int.self)
                 .map { $0 <= 1 ? .serialPerSocket : .serialPerTopic(maxConcurrent: $0) }
                 ?? .default,
             // Anything other than the two spellings is a typo, and a typo
             // here would silently choose lossy delivery. Unknown values keep
             // the safe default rather than being guessed at.
             outboundOverflow: try configuration.getIfPresent(
-                "alula.channels.outbound-overflow", as: String.self)
+                "channels.outbound-overflow", formerly: ["alula.channels.outbound-overflow"], as: String.self)
                 .map { $0.lowercased() == "drop-oldest" ? .dropOldest : .closeSocket }
                 ?? .closeSocket,
             maxTopicsPerSocket: try configuration.getIfPresent(
-                "alula.channels.max-topics-per-socket", as: Int.self) ?? 64
+                "channels.max-topics-per-socket", formerly: ["alula.channels.max-topics-per-socket"], as: Int.self) ?? 64
         )
     }
 }
+
+/// A channels setting that cannot be used. `Alula.run` reports it as
+/// ALU-CONFIG-5013, naming the key.
+public enum ChannelsConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// Not a finite number of seconds, or not positive where it must be.
+    case invalidInterval(key: String)
+
+    public var description: String {
+        switch self {
+        case .invalidInterval(let key):
+            return "\(key) must be a positive, finite number of seconds."
+        }
+    }
+}
+
+extension ChannelsConfigurationError: ModuleConfigurationError {}

@@ -87,6 +87,19 @@ struct PresenceConfigurationTests {
         }
     }
 
+    @Test("presence.* keys are read, and the alula.presence.* spellings they replaced still are")
+    func keySpellings() throws {
+        let current = try PresenceConfiguration(configuration: Configuration(values: [
+            "presence.heartbeat-interval-seconds": "2", "presence.down-after-seconds": "9",
+        ]))
+        #expect(current.heartbeatInterval == .seconds(2))
+        #expect(current.downAfter == .seconds(9))
+        let former = try PresenceConfiguration(configuration: Configuration(values: [
+            "alula.presence.heartbeat-interval-seconds": "3", "alula.presence.down-after-seconds": "10",
+        ]))
+        #expect(former.heartbeatInterval == .seconds(3))
+    }
+
     @Test("non-positive intervals are refused")
     func positivityValidation() {
         #expect(throws: PresenceConfigurationError.nonPositiveInterval) {

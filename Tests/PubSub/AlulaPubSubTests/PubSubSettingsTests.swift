@@ -64,6 +64,27 @@ struct PubSubSettingsTests {
         #expect(forever.broadcastTimeout.duration == nil)
     }
 
+    /// Relay #33: the keys shipped snake_case, unlike every other Alula key.
+    @Test("kebab-case keys are read, and the snake_case ones they replaced still are")
+    func keySpellings() throws {
+        let current = try PubSubSettings(configuration: Configuration(values: [
+            "pubsub.node-id": "api-3", "pubsub.broadcast-timeout": "1s",
+        ]))
+        #expect(current.nodeID == "api-3")
+        #expect(current.broadcastTimeout == .after(.seconds(1)))
+
+        let former = try PubSubSettings(configuration: Configuration(values: [
+            "pubsub.node_id": "api-4", "pubsub.broadcast_timeout": "2s",
+        ]))
+        #expect(former.nodeID == "api-4")
+        #expect(former.broadcastTimeout == .after(.seconds(2)))
+
+        let both = try PubSubSettings(configuration: Configuration(values: [
+            "pubsub.node-id": "new", "pubsub.node_id": "old",
+        ]))
+        #expect(both.nodeID == "new", "the current spelling wins")
+    }
+
     @Test("a bare number is rejected, as everywhere else a Duration is read")
     func broadcastTimeoutRequiresAUnit() {
         #expect(throws: (any Error).self) {

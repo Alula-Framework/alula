@@ -36,8 +36,8 @@ public struct AlulaPubSubModule: AlulaModule {
     private let clustered: ClusteredPubSub?
 
     /// Buffering, node identity and the broadcast timeout come from
-    /// `alula.yaml` (`pubsub.buffering`, `pubsub.node_id`,
-    /// `pubsub.broadcast_timeout`); `Docs/pubsub.md` documents the keys.
+    /// `alula.yaml` (`pubsub.buffering`, `pubsub.node-id`,
+    /// `pubsub.broadcast-timeout`); `Docs/pubsub.md` documents the keys.
     ///
     /// These used to be `init` parameters that could not exist: both public
     /// entry points took `[any AlulaModule.Type]` and instantiated with

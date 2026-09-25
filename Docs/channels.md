@@ -103,7 +103,7 @@ The JS/TS reference client is
 ## Ordering and concurrency
 
 **Envelopes are handled in order within a topic, and concurrently across
-topics.** `alula.channels.max-concurrent-envelopes` (16 by default) bounds
+topics.** `channels.max-concurrent-envelopes` (16 by default) bounds
 how many a single socket may have in flight; set it to `1` for the older
 behaviour, one envelope at a time socket-wide.
 
@@ -138,7 +138,7 @@ Two consequences worth knowing:
 ## Backpressure and blast radius
 
 A socket's outbound queue is bounded by
-`alula.channels.outbound-buffer-size` (256 by default). It used to be
+`channels.outbound-buffer-size` (256 by default). It used to be
 unbounded: a client that stopped reading — a backgrounded tab, a wedged
 connection, a phone in a tunnel — accumulated every message published to its
 topics with no ceiling, so one stalled subscriber could exhaust the server's
@@ -158,7 +158,7 @@ delivers each channel's fresh `initialState`, which is exactly the
 resynchronisation that dropping quietly denies it — and it needed no client
 change, because a transport-level close already drives reconnect-and-rejoin.
 
-`alula.channels.outbound-overflow: drop-oldest` restores the old behaviour,
+`channels.outbound-overflow: drop-oldest` restores the old behaviour,
 and is right for a feed where only the latest value means anything — a cursor
 position, a metrics tick, a progress bar. It is wrong wherever a message is an
 *event* rather than a sample, because there the gap is the bug. An
@@ -374,7 +374,7 @@ may open a socket at all — and guards the upgrade, not any topic on it.
 
 ## How many topics one socket may hold
 
-`alula.channels.max-topics-per-socket` (64) bounds it. Every joined topic
+`channels.max-topics-per-socket` (64) bounds it. Every joined topic
 costs a channel instance, a PubSub subscription, a fan-in task and an entry
 in the session's per-topic ordering — five allocations, all driven by client
 input, and nothing used to stop one connection asking for them without limit.
@@ -417,13 +417,15 @@ for it is rare.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `alula.channels.heartbeat-timeout-seconds` | `60` | A socket silent this long is closed (any frame counts as liveness) |
-| `alula.channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
-| `alula.channels.outbound-buffer-size` | `256` | Queued frames per socket before `outbound-overflow` applies |
-| `alula.channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
-| `alula.channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
-| `alula.channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
-| `alula.channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
+| `channels.heartbeat-timeout-seconds` | `60` | A socket silent this long is closed (any frame counts as liveness) |
+| `channels.heartbeat-check-interval-seconds` | timeout ÷ 4 | Watchdog cadence |
+| `channels.outbound-buffer-size` | `256` | Queued frames per socket before `outbound-overflow` applies |
+| `channels.write-timeout-seconds` | `30` | One outbound frame taking longer than this closes the socket (`0` disables) |
+| `channels.max-concurrent-envelopes` | `16` | Envelopes in flight per socket; `1` means one at a time socket-wide |
+| `channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
+| `channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
+
+These keys were `alula.channels.*` until 0.52.0; the old spellings are still read.
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the
@@ -496,7 +498,7 @@ wire-level assertions. Multi-node behavior is testable with
    everything is joined deterministically.
 6. **`ChannelBroadcaster.broadcast(…, excluding:)`** — not in the doc, but
    the "tell everyone else" shape every chat-like handler wants. Carried
-   as PubSub metadata (`alula.channels.origin`), filtered at the
+   as PubSub metadata (`channels.origin`), filtered at the
    subscription pump, so it works across nodes unchanged.
 7. **Rejoin state delivery** (client): after auto-reconnect, the fresh
    initial state is announced on the channel's message stream as a

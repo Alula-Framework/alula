@@ -82,8 +82,10 @@ struct PubSubSettings: Sendable {
     var broadcastTimeout: PubSubBroadcastTimeout
 
     static let bufferingKey = "pubsub.buffering"
-    static let nodeIDKey = "pubsub.node_id"
-    static let broadcastTimeoutKey = "pubsub.broadcast_timeout"
+    // Kebab-case like every other Alula key; the snake_case spellings they
+    // shipped with are still read (Relay #33).
+    static let nodeIDKey = "pubsub.node-id"
+    static let broadcastTimeoutKey = "pubsub.broadcast-timeout"
 
     /// Malformed values throw rather than falling back: a node told to bound
     /// its buffers at 1024 and silently running unbounded is the bug the
@@ -92,9 +94,11 @@ struct PubSubSettings: Sendable {
         bufferingPolicy =
             try configuration.getIfPresent(Self.bufferingKey, as: PubSubBufferingPolicy.self)
             ?? .unbounded
-        nodeID = try configuration.getIfPresent(Self.nodeIDKey, as: String.self)
+        nodeID = try configuration.getIfPresent(
+            Self.nodeIDKey, formerly: ["pubsub.node_id"], as: String.self)
         broadcastTimeout =
             try configuration.getIfPresent(
-                Self.broadcastTimeoutKey, as: PubSubBroadcastTimeout.self) ?? .after(.seconds(5))
+                Self.broadcastTimeoutKey, formerly: ["pubsub.broadcast_timeout"],
+                as: PubSubBroadcastTimeout.self) ?? .after(.seconds(5))
     }
 }

@@ -221,6 +221,27 @@ public struct Configuration: Sendable {
         return try decode(raw, key: key, as: type)
     }
 
+    /// ``getIfPresent(_:as:fileID:line:)`` for a key that has been renamed:
+    /// the current spelling wins, and each former one is read in order when
+    /// it is absent, so a deployment that still sets the old key keeps
+    /// working.
+    ///
+    /// ```swift
+    /// let nodeID = try configuration.getIfPresent(
+    ///     "pubsub.node-id", formerly: ["pubsub.node_id"], as: String.self)
+    /// ```
+    public func getIfPresent<T: ConfigDecodable>(
+        _ key: String, formerly: [String], as type: T.Type = T.self,
+        fileID: String = #fileID, line: UInt = #line
+    ) throws -> T? {
+        for candidate in [key] + formerly {
+            if let value = try getIfPresent(candidate, as: type, fileID: fileID, line: line) {
+                return value
+            }
+        }
+        return nil
+    }
+
     // MARK: - Raw access
 
     /// The winning raw string for a key — first provider (highest precedence)

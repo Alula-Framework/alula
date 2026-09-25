@@ -204,13 +204,15 @@ Under the usual dotted namespace (all optional):
 
 | Key | Default | |
 | --- | --- | --- |
-| `alula.presence.node-name` | generated | Stable node name; must match the membership monitor's vocabulary. Set it in any monitored deployment. |
-| `alula.presence.heartbeat-interval-seconds` | 5 | Re-announce / anti-entropy cadence. |
-| `alula.presence.down-after-seconds` | 15 | Degraded mode: silence ⇒ hidden. Must exceed the heartbeat interval (validated at bootstrap). |
-| `alula.presence.permdown-after-seconds` | 300 | Continuously down ⇒ purged. |
-| `alula.presence.sweep-interval-seconds` | `max(100ms, down-after / 4)` | Liveness sweep cadence. The floor matters only for the very short `down-after` a test sets. |
-| `alula.presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
-| `alula.presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
+| `presence.node-name` | generated | Stable node name; must match the membership monitor's vocabulary. Set it in any monitored deployment. |
+| `presence.heartbeat-interval-seconds` | 5 | Re-announce / anti-entropy cadence. |
+| `presence.down-after-seconds` | 15 | Degraded mode: silence ⇒ hidden. Must exceed the heartbeat interval (validated at bootstrap). |
+| `presence.permdown-after-seconds` | 300 | Continuously down ⇒ purged. |
+| `presence.sweep-interval-seconds` | `max(100ms, down-after / 4)` | Liveness sweep cadence. The floor matters only for the very short `down-after` a test sets. |
+| `presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
+| `presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
+
+These keys were `alula.presence.*` until 0.52.0; the old spellings are still read.
 
 ## Wiring
 
@@ -259,7 +261,7 @@ say — a bound on buggy peers and on version skew, not on hostile ones:
 |---|---|
 | A frame asserting entries owned by a third replica | Dropped and logged. `snapshot(of:)` carries own entries and deltas carry own dots, so no correct sender does this; merging it lets one confused node speak for the cluster. |
 | A frame claiming to have observed *this* replica's dots | Those claims are stripped. Merging one raised our version past our own clock, and the next local `track` then tripped a precondition and killed the process — a one-frame remote crash rather than mere corruption. |
-| A frame with more than `alula.presence.max-entries-per-frame` entries (10,000) | Dropped and logged. A frame carries one node's own presences, a number in the hundreds. |
+| A frame with more than `presence.max-entries-per-frame` entries (10,000) | Dropped and logged. A frame carries one node's own presences, a number in the hundreds. |
 | A frame with an unrecognised wire version | Dropped and logged. A mixed-version cluster degrades to silence, never to misinterpretation. |
 
 None of these can reject a legitimate frame, which is what makes them safe to

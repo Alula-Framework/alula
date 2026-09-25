@@ -45,8 +45,29 @@ without its fix.
   default `onStoreFailure: .allow` and let such requests through unlimited.
   `InMemoryRateLimitStore` throws `RateLimitStoreError` for a direct call.
 
+- **Channels intervals are validated too.** `alula.channels.heartbeat-timeout-seconds`
+  was read with the trapping `get(_:default:)`, and `inf` for any of the three
+  intervals trapped as a `Duration`. They now throw
+  `ChannelsConfigurationError` (`ALU-CONFIG-5013`) naming the key.
+- **PubSub's node-ID collision is a warning, not an error** (Relay #33). It
+  changes nothing about delivery, and four nodes on one host — the default
+  node ID is the host name — paged once per peer.
+
+### Changed
+
+- **Configuration keys are consistent** (Relay #33). `pubsub.node_id` and
+  `pubsub.broadcast_timeout` are now `pubsub.node-id` and
+  `pubsub.broadcast-timeout`, kebab-case like every other key; the
+  `alula.presence.*` and `alula.channels.*` families are now `presence.*` and
+  `channels.*`, the only keys that carried the `alula.` prefix (their
+  environment variables read `ALULA_ALULA_…`). Every old spelling is still
+  read; the new one wins when both are set.
+
 ### Added
 
+- **`Configuration.getIfPresent(_:formerly:as:)`** reads a renamed key,
+  falling back to its former spellings — what the renames above use, for a
+  module author renaming one of theirs.
 - **`RateLimitQuota(validating:per:burst:)`**, a failable initializer for a
   quota built from data. `RateLimiting`'s `quota:` closure runs per request, and
   the literal initializer's trap on a zero from a tenant's plan row would stop

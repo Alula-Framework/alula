@@ -1,0 +1,3 @@
+alula.yaml:3:4: error: [ALU-CONFIG-5007] alula.yaml does not parse: unexpected indentation — expected a key at indentation 2 (multi-line plain scalars are not supported by the Alula YAML subset; quote long values)
+    The application would fail the same way at startup.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5007.md

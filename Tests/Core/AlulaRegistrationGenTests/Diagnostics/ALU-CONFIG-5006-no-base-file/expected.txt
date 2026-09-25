@@ -1,0 +1,5 @@
+Main.swift:4:1: warning: [ALU-CONFIG-5006] configuration keys were not checked: relay.yaml is not at the package root
+    unchecked: 1 key without defaults — mail.host
+    The keys are verified at startup instead.
+    help: add relay.yaml, the base layer this application loads, and the build checks them.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5006.md

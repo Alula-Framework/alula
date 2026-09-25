@@ -104,6 +104,8 @@ extension DiagnosticCode {
         "ALU-WEB-2007", "A route attribute outside a @Controller")
     public static let pipelineNarrowing = DiagnosticCode(
         "ALU-WEB-2008", "A route's pipelines drop its controller's authentication", .warning)
+    public static let undeclaredLane = DiagnosticCode(
+        "ALU-WEB-2009", "A route runs through a lane nothing declares", .warning)
 
     // Configuration.
     public static let configValueWithoutKey = DiagnosticCode(
@@ -112,6 +114,14 @@ extension DiagnosticCode {
         "ALU-CONFIG-5002", "@Settings declared in a way Alula cannot bind")
     public static let invalidSettingsProperty = DiagnosticCode(
         "ALU-CONFIG-5003", "A @Settings property Alula cannot bind")
+    public static let missingConfigKey = DiagnosticCode(
+        "ALU-CONFIG-5004", "A configuration key the base file does not define")
+    public static let invalidConfigPrefix = DiagnosticCode(
+        "ALU-CONFIG-5005", "A configuration prefix that cannot name environment variables")
+    public static let configKeysUnchecked = DiagnosticCode(
+        "ALU-CONFIG-5006", "The build could not check configuration keys", .warning)
+    public static let unreadableConfigFile = DiagnosticCode(
+        "ALU-CONFIG-5007", "The base configuration file does not parse")
 
     // Security and authentication composition.
     public static let rolesWithoutAuthentication = DiagnosticCode(
@@ -146,8 +156,9 @@ extension DiagnosticCode {
         .unsupportedComponentDeclaration, .invalidInjectionTarget,
         .duplicateRoute, .invalidHandlerParameter, .unsupportedControllerDeclaration,
         .invalidRoutePath, .nonLiteralRoutePath, .invalidHandlerDeclaration,
-        .routeOutsideController, .pipelineNarrowing,
+        .routeOutsideController, .pipelineNarrowing, .undeclaredLane,
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
+        .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
         .rolesWithoutAuthentication,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,
         .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,

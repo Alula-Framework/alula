@@ -1659,17 +1659,15 @@ func diagnoseUndeclaredLanes() {
         guard let text = route.pipelinesText else { continue }
         guard let named = laneNames(in: text) else { continue }
         for lane in named where !declared.contains(lane) {
-            emit(
-                "warning",
-                """
-                Route \(route.httpMethod) \(route.path) runs through pipeline lane \
-                '\(lane)', which nothing declares. Declare it with \
-                `MiddlewareRegistration.lane("\(lane)", [...])` in a module (an empty \
-                lane list is legal), or remove it from the route's pipelines — \
-                otherwise this fails when dispatch is built.
-                """,
-                file: route.file, line: route.line
-            )
+            report(Diagnostic(
+                .undeclaredLane,
+                "`\(route.httpMethod) \(route.path)` runs through lane '\(lane)', which nothing declares",
+                at: DiagnosticLocation(file: route.file, line: route.line, column: route.column),
+                explanation: ["Dispatch is built from the declared lanes; this route would fail when it is."],
+                help: [
+                    "declare it in a module — `MiddlewareRegistration.lane(\"\(lane)\", [...])`, an empty list is legal —\n"
+                        + "or remove it from the route's pipelines."
+                ]))
         }
     }
 }
@@ -1854,30 +1852,27 @@ func resolvedConfigPrefix() -> ConfigPrefix? {
 
     if distinct.count > 1 {
         let (entry, _) = literals[0]
-        emit(
-            "warning",
-            """
-            This target calls Configuration.load with \(distinct.count) different literal \
-            prefixes (\(distinct.sorted().joined(separator: ", "))), so the base configuration \
-            file cannot be identified and the @ConfigValue key check did not run. Those keys \
-            are verified at startup instead.
-            """,
-            file: entry.file, line: entry.line)
+        report(Diagnostic(
+            .configKeysUnchecked,
+            "configuration keys were not checked: this target loads configuration with \(distinct.count) different prefixes",
+            at: DiagnosticLocation(file: entry.file, line: entry.line),
+            context: ["prefixes: \(distinct.sorted().joined(separator: ", "))"],
+            explanation: ["With more than one, the build cannot tell which base file to check against; the keys are verified at startup instead."],
+            help: ["load configuration with one literal prefix."]))
         return nil
     }
 
     if let (entry, text) = literals.first {
         guard let prefix = ConfigPrefix(validating: text) else {
-            emit(
-                "error",
-                """
-                '\(text)' is not a usable configuration prefix: it must be lowercase ASCII \
-                letters, digits and underscores, starting with a letter, because its uppercased \
-                form is an environment-variable prefix and \
-                '\(text.uppercased())_SERVER_PORT' is not a name most shells can set. \
-                Configuration.load would trap on this at startup.
-                """,
-                file: entry.file, line: entry.line)
+            report(Diagnostic(
+                .invalidConfigPrefix,
+                "'\(text)' is not a usable configuration prefix",
+                at: DiagnosticLocation(file: entry.file, line: entry.line),
+                explanation: [
+                    "Its uppercased form prefixes environment variables, and `\(text.uppercased())_SERVER_PORT`",
+                    "is not a name most shells can set. `Configuration.load` would trap on it at startup.",
+                ],
+                help: ["use lowercase ASCII letters, digits and underscores, starting with a letter."]))
             return nil
         }
         return prefix
@@ -1885,14 +1880,12 @@ func resolvedConfigPrefix() -> ConfigPrefix? {
 
     // A prefix was written but is not a literal: present, unknowable.
     if let entry = scannedConfigPrefixes.first {
-        emit(
-            "warning",
-            """
-            The prefix passed to Configuration.load here is not a plain string literal, so the \
-            base configuration file cannot be identified and the @ConfigValue key check did not \
-            run. Those keys are verified at startup instead.
-            """,
-            file: entry.file, line: entry.line)
+        report(Diagnostic(
+            .configKeysUnchecked,
+            "configuration keys were not checked: the prefix passed to `Configuration.load` is not a string literal",
+            at: DiagnosticLocation(file: entry.file, line: entry.line),
+            explanation: ["The build cannot tell which base file to check against; the keys are verified at startup instead."],
+            help: ["pass the prefix as a plain string literal."]))
         return nil
     }
     return ConfigPrefix.default
@@ -1914,16 +1907,15 @@ func checkConfigKeys() {
         let names = uncheckable.compactMap(\.0.key).sorted()
         let shown = names.prefix(3).joined(separator: ", ")
         let more = names.count > 3 ? " (+\(names.count - 3) more)" : ""
-        emit(
-            "warning",
-            """
-            \(prefix.baseFileName) was not found in \(packageDirectory), so the \
-            compile-time check of \(names.count) configuration key\(names.count == 1 ? "" : "s") \
-            without defaults did not run: \(shown)\(more). Add \(prefix.baseFileName) \
-            — the base layer this application loads — and these keys are checked here \
-            instead of at startup.
-            """,
-            file: first.file, line: first.line)
+        report(Diagnostic(
+            .configKeysUnchecked,
+            "configuration keys were not checked: \(prefix.baseFileName) is not at the package root",
+            at: DiagnosticLocation(file: first.file, line: first.line),
+            context: [
+                "unchecked: \(names.count) key\(names.count == 1 ? "" : "s") without defaults — \(shown)\(more)",
+            ],
+            explanation: ["The keys are verified at startup instead."],
+            help: ["add \(prefix.baseFileName), the base layer this application loads, and the build checks them."]))
         return
     }
 
@@ -1935,20 +1927,20 @@ func checkConfigKeys() {
         baseKeys = try AlulaYAMLDocument(contentsOf: baseURL, substitution: .none).keys
     } catch let error as ConfigLoadError {
         if case .parseFailed(_, let line, let column, let message) = error {
-            FileHandle.standardError.write(
-                "\(baseURL.path):\(line):\(column): error: \(message)\n".data(using: .utf8)!
-            )
-            errorCount += 1
+            report(Diagnostic(
+                .unreadableConfigFile, "\(prefix.baseFileName) does not parse: \(message)",
+                at: DiagnosticLocation(file: baseURL.path, line: line, column: column),
+                explanation: ["The application would fail the same way at startup."]))
         } else {
-            emit(
-                "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
-                file: baseURL.path, line: 1)
+            report(Diagnostic(
+                .unreadableConfigFile, "\(prefix.baseFileName) could not be loaded: \(error)",
+                at: DiagnosticLocation(file: baseURL.path, line: 1)))
         }
         return
     } catch {
-        emit(
-            "error", "\(prefix.baseFileName) could not be loaded for the @ConfigValue key check: \(error)",
-            file: baseURL.path, line: 1)
+        report(Diagnostic(
+            .unreadableConfigFile, "\(prefix.baseFileName) could not be loaded: \(error)",
+            at: DiagnosticLocation(file: baseURL.path, line: 1)))
         return
     }
 
@@ -1956,19 +1948,23 @@ func checkConfigKeys() {
         for configValue in component.configValues {
             guard let key = configValue.key, !configValue.hasDefault else { continue }
             guard !baseKeys.contains(key) else { continue }
-            let message: String
+            // No @ConfigValue is written for a @Settings field — the key
+            // comes from the property's own name — so the help must not
+            // claim an attribute that isn't there.
+            let orDefault: String
             switch configValue.source {
-            case .explicitConfigValue:
-                message =
-                    "@ConfigValue key '\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or provide default:."
-            case .implicitSettingsField:
-                // No @ConfigValue was written here — @Settings derived this
-                // key from the property's own name — so the message must not
-                // claim an attribute that isn't there.
-                message =
-                    "'\(key)' in \(component.typeName) is missing from \(prefix.baseFileName) and the property has no default. Add the key to \(prefix.baseFileName) (the base layer — a ${VAR} placeholder is fine for env-supplied values), or give the property a default value."
+            case .explicitConfigValue: orDefault = "or give the @ConfigValue a `default:`."
+            case .implicitSettingsField: orDefault = "or give the property a default value."
             }
-            emit("error", message, file: configValue.file, line: configValue.line)
+            report(Diagnostic(
+                .missingConfigKey,
+                "configuration key '\(key)' is not in \(prefix.baseFileName), and \(component.typeName) has no default for it",
+                at: DiagnosticLocation(file: configValue.file, line: configValue.line),
+                explanation: ["Without the key or a default, the application would fail at startup."],
+                help: [
+                    "add '\(key)' to \(prefix.baseFileName) — a ${VAR} placeholder is fine for a value the environment supplies —\n"
+                        + orDefault
+                ]))
         }
     }
 }

@@ -398,7 +398,7 @@ struct GeneratorTests {
         )
         #expect(result.exitCode == 0, "a missing base file is not a build failure")
         #expect(result.diagnostics.contains("myapp.yaml"), "it must look for the declared file")
-        #expect(result.diagnostics.contains("did not run"))
+        #expect(result.diagnostics.contains("[ALU-CONFIG-5006]"))
     }
 
     @Test("a literal that is not a legal prefix is a build error, not a startup trap")
@@ -430,8 +430,8 @@ struct GeneratorTests {
             """
         ])
         #expect(result.exitCode == 0, "unknowable is not a failure")
-        #expect(result.diagnostics.contains("not a plain string literal"))
-        #expect(result.diagnostics.contains("did not run"))
+        #expect(result.diagnostics.contains("is not a string literal"))
+        #expect(result.diagnostics.contains("[ALU-CONFIG-5006]"))
     }
 
     @Test("no alula.yaml plus unchecked keys warns instead of skipping in silence")
@@ -452,7 +452,7 @@ struct GeneratorTests {
         #expect(result.exitCode == 0, "a missing base file is not a build failure")
         #expect(result.diagnostics.contains("warning"))
         #expect(result.diagnostics.contains("app.name"))
-        #expect(result.diagnostics.contains("did not run"))
+        #expect(result.diagnostics.contains("[ALU-CONFIG-5006]"))
     }
 
     @Test("a required @ConfigValue key present in alula.yaml succeeds")

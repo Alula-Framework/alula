@@ -1,0 +1,5 @@
+Main.swift:5:5: warning: [ALU-WEB-2009] `GET /admin/stats` runs through lane 'audit', which nothing declares
+    Dispatch is built from the declared lanes; this route would fail when it is.
+    help: declare it in a module — `MiddlewareRegistration.lane("audit", [...])`, an empty list is legal —
+          or remove it from the route's pipelines.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-WEB-2009.md

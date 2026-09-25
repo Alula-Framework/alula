@@ -112,6 +112,136 @@ enum DiagnosticCatalog {
             ALU-CONFIG-5002.
 
             """##,
+        "ALU-CONFIG-5004": ##"""
+            # ALU-CONFIG-5004: A configuration key the base file does not define
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@ConfigValue` key, or a `@Settings` property's key, has no default and is
+            not in the application's base configuration file (`alula.yaml`, or
+            `<prefix>.yaml`).
+
+            ## Why Alula rejects it
+
+            A key with no value and no default fails the application at startup. The
+            base file is the one layer every environment loads, so a key missing from it
+            is missing everywhere unless something else happens to supply it — and the
+            build can check that now rather than a deploy finding out.
+
+            ## Common causes
+
+            - A new `@ConfigValue` whose key was not added to `alula.yaml`.
+            - A typo in the key, or in the YAML nesting.
+
+            ## Fixes
+
+            1. Add the key to the base file. For a value the environment supplies, a placeholder is enough: `password: ${MAIL_PASSWORD}`.
+            2. Or give it a default: `@ConfigValue("mail.port", default: 25)`, or a default value on the `@Settings` property.
+
+            ## Example
+
+            ```swift
+            # alula.yaml
+            mail:
+              host: smtp.example.com
+              from: ${MAIL_FROM}
+            ```
+
+            ## Related
+
+            ALU-CONFIG-5001, ALU-CONFIG-5006.
+
+            """##,
+        "ALU-CONFIG-5005": ##"""
+            # ALU-CONFIG-5005: A configuration prefix that cannot name environment variables
+
+            **Severity:** error
+
+            ## Meaning
+
+            `Configuration.load(prefix:)` is given a prefix with characters other than
+            lowercase ASCII letters, digits and underscores, or one that does not start
+            with a letter.
+
+            ## Why Alula rejects it
+
+            The prefix names the base file (`<prefix>.yaml`) and, uppercased, prefixes
+            every environment variable that overrides it: `MYAPP_SERVER_PORT`. A prefix
+            like `My-App` gives `MY-APP_SERVER_PORT`, which most shells cannot set.
+            `Configuration.load` traps on it at startup; the build says so first.
+
+            ## Fixes
+
+            1. Use lowercase letters, digits and underscores: `Configuration.load(prefix: "my_app")`.
+
+            ## Related
+
+            ALU-CONFIG-5006.
+
+            """##,
+        "ALU-CONFIG-5006": ##"""
+            # ALU-CONFIG-5006: The build could not check configuration keys
+
+            **Severity:** warning
+
+            ## Meaning
+
+            The build checks every configuration key without a default against the base
+            configuration file, and this time it could not:
+
+            - the base file (`alula.yaml`, or `<prefix>.yaml`) is not in the package;
+            - the prefix passed to `Configuration.load` is not a string literal;
+            - the target loads configuration with more than one prefix.
+
+            ## Why Alula rejects it
+
+            The keys are still checked — at startup, which is later than it needs to be.
+            The warning exists because a check that silently does not run is worse than
+            none: it teaches you to trust it.
+
+            ## Fixes
+
+            1. Add the base file at the package root.
+            2. Pass the prefix as a literal: `Configuration.load(prefix: "relay")`.
+            3. Load configuration with one prefix.
+
+            ## Related
+
+            ALU-CONFIG-5004, ALU-CONFIG-5005.
+
+            """##,
+        "ALU-CONFIG-5007": ##"""
+            # ALU-CONFIG-5007: The base configuration file does not parse
+
+            **Severity:** error
+
+            ## Meaning
+
+            The base configuration file is not valid YAML, or could not be read. The
+            diagnostic points at the line and column the parser stopped at.
+
+            ## Why Alula rejects it
+
+            The build reads the file to check keys, with the same parser the
+            application uses at startup — so a file the build cannot read is one the
+            application cannot either.
+
+            ## Common causes
+
+            - Inconsistent indentation.
+            - A tab used for indentation.
+
+            ## Fixes
+
+            1. Fix the YAML at the reported position.
+
+            ## Related
+
+            ALU-CONFIG-5004.
+
+            """##,
         "ALU-DI-1001": ##"""
             # ALU-DI-1001: No module provides a required type
 
@@ -1238,6 +1368,44 @@ enum DiagnosticCatalog {
             ## Related
 
             ALU-SEC-6001.
+
+            """##,
+        "ALU-WEB-2009": ##"""
+            # ALU-WEB-2009: A route runs through a lane nothing declares
+
+            **Severity:** warning
+
+            ## Meaning
+
+            A route's (or its controller's) `pipelines:` names a lane — `"audit"` — that
+            no module declares with `MiddlewareRegistration.lane(_:_:)`.
+
+            ## Why Alula rejects it
+
+            Dispatch is built from the declared lanes, and building it fails on a route
+            that names one it cannot find — at startup. It is a warning rather than an
+            error because a lane can be declared by a module the build tool cannot see,
+            such as one registered from a computed value.
+
+            ## Common causes
+
+            - A typo in the lane name.
+            - The module that declares the lane is not in `modules:`.
+
+            ## Fixes
+
+            1. Declare the lane in a module: `MiddlewareRegistration.lane("audit", [AuditMiddleware.self])`. An empty list is legal.
+            2. Correct the name, or remove the lane from the route's pipelines.
+
+            ## Example
+
+            ```swift
+            @Controller("/admin", pipelines: [.authenticated, "audit"])
+            ```
+
+            ## Related
+
+            ALU-WEB-2008.
 
             """##,
     ]

@@ -1,0 +1,5 @@
+Main.swift:3:1: error: [ALU-CONFIG-5005] 'My-App' is not a usable configuration prefix
+    Its uppercased form prefixes environment variables, and `MY-APP_SERVER_PORT`
+    is not a name most shells can set. `Configuration.load` would trap on it at startup.
+    help: use lowercase ASCII letters, digits and underscores, starting with a letter.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5005.md

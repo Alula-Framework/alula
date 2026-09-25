@@ -1,0 +1,5 @@
+Main.swift:5:1: error: [ALU-CONFIG-5004] configuration key 'mail.from' is not in alula.yaml, and Mailer has no default for it
+    Without the key or a default, the application would fail at startup.
+    help: add 'mail.from' to alula.yaml — a ${VAR} placeholder is fine for a value the environment supplies —
+          or give the @ConfigValue a `default:`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5004.md

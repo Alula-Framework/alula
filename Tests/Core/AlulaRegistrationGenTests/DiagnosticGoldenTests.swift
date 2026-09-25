@@ -10,7 +10,8 @@ import Testing
 // let a diagnostic regress into a generic Swift error unnoticed; these fail
 // on any change to what the developer reads.
 //
-// A case directory: `*.swift` at the top level is the application target;
+// A case directory: `*.swift` at the top level is the application target, and
+// `*.yaml` beside it the package's configuration;
 // each subdirectory is a dependency module of that name; `expected.txt` is
 // the output, with the temporary workspace path removed. Record new output
 // for review with `ALULA_UPDATE_GOLDEN=1`.
@@ -44,7 +45,13 @@ extension GeneratorTests {
                 dependencies[entry] = try swiftFiles(in: path)
             }
         }
-        let result = try generate(try swiftFiles(in: directory), dependencyModules: dependencies)
+        // YAML beside the sources is the package's configuration.
+        var configFiles: [String: String] = [:]
+        for entry in try FileManager.default.contentsOfDirectory(atPath: directory.path) where entry.hasSuffix(".yaml") {
+            configFiles[entry] = try String(contentsOf: directory.appendingPathComponent(entry), encoding: .utf8)
+        }
+        let result = try generate(
+            try swiftFiles(in: directory), configFiles: configFiles, dependencyModules: dependencies)
         // `/tmp/…/alulagen-<uuid>/Main.swift:12:17` → `Main.swift:12:17`.
         let actual = result.diagnostics.replacing(/[^\s:]*alulagen-[0-9A-F-]+\//, with: "")
         let expectedURL = directory.appendingPathComponent("expected.txt")

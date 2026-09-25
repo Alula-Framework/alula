@@ -188,6 +188,8 @@ enum DiagnosticCatalog {
             not in the application's base configuration file (`alula.yaml`, or
             `<prefix>.yaml`).
 
+            The same code is printed at startup when a key is set in no source at all — the build checks only the base file, and a key can depend on the environment.
+
             ## Why Alula rejects it
 
             A key with no value and no default fails the application at startup. The
@@ -287,6 +289,8 @@ enum DiagnosticCatalog {
             The base configuration file is not valid YAML, or could not be read. The
             diagnostic points at the line and column the parser stopped at.
 
+            The same code is printed at startup when a configuration file cannot be read or parsed.
+
             ## Why Alula rejects it
 
             The build reads the file to check keys, with the same parser the
@@ -305,6 +309,151 @@ enum DiagnosticCatalog {
             ## Related
 
             ALU-CONFIG-5004.
+
+            """##,
+        "ALU-CONFIG-5008": ##"""
+            # ALU-CONFIG-5008: A configuration value of the wrong type
+
+            **Severity:** error
+
+            ## Meaning
+
+            At startup, a configuration key has a value that does not decode as the type
+            the application reads it as — `server.port: eighty` read as an `Int`.
+
+            ## Why Alula rejects it
+
+            A value that cannot be what the code expects would fail later, somewhere
+            less obvious. Configuration is resolved while the application starts so that
+            it fails there, naming the key.
+
+            ## Common causes
+
+            - A typo in the value.
+            - An environment variable overriding the key with the wrong kind of value.
+
+            ## Fixes
+
+            1. Correct the value in the file or variable that supplies it — the message names the key and the value it found.
+
+            ## Related
+
+            ALU-CONFIG-5004.
+
+            """##,
+        "ALU-CONFIG-5009": ##"""
+            # ALU-CONFIG-5009: A configuration source could not answer
+
+            **Severity:** error
+
+            ## Meaning
+
+            At startup, a configuration source failed while reading a key — a secrets
+            store that is down or refused permission — or holds a value with no single
+            string form, such as an array read as a scalar.
+
+            ## Why Alula rejects it
+
+            Resolution stops at the failing source rather than falling through to a
+            lower-precedence layer. Falling through would answer a production key from
+            the development YAML underneath, silently and with the right-looking value.
+
+            ## Fixes
+
+            1. Restore access to the source the message names.
+            2. For an array, read it through `Configuration.reader` and ask for the array type.
+
+            ## Related
+
+            ALU-CONFIG-5004.
+
+            """##,
+        "ALU-CONFIG-5010": ##"""
+            # ALU-CONFIG-5010: No base configuration file at startup
+
+            **Severity:** error
+
+            ## Meaning
+
+            `Configuration.load` found no base file (`alula.yaml`, or `<prefix>.yaml`)
+            where it looked: relative to the process's working directory.
+
+            ## Why Alula rejects it
+
+            The base file is the layer every environment loads; only the
+            `<prefix>-<env>.yaml` overlays are optional. Starting without it would run on
+            whatever the environment happens to supply.
+
+            ## Common causes
+
+            - A deployment that launches from a directory other than the project's.
+
+            ## Fixes
+
+            1. Ship the base file beside the binary, or start from the directory that holds it.
+            2. Or pass the location: `Configuration.load(from: URL(fileURLWithPath: "/srv/app"))`.
+
+            ## Related
+
+            ALU-CONFIG-5006.
+
+            """##,
+        "ALU-CONFIG-5011": ##"""
+            # ALU-CONFIG-5011: Configuration refers to an unset environment variable
+
+            **Severity:** error
+
+            ## Meaning
+
+            A configuration file uses `${VAR}` and `VAR` is not set in the environment.
+
+            ## Why Alula rejects it
+
+            Loading fails rather than leaving the key to a lower layer: the alternative
+            is a production deployment quietly running on base-layer development values.
+
+            ## Fixes
+
+            1. Set the variable.
+            2. Or give a fallback in the file: `${DB_URL:-postgres://localhost/app}`.
+
+            ## Example
+
+            ```swift
+            database:
+              url: ${DATABASE_URL}
+            ```
+
+            ## Related
+
+            ALU-CONFIG-5004.
+
+            """##,
+        "ALU-CONFIG-5012": ##"""
+            # ALU-CONFIG-5012: Configuration written for Flight, before the rename
+
+            **Severity:** error
+
+            ## Meaning
+
+            The environment or the configuration directory still uses the framework's
+            old name: `FLIGHT_ENV` without `ALULA_ENV`, or a `flight.yaml` /
+            `flight-<env>.yaml` file.
+
+            ## Why Alula rejects it
+
+            Reading on would be quietly wrong. An unset `ALULA_ENV` means `dev`, so a
+            production deployment still setting `FLIGHT_ENV=prod` would start with the dev
+            overlay and dev actuator exposure.
+
+            ## Fixes
+
+            1. Rename each: `FLIGHT_` to `ALULA_`, `flight` to `alula`.
+            2. Or keep the old names deliberately: `Configuration.load(prefix: ConfigPrefix("flight"))`.
+
+            ## Related
+
+            ALU-CONFIG-5010.
 
             """##,
         "ALU-DI-1001": ##"""
@@ -1219,6 +1368,8 @@ enum DiagnosticCatalog {
 
             Two route handlers answer the same HTTP method and path.
 
+            The same code is printed at startup for routes the build cannot see, such as a `RouteRegistration` value a module builds.
+
             ## Why Alula rejects it
 
             A router can dispatch a request to only one handler. Keeping whichever was
@@ -1342,6 +1493,8 @@ enum DiagnosticCatalog {
             - name every `:parameter` segment, and each only once;
             - use `**` only as the last segment;
             - contain no quote or backslash.
+
+            The same code is printed at startup for a route registered from a module value with a malformed path.
 
             ## Why Alula rejects it
 

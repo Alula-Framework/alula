@@ -8,6 +8,8 @@ A `@ConfigValue` key, or a `@Settings` property's key, has no default and is
 not in the application's base configuration file (`alula.yaml`, or
 `<prefix>.yaml`).
 
+The same code is printed at startup when a key is set in no source at all — the build checks only the base file, and a key can depend on the environment.
+
 ## Why Alula rejects it
 
 A key with no value and no default fails the application at startup. The

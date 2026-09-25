@@ -38,4 +38,22 @@ struct StartupReportTests {
         #expect(startupReport(for: ConnectFailed(), detail: "reflect").contains("hunter2"))
         #expect(!startupReport(for: ConnectFailed(), detail: "1").contains("hunter2"))
     }
+
+    /// A framework-owned failure carries its code and page; one the
+    /// application owns prints as it always did.
+    @Test("configuration failures at startup carry their codes")
+    func configurationCodes() {
+        func report(_ error: any Error) -> String { failureReport(for: error, detail: nil) }
+        #expect(report(ConfigError.missingKey(key: "mail.host", environment: .prod)).contains("error: [ALU-CONFIG-5004] Configuration key 'mail.host'"))
+        #expect(report(ConfigError.decodingFailed(key: "server.port", rawValue: "eighty", targetType: "Int")).contains("[ALU-CONFIG-5008]"))
+        #expect(report(ConfigError.providerFailed(key: "db.password", provider: "vault", reason: "timed out")).contains("[ALU-CONFIG-5009]"))
+        #expect(report(ConfigLoadError.missingBaseFile(expectedPath: "/srv/app/alula.yaml")).contains("[ALU-CONFIG-5010]"))
+        #expect(report(ConfigLoadError.parseFailed(file: "alula.yaml", line: 3, column: 4, message: "bad")).contains("[ALU-CONFIG-5007]"))
+        #expect(report(ConfigLoadError.unresolvedSubstitution(file: "alula.yaml", line: 2, key: "db.url", variable: "DB_URL")).contains("[ALU-CONFIG-5011]"))
+        #expect(report(ConfigLoadError.preRenameConfiguration(variables: ["FLIGHT_ENV"], files: [])).contains("[ALU-CONFIG-5012]"))
+        let coded = report(ConfigError.missingKey(key: "mail.host", environment: nil))
+        #expect(coded.hasPrefix("alula: could not start.\nerror: [ALU-CONFIG-5004]"))
+        #expect(coded.contains("docs: https://"))
+        #expect(report(PoolDown()) == "alula: could not start.\ncould not connect to db.internal:5432: connection refused\n")
+    }
 }

@@ -323,6 +323,7 @@ let package = Package(
         .target(
             name: "AlulaWeb",
             dependencies: [
+                "AlulaDiagnostics",
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Web"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaTelemetryBridges", condition: .when(traits: ["Web"])),

@@ -218,6 +218,41 @@ public enum Alula {
 /// redaction an error's author chose.
 public protocol StartupDiagnostic: Error {
     var startupDiagnostic: String { get }
+    /// The Alula diagnostic code, for a failure the framework owns — printed
+    /// with a link to its page. Applications leave it `nil`.
+    var diagnosticCode: DiagnosticCode? { get }
+}
+
+extension StartupDiagnostic {
+    public var diagnosticCode: DiagnosticCode? { nil }
+}
+
+/// The code for a framework-owned startup failure, if it has one.
+///
+/// Configuration errors are mapped here rather than conforming where they
+/// are declared: `AlulaConfigCore` sits below the diagnostics and is
+/// shared with the build tool, and a key missing at startup is the same
+/// problem, with the same page, as one the build found missing.
+func diagnosticCode(for error: any Error) -> DiagnosticCode? {
+    switch error {
+    case let config as ConfigError:
+        switch config {
+        case .missingKey: return .missingConfigKey
+        case .decodingFailed: return .invalidConfigValue
+        case .providerFailed, .unrepresentableValue: return .configSourceFailed
+        }
+    case let load as ConfigLoadError:
+        switch load {
+        case .missingBaseFile: return .missingBaseConfigFile
+        case .unreadableFile, .parseFailed: return .unreadableConfigFile
+        case .unresolvedSubstitution: return .unsetConfigVariable
+        case .preRenameConfiguration: return .preRenameConfiguration
+        }
+    case let diagnostic as any StartupDiagnostic:
+        return diagnostic.diagnosticCode
+    default:
+        return nil
+    }
 }
 
 /// What `Alula.run` prints for an error that stopped the start.
@@ -265,6 +300,11 @@ func failureReport(
                 help: ["rename one of them."]
             ).rendered + "\n"
     default:
-        return "alula: could not start.\n\(startupReport(for: error, detail: detail))\n"
+        let report = startupReport(for: error, detail: detail)
+        guard let code = diagnosticCode(for: error) else {
+            return "alula: could not start.\n\(report)\n"
+        }
+        return "alula: could not start.\n"
+            + AlulaDiagnostics.Diagnostic(code, report, at: nil).rendered + "\n"
     }
 }

@@ -6,6 +6,8 @@
 
 Two route handlers answer the same HTTP method and path.
 
+The same code is printed at startup for routes the build cannot see, such as a `RouteRegistration` value a module builds.
+
 ## Why Alula rejects it
 
 A router can dispatch a request to only one handler. Keeping whichever was

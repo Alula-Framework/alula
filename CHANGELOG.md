@@ -27,6 +27,15 @@ the OpenAPI document.
   build now reports it at both declarations; a module not in `modules:` is
   not counted.
 
+- **Startup failures the framework owns print a code.** A configuration key
+  set in no source prints `[ALU-CONFIG-5004]` — the same code as the build's
+  check — and the other configuration failures have their own
+  (`5007`–`5012`: an unreadable file, a wrong-typed value, a failing source,
+  no base file, an unset `${VAR}`, pre-rename `FLIGHT_*` configuration). A
+  route conflict found at startup is `ALU-WEB-2001`. `StartupDiagnostic`
+  gains an optional `diagnosticCode`, defaulted to `nil`, so an application's
+  own conformers are unchanged.
+
 ### Fixed
 
 - **A failed command no longer says the application "could not start"**

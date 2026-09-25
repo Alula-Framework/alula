@@ -1,3 +1,5 @@
+import AlulaCore
+import AlulaDiagnostics
 import Foundation
 import HTTPTypes
 
@@ -107,6 +109,19 @@ public enum RouterError: Error, CustomStringConvertible {
             return "Conflicting routes for \(method) \(shape): declared by \(sources.joined(separator: " and "))."
         case .invalidPattern(let source, let underlying):
             return "Invalid route pattern in \(source): \(underlying)"
+        }
+    }
+}
+
+/// A route table that cannot be built stops the start. These are the same
+/// problems the build reports (ALU-WEB-2001, ALU-WEB-2004) for routes it can
+/// see; a route registered from a module value is only seen here.
+extension RouterError: StartupDiagnostic {
+    public var startupDiagnostic: String { description }
+    public var diagnosticCode: DiagnosticCode? {
+        switch self {
+        case .conflictingRoutes: .duplicateRoute
+        case .invalidPattern: .invalidRoutePath
         }
     }
 }

@@ -11,6 +11,8 @@ A route or controller path is not a valid Alula path. A path must:
 - use `**` only as the last segment;
 - contain no quote or backslash.
 
+The same code is printed at startup for a route registered from a module value with a malformed path.
+
 ## Why Alula rejects it
 
 The route table is built at compile time. A malformed path would either

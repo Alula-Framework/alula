@@ -128,6 +128,16 @@ extension DiagnosticCode {
         "ALU-CONFIG-5006", "The build could not check configuration keys", .warning)
     public static let unreadableConfigFile = DiagnosticCode(
         "ALU-CONFIG-5007", "The base configuration file does not parse")
+    public static let invalidConfigValue = DiagnosticCode(
+        "ALU-CONFIG-5008", "A configuration value of the wrong type")
+    public static let configSourceFailed = DiagnosticCode(
+        "ALU-CONFIG-5009", "A configuration source could not answer")
+    public static let missingBaseConfigFile = DiagnosticCode(
+        "ALU-CONFIG-5010", "No base configuration file at startup")
+    public static let unsetConfigVariable = DiagnosticCode(
+        "ALU-CONFIG-5011", "Configuration refers to an unset environment variable")
+    public static let preRenameConfiguration = DiagnosticCode(
+        "ALU-CONFIG-5012", "Configuration written for Flight, before the rename")
 
     // Security and authentication composition.
     public static let rolesWithoutAuthentication = DiagnosticCode(
@@ -170,6 +180,8 @@ extension DiagnosticCode {
         .undocumentedType, .undocumentedResponse,
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
+        .invalidConfigValue, .configSourceFailed, .missingBaseConfigFile, .unsetConfigVariable,
+        .preRenameConfiguration,
         .rolesWithoutAuthentication,
         .duplicateCommand, .unknownCommand,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,

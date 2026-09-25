@@ -55,6 +55,7 @@ struct ActuatorController {
 
     let environment: AlulaEnvironment
     let format: ActuatorFormat
+    var buildInfo = ActuatorBuildInfo()
 
     /// Overall health, with nothing in it worth hiding.
     ///
@@ -134,6 +135,13 @@ struct ActuatorController {
                 draining: draining ? true : nil))
         return .data(
             body, contentType: .json, status: up ? .ok : .serviceUnavailable)
+    }
+
+    /// Which build is running, and since when; see ``ActuatorBuildInfo``.
+    func info(_ context: RequestContext) async throws -> Response {
+        .data(
+            try Self.encoder.encode(buildInfo.document(environment: environment)),
+            contentType: .json)
     }
 
     func dashboard(_ context: RequestContext) async throws -> Response {

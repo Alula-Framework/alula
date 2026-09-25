@@ -127,20 +127,21 @@ struct GatingTests {
                 processEnvironment: ["ALULA_ACTUATOR_EXPOSURE": "full"]) == .full)
     }
 
-    @Test("the module declares its four routes as values")
+    @Test("the module declares its five routes as values")
     func routeVisibleInIntrospection() throws {
         // Declared as values now, so this is where the truth is — they used to
         // be `registerRoute` calls and this asserted on the container.
         // `AlulaWebModule` is what puts them back in a container, for the
         // dashboard to list; `WebModuleTests` covers that.
         let actuator = ActuatorModule(environment: .dev)
-        // The dashboard, plus the three health probes: the aggregate, and the
-        // liveness/readiness pair that answer the two different questions an
-        // orchestrator asks.
-        #expect(actuator.routes.count == 4)
+        // The dashboard and build info, plus the three health probes: the
+        // aggregate, and the liveness/readiness pair that answer the two
+        // different questions an orchestrator asks.
+        #expect(actuator.routes.count == 5)
         #expect(
             Set(actuator.routes.map { "\($0.method.rawValue) \($0.path) @\($0.source)" }) == [
                 "GET /actuator @AlulaActuator",
+                "GET /actuator/info @AlulaActuator",
                 "GET /actuator/health @AlulaActuator",
                 "GET /actuator/health/live @AlulaActuator",
                 "GET /actuator/health/ready @AlulaActuator",

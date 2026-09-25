@@ -107,7 +107,8 @@ public struct ActuatorModule: AlulaModule {
             dashboardAccess: try ActuatorDashboardAccess(configuration: configuration),
             logger: logger)
         try installController(
-            format: configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr)
+            format: configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr,
+            buildInfo: ActuatorBuildInfo(configuration: configuration))
     }
 
     /// The same path with the process environment injected — how a test asks
@@ -355,6 +356,16 @@ public struct ActuatorModule: AlulaModule {
                     try requireRoles(roles, in: context)
                     return try await controller.get().dashboard(context)
                 })
+            // Which build is running. Beside the dashboard and behind the same
+            // roles: a precise version tells an attacker which advisories apply.
+            routes.append(
+                RouteRegistration(
+                    method: "GET", path: "/actuator/info", source: "AlulaActuator",
+                    pipelines: dashboardAccess.pipelines
+                ) { context in
+                    try requireRoles(roles, in: context)
+                    return try await controller.get().info(context)
+                })
         }
         return routes
     }
@@ -366,15 +377,18 @@ public struct ActuatorModule: AlulaModule {
     /// `format` is read once here (the "read at bootstrap" semantics the
     /// freeze()-time factory used to give it). A malformed `actuator.format`
     /// throws, failing composition.
-    private func installController(format: ActuatorFormat) {
+    private func installController(
+        format: ActuatorFormat, buildInfo: ActuatorBuildInfo = ActuatorBuildInfo()
+    ) {
         guard let exposure = try? resolvedExposure.get(), exposure.publishesHealth else { return }
-        controller.set(
-            ActuatorController(
-                components: components + Self.ownComponents,
-                health: { [health] in health.statuses() },
-                isDraining: { [health] in health.isDraining },
-                readinessChecks: ReadinessChecks(checks: healthChecks, logger: logger),
-                environment: environment,
-                format: format))
+        var controller = ActuatorController(
+            components: components + Self.ownComponents,
+            health: { [health] in health.statuses() },
+            isDraining: { [health] in health.isDraining },
+            readinessChecks: ReadinessChecks(checks: healthChecks, logger: logger),
+            environment: environment,
+            format: format)
+        controller.buildInfo = buildInfo
+        self.controller.set(controller)
     }
 }

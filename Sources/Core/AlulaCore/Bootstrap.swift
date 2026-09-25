@@ -60,15 +60,25 @@ func _alulaAssemble(
     var services:
         [(
             moduleName: String, service: any Service, completion: ServiceCompletionPolicy,
-            phase: ServiceShutdownPhase
+            phase: ServiceShutdownPhase, hooks: [LifecycleHook]
         )] = []
     for (name, module) in zip(names, instances) {
+        let hooks = module.lifecycleHooks
+        if module.service == nil, !hooks.isEmpty {
+            // Hooks without a service: a stand-in holds the module's place so
+            // its startup hooks gate readiness and its shutdown hooks run in
+            // phase order.
+            services.append(
+                (name, AwaitShutdownService(), .failsApp, module.serviceShutdownPhase, hooks))
+            continue
+        }
         // A module with no long-running service is "running" the moment it is
         // part of the assembly. A service-owning one stays `notStarted` until
         // its service is actually entered (see HealthTrackingService) — marking
         // it here made readiness answer yes before anything had started.
         if let service = module.service {
-            services.append((name, service, module.serviceCompletion, module.serviceShutdownPhase))
+            services.append(
+                (name, service, module.serviceCompletion, module.serviceShutdownPhase, hooks))
         } else {
             health.set(name, .running)
         }
@@ -94,7 +104,7 @@ func _alulaAssemble(
                 moduleName: entry.element.moduleName,
                 service: HealthTrackingService(
                     moduleName: entry.element.moduleName, inner: entry.element.service,
-                    health: health),
+                    health: health, hooks: entry.element.hooks),
                 completion: entry.element.completion,
                 shutdownPhase: entry.element.phase
             )
@@ -247,18 +257,53 @@ struct DrainService: Service {
 /// Maps a Service's termination onto ModuleHealth with zero
 /// instrumentation required from module authors — bootstrap observes it from
 /// the outside, which is the whole point of tracking health externally.
+///
+/// Also runs the module's ``LifecycleHook``s: startup hooks before `inner`,
+/// with the module still `notStarted`, and shutdown hooks once `inner` has
+/// returned.
 struct HealthTrackingService: Service {
     let moduleName: String
     let inner: any Service
     let health: ModuleHealthRegistry
+    var hooks: [LifecycleHook] = []
 
     func run() async throws {
+        for hook in hooks where hook.moment == .startup {
+            do {
+                try await hook.run(Self.logger(for: hook))
+            } catch {
+                let failure = LifecycleHookFailure(
+                    module: moduleName, hook: hook.name, underlying: error)
+                health.set(moduleName, .failed(failure))
+                throw failure
+            }
+        }
         health.set(moduleName, .running)
         do {
             try await inner.run()
         } catch {
             health.set(moduleName, .failed(error))
+            await runShutdownHooks()
             throw error
         }
+        await runShutdownHooks()
+    }
+
+    private func runShutdownHooks() async {
+        for hook in hooks where hook.moment == .shutdown {
+            let logger = Self.logger(for: hook)
+            do {
+                try await hook.run(logger)
+            } catch {
+                logger.error(
+                    "shutdown hook failed", metadata: ["module": "\(moduleName)", "error": "\(error)"])
+            }
+        }
+    }
+
+    private static func logger(for hook: LifecycleHook) -> Logger {
+        var logger = Logger(label: "alula.lifecycle")
+        logger[metadataKey: "hook"] = "\(hook.name)"
+        return logger
     }
 }

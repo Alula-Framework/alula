@@ -229,8 +229,8 @@ check that looked present did nothing.
 - **Core:**
   - No optional `@Inject` and no conditional modules (M).
   - No "compose everything, swap one" for tests (M).
-  - No start or stop hooks beyond `service`.
-  - Actuator has no build-info or env endpoint, and can't change log levels at runtime.
+  - ~~No start or stop hooks beyond `service`.~~ *Built in 0.47.0 (`lifecycleHooks`).*
+  - ~~Actuator has no build-info~~ *(`/actuator/info`, 0.47.0)* or env endpoint, and can't change log levels at runtime.
 
 **Deliberately not listed:** everything above marked *deliberate*, and the
 HTTP/WebSocket and security items declined in DECISIONS.md: templating,

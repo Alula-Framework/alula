@@ -13,19 +13,27 @@ struct CommandTests {
         var all: [String] { entries.withLock { $0 } }
     }
 
-    /// Stands in for a pool: infrastructure, runs until shut down.
+    /// Stands in for a pool: infrastructure, runs until shut down. It comes
+    /// up slowly, in a startup hook, which a command must wait for.
     struct PoolModule: AlulaModule {
         let journal: Journal
         struct Pool: Service {
             let journal: Journal
             func run() async throws {
-                journal.note("pool up")
                 try? await gracefulShutdown()
                 journal.note("pool down")
             }
         }
         var service: (any Service)? { Pool(journal: journal) }
         var serviceShutdownPhase: ServiceShutdownPhase { .infrastructure }
+        var lifecycleHooks: [LifecycleHook] {
+            [
+                .onStartup("connect") { _ in
+                    try await Task.sleep(for: .milliseconds(50))
+                    journal.note("pool up")
+                }
+            ]
+        }
     }
 
     /// Stands in for the HTTP server or a worker: must not start for a command.

@@ -113,7 +113,7 @@ nothing, silently.
 | --- | --- |
 | `disabled` | none |
 | `health_only` | all three health probes — `/actuator/health`, `/actuator/health/live`, `/actuator/health/ready`. No topology in any of them. |
-| `full` | the three probes **and** the dashboard: module list, every component's type name, failure messages |
+| `full` | the three probes **and** the dashboard (module list, every component's type name, failure messages) and `/actuator/info` |
 
 The probes are published wherever the actuator is enabled at all, because an
 orchestrator needs them in production and an all-or-nothing gate is why
@@ -287,7 +287,8 @@ unauthenticated precisely because of what they leave out.
 
 Health inputs are Core's module lifecycle: a module with no service is
 `running` once it is composed; one with a service is `notStarted` until that
-service is entered, and `failed` if it throws. (Before 0.37.0 every module was
+service is entered, and `failed` if it throws. A module with startup
+`lifecycleHooks` stays `notStarted` until they have all returned. (Before 0.37.0 every module was
 marked `running` at composition, so readiness said yes before anything had
 started.) A module that is up but has lost something it depends on can say so
 on the `ModuleHealthRegistry` the composition root provides:
@@ -376,6 +377,21 @@ interpolate the URL they failed on — which can carry credentials. No
 scrubbing is attempted, because guessing at which substrings of an arbitrary
 error are secret is the kind of half-measure that reads as a guarantee.
 Wherever `full` is on, treat those strings as disclosed.
+
+### Build info
+
+`GET /actuator/info` says which build is running:
+
+```json
+{"buildTime":"2026-09-24T21:00:00Z","commit":"3f9c2a1","environment":"prod",
+ "name":"Shop","startedAt":"2026-09-24T21:04:10Z","uptimeSeconds":3600,"version":"1.4.2"}
+```
+
+The values come from `app.name`, `app.version`, `app.build.commit` and
+`app.build.time`, so an image build can set `ALULA_APP_VERSION` and
+`ALULA_APP_BUILD_COMMIT`. Unset ones are left out. It is published only where
+the dashboard is, behind the same roles, because a precise version tells an
+attacker which advisories apply.
 
 ## Non-goals
 

@@ -4,6 +4,32 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.0] - 2026-09-24
+
+More of the smaller list from the 2026-09-24 audit (GAPS.md §0).
+
+### Added
+
+- **Lifecycle hooks** (AlulaCore). A module's `lifecycleHooks: [LifecycleHook]`
+  (`.onStartup`, `.onShutdown`) do one-shot work without a `Service`.
+  - Startup hooks run before the module's service, and the module stays
+    `notStarted`, so readiness says no, until they finish.
+  - A failing startup hook stops the application, naming the hook.
+  - Shutdown hooks run after the module's service stops, in phase order. A
+    failing one is logged and the rest still run.
+- **`/actuator/info`** (AlulaActuator): name, version, commit, build time,
+  environment, start time and uptime, from `app.name`, `app.version` and
+  `app.build.*`. Published beside the dashboard, behind the same roles.
+
+### Fixed
+
+- An application command could run before the infrastructure it borrows had
+  started. `ServiceGroup` starts services together, so the command started
+  alongside the pool rather than after it. It now waits until every
+  infrastructure module reads as running, startup hooks included, and fails
+  without running if one of them fails. Found by the release gate's full
+  test run under load; in 0.45.0 and 0.46.0.
+
 ## [0.46.0] - 2026-09-24
 
 Small gaps from the 2026-09-24 audit (GAPS.md §0, "Smaller, by area").

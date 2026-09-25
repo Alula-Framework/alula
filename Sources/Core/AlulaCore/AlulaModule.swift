@@ -70,6 +70,9 @@ public protocol AlulaModule {
 
     /// Tasks the application can run instead of serving. See ``CommandRegistration``.
     var commands: [CommandRegistration] { get }
+
+    /// One-shot work at startup and shutdown; see ``LifecycleHook``.
+    var lifecycleHooks: [LifecycleHook] { get }
 }
 
 /// Where a module's service sits in the shutdown order.
@@ -114,6 +117,7 @@ extension AlulaModule {
     public var serviceCompletion: ServiceCompletionPolicy { .failsApp }
     public var serviceShutdownPhase: ServiceShutdownPhase { .standard }
     public var commands: [CommandRegistration] { [] }
+    public var lifecycleHooks: [LifecycleHook] { [] }
 
     /// Stable display name used for ComponentDescriptor.sourceModule and
     /// ModuleStatus.moduleName.

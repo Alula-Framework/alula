@@ -69,7 +69,9 @@ enum Invocation: Equatable {
             self = .serve
             return
         }
-        self = first == "commands" ? .listCommands : .command(name: first, arguments: Array(arguments.dropFirst()))
+        self =
+            first == "commands"
+            ? .listCommands : .command(name: first, arguments: Array(arguments.dropFirst()))
     }
 }
 
@@ -84,24 +86,51 @@ struct CommandNotFound: Error, CustomStringConvertible {
 enum CommandListing {
     static func text(_ commands: [CommandRegistration]) -> String {
         guard !commands.isEmpty else {
-            return "This application declares no commands. A module adds them with `commands: [CommandRegistration]`."
+            return
+                "This application declares no commands. A module adds them with `commands: [CommandRegistration]`."
         }
         let width = commands.map(\.name.count).max() ?? 0
         return "Commands:\n"
             + commands.sorted { $0.name < $1.name }.map {
-                "  " + $0.name.padding(toLength: width, withPad: " ", startingAt: 0) + "  " + $0.abstract
+                "  " + $0.name.padding(toLength: width, withPad: " ", startingAt: 0) + "  "
+                    + $0.abstract
             }.joined(separator: "\n")
     }
 }
 
 /// Runs one command once the infrastructure it borrows is up, then ends the group.
+///
+/// `ServiceGroup` starts services together, not one after another, so this
+/// waits until every infrastructure module reads as running (its service
+/// entered, its startup hooks done) before the command starts. It used to
+/// start at once, and a command could reach a pool before the pool had.
 struct CommandService: Service {
     let command: CommandRegistration
     let context: CommandContext
+    var health = ModuleHealthRegistry()
+    var infrastructure: [String] = []
 
     func run() async throws {
+        while true {
+            let statuses = health.statuses()
+            let pending = infrastructure.filter { name in
+                statuses.first { $0.moduleName == name }?.health != .running
+            }
+            if pending.isEmpty { break }
+            if let failed = statuses.first(where: {
+                pending.contains($0.moduleName) && $0.health.isFailed
+            }) {
+                throw InfrastructureFailed(module: failed.moduleName)
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
         try await command.run(context)
     }
+}
+
+struct InfrastructureFailed: Error, CustomStringConvertible {
+    let module: String
+    var description: String { "\(module) failed to start, so the command did not run" }
 }
 
 extension Alula {
@@ -117,16 +146,18 @@ extension Alula {
         }
         let app = try _alulaAssemble(
             configuration: configuration, moduleInstances: instances, health: health)
-        var services = app.services
-            .filter { $0.shutdownPhase == .infrastructure }
-            .map { ServiceGroupConfiguration.ServiceConfiguration(service: $0.service) }
+        let infrastructure = app.services.filter { $0.shutdownPhase == .infrastructure }
+        var services = infrastructure.map {
+            ServiceGroupConfiguration.ServiceConfiguration(service: $0.service)
+        }
         services.append(
             .init(
                 service: CommandService(
                     command: command,
                     context: CommandContext(
                         arguments: arguments, configuration: configuration,
-                        logger: Logger(label: "alula.command.\(name)"))),
+                        logger: Logger(label: "alula.command.\(name)")),
+                    health: health, infrastructure: infrastructure.map(\.moduleName)),
                 successTerminationBehavior: .gracefullyShutdownGroup,
                 failureTerminationBehavior: .gracefullyShutdownGroup))
         try await ServiceGroup(

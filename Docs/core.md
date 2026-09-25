@@ -293,6 +293,35 @@ when the command returns, and 1, with the error, when it throws.
 With no arguments, with `serve`, or with a first argument that is a flag,
 the application serves exactly as before.
 
+## Startup and shutdown hooks
+
+One-shot work at either end of the process, without writing a `Service`:
+
+```swift
+struct CatalogModule: AlulaModule {
+    let lifecycleHooks: [LifecycleHook]
+
+    init(catalog: Catalog) {
+        lifecycleHooks = [
+            .onStartup("warm the catalog cache") { _ in try await catalog.warm() },
+            .onShutdown("flush view counts") { _ in try await catalog.flushCounts() },
+        ]
+    }
+}
+```
+
+A module's startup hooks run in order, before its service starts. Until the
+last one returns the module reads as not started, so readiness says no and
+no traffic is routed to the process. A startup hook that throws stops the
+application, with the hook's name in the error. Shutdown hooks run after the
+module's service stops, in the same phase order as services: inbound first,
+infrastructure last, so a shutdown hook can still use the database. One
+that throws is logged and the rest still run. `lifecycle.shutdown-timeout-seconds`
+bounds them like the rest of shutdown.
+
+Use a `service` for work that goes on the whole time (a poller, a consumer),
+and hooks for work that happens once.
+
 ## Logging
 
 `Alula.run` sets up swift-log from configuration, before any module is

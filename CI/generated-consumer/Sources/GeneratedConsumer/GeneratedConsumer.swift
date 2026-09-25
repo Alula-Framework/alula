@@ -19,6 +19,16 @@ struct Greeter: Sendable {
     func greet() -> String { "hello from \(settings.appName)" }
 }
 
+/// A module holding the collection-typed requirements as stored properties,
+/// the way applications write them. The generator reads a module's stored
+/// properties as what it provides, so these must pass through it cleanly.
+struct HookedModule: AlulaModule {
+    let lifecycleHooks: [LifecycleHook] = [.onStartup("say hello") { _ in }]
+    let commands: [CommandRegistration] = [
+        CommandRegistration("hello", abstract: "Say hello") { _ in }
+    ]
+}
+
 @main
 struct GeneratedConsumer {
     static func main() throws {

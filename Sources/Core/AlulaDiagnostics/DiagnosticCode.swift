@@ -107,6 +107,12 @@ extension DiagnosticCode {
     public static let undeclaredLane = DiagnosticCode(
         "ALU-WEB-2009", "A route runs through a lane nothing declares", .warning)
 
+    // OpenAPI generation.
+    public static let undocumentedType = DiagnosticCode(
+        "ALU-OAPI-3001", "A type the API uses has no schema", .warning)
+    public static let undocumentedResponse = DiagnosticCode(
+        "ALU-OAPI-3002", "A route's response cannot be described", .warning)
+
     // Configuration.
     public static let configValueWithoutKey = DiagnosticCode(
         "ALU-CONFIG-5001", "@ConfigValue without a literal key")
@@ -161,6 +167,7 @@ extension DiagnosticCode {
         .duplicateRoute, .invalidHandlerParameter, .unsupportedControllerDeclaration,
         .invalidRoutePath, .nonLiteralRoutePath, .invalidHandlerDeclaration,
         .routeOutsideController, .pipelineNarrowing, .undeclaredLane,
+        .undocumentedType, .undocumentedResponse,
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
         .rolesWithoutAuthentication,

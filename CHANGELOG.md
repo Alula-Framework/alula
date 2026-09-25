@@ -6,7 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.51.0] - 2026-09-25
 
-The third phase of the diagnostics design: configuration checks and commands.
+The third phase of the diagnostics design: configuration checks, commands and
+the OpenAPI document.
 
 ### Added
 
@@ -15,6 +16,12 @@ The third phase of the diagnostics design: configuration checks and commands.
   could not run (`5006`, a warning), and a base file that does not parse
   (`5007`, pointing at the line and column). A route through a lane nothing
   declares is `ALU-WEB-2009`.
+- **The OpenAPI document says what it could not describe.** When the
+  application serves one, a type the build cannot derive a schema for
+  (`ALU-OAPI-3001`, once per type, with the property path that reached it) and
+  a handler returning `Response` (`ALU-OAPI-3002`) are warnings at the route.
+  A handler that returns `Response` on purpose — a redirect, a download —
+  says so with `// alula:undocumented-response`.
 - **Duplicate command names fail the build (`ALU-CMD-7001`).** Two included
   modules declaring one command name used to be refused only at startup. The
   build now reports it at both declarations; a module not in `modules:` is

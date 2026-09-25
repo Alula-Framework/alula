@@ -113,9 +113,33 @@ final class SchemaCollector: SyntaxVisitor {
 }
 
 /// Builds the document's `paths` and `components` as JSON text.
-struct OpenAPIBuilder {
+final class OpenAPIBuilder {
     let routes: [ScannedControllerRoute]
     let types: [SchemaDecl]
+
+    /// What the document could not describe, for the build to report.
+    struct Gap {
+        enum Kind {
+            /// A type no scanned target declares; `via` is the property
+            /// path from the route's own type, when it is nested.
+            case unknownType(String, via: String?)
+            case untypedResponse
+        }
+        let route: ScannedControllerRoute
+        let kind: Kind
+    }
+    private(set) var gaps: [Gap] = []
+    /// The route and property being described, so a gap can say where.
+    private var currentRoute: ScannedControllerRoute?
+    private var currentVia: String?
+    /// The route that first referenced each component.
+    private var origin: [String: ScannedControllerRoute] = [:]
+    private var reportedTypes: Set<String> = []
+
+    init(routes: [ScannedControllerRoute], types: [SchemaDecl]) {
+        self.routes = routes
+        self.types = types
+    }
 
     private var byName: [String: SchemaDecl] {
         var map: [String: SchemaDecl] = [:]
@@ -131,6 +155,8 @@ struct OpenAPIBuilder {
         var referenced: Set<String> = []
         var paths: [String: [String: Any]] = [:]
         for route in routes where !route.isUpgrade {
+            currentRoute = route
+            currentVia = nil
             var operation: [String: Any] = [
                 "operationId": "\(route.controllerTypeName).\(route.methodName)",
                 "tags": [route.controllerTypeName],
@@ -196,6 +222,9 @@ struct OpenAPIBuilder {
                 responses["204"] = ["description": "No Content"]
             case "Response", "AlulaWeb.Response":
                 responses["default"] = ["description": "Response"]
+                if !route.acknowledgesUndocumentedResponse {
+                    gaps.append(Gap(route: route, kind: .untypedResponse))
+                }
             case "String":
                 responses["200"] = ["description": "OK", "content": ["text/plain": ["schema": ["type": "string"]]]]
             case let type?:
@@ -213,6 +242,7 @@ struct OpenAPIBuilder {
         var done: Set<String> = []
         while let name = queue.popLast() {
             guard done.insert(name).inserted, let decl = byName[name] else { continue }
+            currentRoute = origin[name]
             var nested: Set<String> = []
             schemas[componentName(name)] = component(decl, &nested)
             queue += nested.subtracting(done)
@@ -258,6 +288,7 @@ struct OpenAPIBuilder {
             var required: [String] = []
             for property in properties {
                 let (inner, optional) = unwrapOptional(property.typeText)
+                currentVia = "\(decl.name).\(property.key)"
                 fields[property.key] = schema(inner, &referenced)
                 if !optional { required.append(property.key) }
             }
@@ -302,8 +333,12 @@ struct OpenAPIBuilder {
         case "Data", "Foundation.Data": return ["type": "string", "format": "byte"]
         default:
             guard let decl = byName[type] else {
+                if let route = currentRoute, reportedTypes.insert(type).inserted {
+                    gaps.append(Gap(route: route, kind: .unknownType(type, via: currentVia)))
+                }
                 return ["description": "\(type): not declared in a scanned target"]
             }
+            if origin[decl.name] == nil, let route = currentRoute { origin[decl.name] = route }
             referenced.insert(decl.name)
             return ["$ref": "#/components/schemas/\(componentName(decl.name))"]
         }

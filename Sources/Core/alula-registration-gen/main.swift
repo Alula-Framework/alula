@@ -167,6 +167,9 @@ struct ScannedControllerRoute {
     let file: String
     let line: Int
     var column: Int = 1
+    /// The handler carries `// alula:undocumented-response`: it returns
+    /// `Response` on purpose (a redirect, a file) and says so.
+    var acknowledgesUndocumentedResponse = false
     /// The handler's inputs and output, as written — for the OpenAPI document.
     var bodyTypeText: String? = nil
     var queryTypeText: String? = nil
@@ -751,6 +754,9 @@ final class ComponentVisitor: SyntaxVisitor {
                         file: file,
                         line: location.line,
                         column: location.column,
+                        acknowledgesUndocumentedResponse:
+                            function.leadingTrivia.description.contains("alula:undocumented-response")
+                            || function.attributes.description.contains("alula:undocumented-response"),
                         bodyTypeText: route.bodyTypeText,
                         queryTypeText: route.queryTypeText,
                         pathParameters: route.pathParameters.map { ($0.name, $0.typeText) },
@@ -1884,6 +1890,42 @@ func reportDuplicateCommands() {
     }
 }
 reportDuplicateCommands()
+
+/// What the OpenAPI document could not describe, said where the route is.
+///
+/// Only when the document is generated — an application that serves no
+/// OpenAPI has nothing incomplete to warn about.
+@MainActor
+func reportOpenAPIGaps(_ gaps: [OpenAPIBuilder.Gap]) {
+    for gap in gaps {
+        let route = gap.route
+        let at = DiagnosticLocation(file: route.file, line: route.line, column: route.column)
+        switch gap.kind {
+        case .unknownType(let type, let via):
+            report(Diagnostic(
+                .undocumentedType,
+                "`\(type)` has no schema in the OpenAPI document",
+                at: at,
+                context: ["used by: \(route.httpMethod) \(route.path)" + (via.map { " → \($0)" } ?? "")],
+                explanation: [
+                    "Schemas are derived from types declared in the targets this build scans. `\(type)` is declared",
+                    "elsewhere, or has a shape Alula does not describe (an enum with payloads, a generic type),",
+                    "so the document names it and describes nothing.",
+                ],
+                help: ["use a plain Codable wire type, declared in this package, for what the route sends."]))
+        case .untypedResponse:
+            report(Diagnostic(
+                .undocumentedResponse,
+                "the OpenAPI document cannot say what `\(route.httpMethod) \(route.path)` returns",
+                at: at,
+                explanation: ["The handler returns `Response`, which could be anything; the document lists only that it responds."],
+                help: [
+                    "return the Codable type it sends, and the document describes it;\n"
+                        + "for a redirect or a file, mark the handler `// alula:undocumented-response`."
+                ]))
+        }
+    }
+}
 
 /// Every module nominated by some `defaultProviders` in this application.
 ///
@@ -3227,7 +3269,9 @@ func emitComposer(into out: inout String) {
     out += "    ]\n"
     out += "}\n"
     if needsOpenAPIDocument {
-        let document = OpenAPIBuilder(routes: routes, types: schemaTypes).json()
+        let builder = OpenAPIBuilder(routes: routes, types: schemaTypes)
+        let document = builder.json()
+        reportOpenAPIGaps(builder.gaps)
         out += "\n/// The routes this build scanned, and the types they take and return, as\n"
         out += "/// OpenAPI 3.1 `paths` and `components` — `AlulaOpenAPIModule` serves it.\n"
         out += "func alulaOpenAPIJSON() -> String {\n"

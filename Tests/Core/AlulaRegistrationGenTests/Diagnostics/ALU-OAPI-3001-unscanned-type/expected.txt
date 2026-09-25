@@ -1,0 +1,7 @@
+Main.swift:15:5: warning: [ALU-OAPI-3001] `Money` has no schema in the OpenAPI document
+    used by: GET /orders/:id → Order.total
+    Schemas are derived from types declared in the targets this build scans. `Money` is declared
+    elsewhere, or has a shape Alula does not describe (an enum with payloads, a generic type),
+    so the document names it and describes nothing.
+    help: use a plain Codable wire type, declared in this package, for what the route sends.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-OAPI-3001.md

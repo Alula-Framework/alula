@@ -1,0 +1,5 @@
+Main.swift:9:5: warning: [ALU-OAPI-3002] the OpenAPI document cannot say what `GET /reports/:id` returns
+    The handler returns `Response`, which could be anything; the document lists only that it responds.
+    help: return the Codable type it sends, and the document describes it;
+          for a redirect or a file, mark the handler `// alula:undocumented-response`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-OAPI-3002.md

@@ -578,3 +578,31 @@ struct ControllerBasePathTests {
         #expect(!paths.contains("/:id"))
     }
 }
+
+// MARK: - A parameter in the controller's base path
+
+/// Tenant-scoped routes: `:org` is declared once, on the controller, and
+/// every handler below takes it.
+@Controller("/orgs/:org/items")
+struct TenantItemsController {
+    @GetRoute("/")
+    func list(_ context: RequestContext, org: String) -> String {
+        "items of \(org)"
+    }
+
+    @GetRoute("/:id")
+    func show(_ context: RequestContext, org: String, id: Int) -> String {
+        "\(org) item \(id)"
+    }
+}
+
+@Suite("A controller base path with a parameter")
+struct BasePathParameterTests {
+    @Test("handlers bind the base path's segment beside their own")
+    func binds() async throws {
+        let client = try TestClient(routes: TenantItemsController.alulaRoutes { _ in TenantItemsController() })
+        #expect(await client.get("/orgs/acme/items").bodyText == "items of acme")
+        #expect(await client.get("/orgs/acme/items/7").bodyText == "acme item 7")
+        #expect(await client.get("/orgs/acme/items/seven").status == .badRequest)
+    }
+}

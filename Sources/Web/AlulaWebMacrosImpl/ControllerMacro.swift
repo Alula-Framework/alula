@@ -47,7 +47,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         let basePath = RouteScanning.basePath(
             of: node, diagnostics: MacroRouteDiagnostics(context: context))
-        let routes = collectRoutes(from: declaration, in: context)
+        let routes = collectRoutes(from: declaration, basePath: basePath, in: context)
         let combinedRoutes = routes.map { route in
             (route: route, path: RouteScanning.combinePaths(basePath, route.path))
         }
@@ -269,6 +269,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
     private static func collectRoutes(
         from declaration: some DeclGroupSyntax,
+        basePath: String,
         in context: some MacroExpansionContext
     ) -> [ScannedRoute] {
         var routes: [ScannedRoute] = []
@@ -276,7 +277,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             guard let function = member.decl.as(FunctionDeclSyntax.self) else { continue }
             routes.append(
                 contentsOf: RouteScanning.scanRoutes(
-                    of: function, diagnostics: MacroRouteDiagnostics(context: context)))
+                    of: function, basePath: basePath,
+                    diagnostics: MacroRouteDiagnostics(context: context)))
         }
         return routes
     }

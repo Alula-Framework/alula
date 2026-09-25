@@ -4,6 +4,17 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.2] - 2026-09-25
+
+### Fixed
+
+- **A `@Controller` base path may declare path parameters.**
+  `@Controller("/orgs/:org/items")` made every handler taking `org:` a build
+  error ("no path segment is named ':org'"), because the check read only the
+  route's own path, while the router matches the combined one. The route
+  scanner now counts the base path's segments. Found building Relay, whose
+  every tenant-scoped controller is shaped this way (relay/docs/ISSUES.md #10).
+
 ## [0.48.1] - 2026-09-25
 
 Fixes found building Relay, the reference application (relay/docs/ISSUES.md

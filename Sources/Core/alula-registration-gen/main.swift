@@ -686,7 +686,9 @@ final class ComponentVisitor: SyntaxVisitor {
         var index = 0
         for member in members.members {
             guard let function = member.decl.as(FunctionDeclSyntax.self) else { continue }
-            for route in RouteScanning.scanRoutes(of: function, diagnostics: silent) {
+            for route in RouteScanning.scanRoutes(
+                of: function, basePath: base, diagnostics: silent)
+            {
                 let location = converter.location(for: route.node.position)
                 defer { index += 1 }
                 routes.append(

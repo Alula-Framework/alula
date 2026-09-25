@@ -169,8 +169,12 @@ public enum RouteScanning {
     ///
     ///     func f(_ context: RequestContext) [async] [throws] [-> T]
     ///     func f(_ context: RequestContext, body: B) [async] [throws] [-> T]
+    /// `basePath` is the `@Controller`'s own path: its `:segments` bind
+    /// handler parameters exactly as the route's do, because the router sees
+    /// the combined path.
     public static func scanRoutes(
         of function: FunctionDeclSyntax,
+        basePath: String = "",
         diagnostics: some RouteDiagnostics
     ) -> [ScannedRoute] {
         let mappings = mappingAttributes(of: function, diagnostics: diagnostics)
@@ -244,7 +248,11 @@ public enum RouteScanning {
         var queryTypeText: String? = nil
         var pathParameters: [PathParameterBinding] = []
         var argumentLabels: [String] = []
-        let declaredSegments = mappings.reduce(into: Set<String>()) { names, mapping in
+        // The controller's base path counts: `@Controller("/orgs/:org/items")`
+        // gives every route below it an `:org`, and refusing `org:` there
+        // made a tenant-scoped controller impossible to write.
+        let declaredSegments = mappings.reduce(into: pathSegmentNames(in: basePath)) {
+            names, mapping in
             names.formUnion(pathSegmentNames(in: mapping.1))
         }
         for parameter in parameters.dropFirst() {

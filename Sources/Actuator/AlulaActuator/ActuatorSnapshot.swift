@@ -9,15 +9,32 @@ public struct ActuatorSnapshot: Sendable {
     public let environment: AlulaEnvironment
     public let modules: [ModuleStatus]
     public let components: [ComponentDescriptor]
+    /// The readiness checks by name, as the latest run found them. Which
+    /// dependency is down is the first question an operator asks when
+    /// readiness fails, and the probe deliberately cannot answer it.
+    public let checks: [CheckStatus]
+
+    /// One readiness check's outcome.
+    public struct CheckStatus: Sendable, Equatable {
+        public let name: String
+        public let result: HealthCheckResult
+
+        public init(name: String, result: HealthCheckResult) {
+            self.name = name
+            self.result = result
+        }
+    }
 
     public init(
         environment: AlulaEnvironment,
         modules: [ModuleStatus],
-        components: [ComponentDescriptor]
+        components: [ComponentDescriptor],
+        checks: [CheckStatus] = []
     ) {
         self.environment = environment
         self.modules = modules
         self.components = components
+        self.checks = checks
     }
 
     /// The per-request assembly the controller performs, as a public
@@ -50,12 +67,14 @@ public struct ActuatorSnapshot: Sendable {
 ///   "environment": "dev",
 ///   "modules": [{"module": "WebModule", "health": "running", "error": null}],
 ///   "components": [{"type": "App.UserService", "stereotype": "service",
-///              "sourceModule": "AppModule"}]
+///              "sourceModule": "AppModule"}],
+///   "checks": [{"name": "datasource.primary", "status": "DOWN",
+///               "reason": "connection refused"}]
 /// }
 /// ```
 extension ActuatorSnapshot: Encodable {
     private enum CodingKeys: String, CodingKey {
-        case environment, modules, components
+        case environment, modules, components, checks
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -63,6 +82,27 @@ extension ActuatorSnapshot: Encodable {
         try container.encode(environment.rawValue, forKey: .environment)
         try container.encode(modules.map(ModuleStatusRepresentation.init), forKey: .modules)
         try container.encode(components.map(ComponentRepresentation.init), forKey: .components)
+        try container.encode(checks.map(CheckRepresentation.init), forKey: .checks)
+    }
+}
+
+/// One readiness check on the wire: `status` is `UP` or `DOWN`, the probe's
+/// own words; `reason` is present only when it is `DOWN`.
+struct CheckRepresentation: Encodable {
+    let name: String
+    let status: String
+    let reason: String?
+
+    init(_ check: ActuatorSnapshot.CheckStatus) {
+        self.name = check.name
+        switch check.result {
+        case .passed:
+            self.status = "UP"
+            self.reason = nil
+        case .failed(let reason):
+            self.status = "DOWN"
+            self.reason = reason
+        }
     }
 }
 

@@ -140,6 +140,31 @@ struct ProbeTests {
         #expect(!ready.bodyText.contains("primary-postgres"))
     }
 
+    @Test("the dashboard names each readiness check and why it fails")
+    func dashboardNamesChecks() async throws {
+        // The probe names nothing; the dashboard, only there at full exposure,
+        // is where an operator finds out which dependency is down.
+        struct DatabaseGone: Error, CustomStringConvertible {
+            var description: String { "connection refused" }
+        }
+        let health = ModuleHealthRegistry()
+        health.reportHealth(.running, forModule: "Fine")
+        let actuator = ActuatorModule(
+            environment: .dev, health: health,
+            healthChecks: [
+                HealthCheck(name: "primary-postgres") { throw DatabaseGone() },
+                HealthCheck(name: "sessions-valkey") {},
+            ])
+        let client = try TestClient(routes: actuator.routes)
+
+        let dashboard = await client.get("/actuator")
+        #expect(dashboard.status == .ok)
+        let body = dashboard.bodyText
+        #expect(body.contains("primary-postgres") && body.contains("sessions-valkey"))
+        #expect(body.contains("DOWN") && body.contains("connection refused"))
+        #expect(body.contains("UP"))
+    }
+
     @Test("a check that hangs counts as failed once its timeout passes")
     func hangingCheckTimesOut() async throws {
         let health = ModuleHealthRegistry()

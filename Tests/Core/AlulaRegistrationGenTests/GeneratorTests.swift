@@ -1206,6 +1206,47 @@ struct GeneratorTests {
         #expect(!result.generated[returned.lowerBound...].contains("alulaGraph,"))
     }
 
+    @Test("an injection a module provides is not reported as unscanned")
+    func moduleProvidedInjectionIsNotReported() throws {
+        // Relay's first build printed 25 of these, all about types — the data
+        // source, the mailer, the job queue — the composer had wired.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaCore
+            struct DataSource: Sendable {}
+            struct PoolModule: AlulaModule {
+            let dataSource: DataSource
+            init() { self.dataSource = DataSource() }
+            }
+            struct AppModule: AlulaModule {
+            let graph: AlulaGraph
+            init(graph: AlulaGraph) { self.graph = graph }
+            }
+            @Repository struct UserRepository { @Inject var pool: DataSource }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(
+            configuration: .load(), modules: [AppModule.self, PoolModule.self])
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(!result.diagnostics.contains("not a scanned"), "\(result.diagnostics)")
+    }
+
+    @Test("a library target still reports an unscanned injection")
+    func libraryTargetReportsUnscannedInjection() throws {
+        // No `modules:` list: nothing here says who will provide it.
+        let result = try generate([
+            "Library.swift": """
+            import AlulaCore
+            @Repository struct UserRepository { @Inject var pool: DataSource }
+            """
+        ])
+        #expect(result.diagnostics.contains("@Inject type 'DataSource' in UserRepository is not a scanned @Component."))
+    }
+
     @Test("a graph root nothing provides is a build error naming the type")
     func composerReportsMissingGraphRoot() throws {
         let result = try generate([
@@ -1967,6 +2008,40 @@ struct GeneratorTests {
         ])
         #expect(result.exitCode == 0)
         #expect(!result.diagnostics.contains("audit"))
+    }
+
+    @Test("a lane declared with a computed list is still declared")
+    func laneWithComputedListIsDeclared() throws {
+        // AlulaSecurityModule's shape: the list is `session + [...]`, not a
+        // literal. Its middleware cannot be read; its lane name can, and every
+        // route on `.authenticated` depends on the scan seeing it.
+        let result = try generate(
+            [
+                "AppModule.swift": """
+                import AlulaWeb
+                @Controller("/me", pipelines: [.authenticated])
+                struct MeController {
+                @GetRoute("/")
+                func index(_ context: RequestContext) -> String { "x" }
+                }
+                """
+            ],
+            dependencyModules: [
+                "Security": [
+                    "SecurityModule.swift": """
+                    import AlulaWeb
+                    public struct SecurityModule: AlulaModule {
+                    public let middleware: [MiddlewareRegistration]
+                    public init(sessions: Bool) {
+                    let session: [any Middleware] = sessions ? [Sessions()] : []
+                    self.middleware = MiddlewareRegistration.lane(.authenticated, session + [Authentication()])
+                    }
+                    }
+                    """
+                ]
+            ])
+        #expect(result.exitCode == 0)
+        #expect(!result.diagnostics.contains("pipeline lane"), "\(result.diagnostics)")
     }
 
     @Test("the two lanes dispatch provides need no declaration")

@@ -113,7 +113,7 @@ nothing, silently.
 | --- | --- |
 | `disabled` | none |
 | `health_only` | all three health probes — `/actuator/health`, `/actuator/health/live`, `/actuator/health/ready`. No topology in any of them. |
-| `full` | the three probes **and** the dashboard (module list, every component's type name, failure messages) and `/actuator/info` |
+| `full` | the three probes **and** the dashboard (module list, every component's type name, failure messages, each readiness check by name with its reason) and `/actuator/info` |
 
 The probes are published wherever the actuator is enabled at all, because an
 orchestrator needs them in production and an all-or-nothing gate is why
@@ -322,6 +322,11 @@ Three rules keep this off the list of things that cause outages:
 - **Nameless on the wire.** The probe reports `checksFailed` as a count. The
   check's name and failure reason go to the log, only when the check changes
   state, because dependency names are topology.
+- **Named on the dashboard, never on the probe.** The probe says how many
+  checks failed; which ones, and why, is topology. The dashboard lists each
+  check with `UP` or `DOWN` and the failure's reason (JSON: `"checks":
+  [{"name", "status", "reason"}]`), from the same run the probe counted.
+  Before 0.48.4 only the log said which dependency was down.
 
 **Draining.** When graceful shutdown begins (`SIGTERM`), readiness answers
 `503` with `"draining": true` straight away, while the transport keeps

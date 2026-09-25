@@ -34,6 +34,7 @@ func renderActuatorHTML(_ snapshot: ActuatorSnapshot) -> String {
     """
 
     html += renderModulesSection(snapshot.modules)
+    html += renderChecksSection(snapshot.checks)
     html += renderComponentsSection(snapshot.components)
     html += """
     </body>
@@ -60,6 +61,32 @@ private func renderModulesSection(_ modules: [ModuleStatus]) -> String {
         <tr><td><code>\(htmlEscaped(status.moduleName))</code></td>\
         <td class="health-\(health)">\(health)</td>\
         <td>\(htmlEscaped(detail))</td></tr>
+
+        """
+    }
+    section += "</tbody>\n</table>\n"
+    return section
+}
+
+private func renderChecksSection(_ checks: [ActuatorSnapshot.CheckStatus]) -> String {
+    guard !checks.isEmpty else { return "" }
+    var section = """
+    <h2>Readiness checks (\(checks.count))</h2>
+    <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Reason</th></tr></thead>
+    <tbody>
+
+    """
+    for check in checks {
+        let (label, css, reason): (String, String, String)
+        switch check.result {
+        case .passed: (label, css, reason) = ("UP", "running", "")
+        case .failed(let why): (label, css, reason) = ("DOWN", "failed", why)
+        }
+        section += """
+        <tr><td><code>\(htmlEscaped(check.name))</code></td>\
+        <td class="health-\(css)">\(label)</td>\
+        <td>\(htmlEscaped(reason))</td></tr>
 
         """
     }

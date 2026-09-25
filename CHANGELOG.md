@@ -4,6 +4,33 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.4] - 2026-09-25
+
+Found building Relay's front end (relay/docs/ISSUES.md #23, #24).
+
+### Added
+
+- **The dashboard names the readiness checks.** `/actuator` (full exposure
+  only) lists every `HealthCheck` with `UP`/`DOWN` and the failure's reason,
+  in HTML and as `"checks"` in JSON. With Valkey stopped, readiness said
+  `checksFailed: 2` and the dashboard listed every module as running; only
+  the log said which two. `ActuatorSnapshot` gains `checks`, defaulted, so
+  existing callers compile unchanged.
+
+### Fixed
+
+- **No more build warnings about correct injections.** The registration
+  generator warned about every `@Inject` of a type a module provides — the
+  data source, the mailer, the job queue — because it checked before
+  resolving the module graph. It now checks after, and warns only about
+  types no included module provides (or, in a library target, which cannot
+  know). Relay's build printed 25 of these.
+- **A lane declared with a computed list is seen.** The generator recorded a
+  `MiddlewareRegistration.lane(_:_:)` only when its list was an array literal,
+  so `AlulaSecurityModule`'s `lane(.authenticated, session + [...])` was
+  skipped and every route on `.authenticated` drew "runs through pipeline
+  lane 'authenticated', which nothing declares" — 33 in Relay's build.
+
 ## [0.48.3] - 2026-09-25
 
 Found building Relay (relay/docs/ISSUES.md #12, #13, #18).

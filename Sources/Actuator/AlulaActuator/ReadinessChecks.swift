@@ -11,7 +11,8 @@ import Synchronization
 /// inside a window share the run already in flight.
 ///
 /// A check changing state is logged with its name and reason; the probe
-/// response carries neither, because dependency names are topology.
+/// response carries neither, because dependency names are topology. The
+/// dashboard, which exists only at `full` exposure, shows both.
 final class ReadinessChecks: Sendable {
     private let checks: [HealthCheck]
     private let reuseWindow: Duration
@@ -19,7 +20,7 @@ final class ReadinessChecks: Sendable {
     private let clock = ContinuousClock()
 
     private struct State {
-        var inFlight: Task<Int, Never>?
+        var inFlight: Task<[CheckResult], Never>?
         var startedAt: ContinuousClock.Instant?
         var lastPassed: [String: Bool] = [:]
     }
@@ -33,11 +34,24 @@ final class ReadinessChecks: Sendable {
 
     var isEmpty: Bool { checks.isEmpty }
 
+    /// One check's outcome from the latest run.
+    struct CheckResult: Sendable {
+        let name: String
+        let result: HealthCheckResult
+    }
+
     /// How many checks failed, from a run no older than `reuseWindow`.
     func failedCount() async -> Int {
-        guard !checks.isEmpty else { return 0 }
+        await results().filter { !$0.result.passed }.count
+    }
+
+    /// Every check's outcome, by name, from a run no older than `reuseWindow`
+    /// — the same run the probe counts, so the dashboard and the probe
+    /// cannot disagree about one moment.
+    func results() async -> [CheckResult] {
+        guard !checks.isEmpty else { return [] }
         let now = clock.now
-        let task = state.withLock { state -> Task<Int, Never> in
+        let task = state.withLock { state -> Task<[CheckResult], Never> in
             if let inFlight = state.inFlight, let startedAt = state.startedAt,
                 startedAt.duration(to: now) < reuseWindow
             {
@@ -51,7 +65,7 @@ final class ReadinessChecks: Sendable {
         return await task.value
     }
 
-    private func runAll() async -> Int {
+    private func runAll() async -> [CheckResult] {
         let results = await withTaskGroup(of: (String, HealthCheckResult).self) { group in
             for check in checks {
                 group.addTask { (check.name, await check.run()) }
@@ -74,6 +88,6 @@ final class ReadinessChecks: Sendable {
                     "health check failing", metadata: ["check": "\(name)", "reason": "\(reason)"])
             }
         }
-        return results.filter { !$0.1.passed }.count
+        return results.map { CheckResult(name: $0.0, result: $0.1) }.sorted { $0.name < $1.name }
     }
 }

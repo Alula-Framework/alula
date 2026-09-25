@@ -146,7 +146,10 @@ struct ActuatorController {
 
     func dashboard(_ context: RequestContext) async throws -> Response {
         let snapshot = ActuatorSnapshot(
-            environment: environment, modules: health(), components: components)
+            environment: environment, modules: health(), components: components,
+            checks: await readinessChecks.results().map {
+                ActuatorSnapshot.CheckStatus(name: $0.name, result: $0.result)
+            })
         switch format {
         case .ssr:
             return .html(renderActuatorHTML(snapshot))

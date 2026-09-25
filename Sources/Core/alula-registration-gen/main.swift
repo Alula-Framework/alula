@@ -199,7 +199,8 @@ struct ScannedPipelineLane {
     /// The lane argument's source text, verbatim.
     let laneText: String?
     /// Middleware type names in declared order — outermost first, which is
-    /// the order the block is written in.
+    /// the order the block is written in. Empty when the list is not an
+    /// array literal (`session + [authentication]`), which cannot be read.
     let middleware: [String]
     /// The type whose body holds this call, when there is one.
     ///
@@ -553,8 +554,7 @@ final class ModuleVisitor: SyntaxVisitor {
               node.trailingClosure == nil,
               node.arguments.count == 2,
               let laneArgument = node.arguments.first, laneArgument.label == nil,
-              let listArgument = node.arguments.last, listArgument.label == nil,
-              let list = listArgument.expression.as(ArrayExprSyntax.self)
+              let listArgument = node.arguments.last, listArgument.label == nil
         else { return .visitChildren }
 
         // The lane name: the literal's content for `.lane("admin", ...)`, the
@@ -581,8 +581,15 @@ final class ModuleVisitor: SyntaxVisitor {
         // Middleware type names in declared order — outermost first, the order
         // the array is written in. Each element is an instance `A()`, so the
         // type is the called expression.
+        //
+        // Only a literal list can be read. Any other list still declares the
+        // lane, which is what the undeclared-lane check needs: requiring a
+        // literal here skipped `AlulaSecurityModule`'s
+        // `.lane(.authenticated, session + [authentication, require])`, and
+        // every application route on `.authenticated` was then warned about
+        // as naming a lane nothing declares — 33 of them in Relay's build.
         var middleware: [String] = []
-        for element in list.elements {
+        for element in listArgument.expression.as(ArrayExprSyntax.self)?.elements ?? [] {
             guard let call = element.expression.as(FunctionCallExprSyntax.self) else { continue }
             middleware.append(call.calledExpression.trimmedDescription)
         }
@@ -1346,6 +1353,9 @@ let bridgedProtocolBaseNames = Set(bridges.map { baseName($0.protocolName) })
 // type name is suspicious, not proven wrong. Cycles among scanned components
 // are errors: those are fully decidable from what the scanner sees.
 let knownTypeNames = Set(components.map(\.typeName))
+/// `@Inject` types no scanned component provides, checked against the
+/// modules' provided values once those are known (`warnUnscannedInjections`).
+var unscannedInjections: [(type: String, component: ScannedComponent)] = []
 // Types available without anyone providing them. A demand
 // for one of these is satisfied at runtime no matter what the scanner sees,
 // so warning about it would be a false positive on correct code — and a
@@ -1394,11 +1404,9 @@ for component in components {
             || knownTypeNames.contains(baseName(base))
             || alwaysAvailable.contains(baseName(base))
         if !known {
-            emit(
-                "warning",
-                "@Inject type '\(base)' in \(component.typeName) is not a scanned @Component. If it is provided some other way — a value a module holds, or an external input — acknowledge it with a `// alula:hand-registered` comment on the property; otherwise composition will fail at startup.",
-                file: component.file, line: component.line
-            )
+            // Not yet: whether a module provides it is known only once the
+            // module graph is resolved, below.
+            unscannedInjections.append((type: base, component: component))
         }
     }
 }
@@ -1614,6 +1622,37 @@ func resolveIncludedModules() -> [String] {
     return ordered
 }
 let includedModules = resolveIncludedModules()
+
+/// Warns about each `@Inject` type that neither a scanned component nor an
+/// included module provides.
+///
+/// A value a module holds is how most of an application's dependencies
+/// arrive — `PostgresDataModule`'s `PostgresDataSource`, `AlulaMailModule`'s
+/// `Mailer` — and the composer already wires them. Warning about those told
+/// the reader that a working, ordinary injection was suspect, once per
+/// service per build: Relay's first build printed 25 of them, every one
+/// about a type the composer had resolved. In a target that composes, a type
+/// nothing provides fails the build in the composer, so what remains here is
+/// the case that is actually uncertain: a library target, which composes
+/// nothing and cannot see the modules its components will run under.
+@MainActor
+func warnUnscannedInjections() {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    let modules = includedModules.compactMap { scannedModule($0, in: byName) }
+    let provided = Set(modules.flatMap { $0.provides.map { providedTypeKey($0.type) } })
+        .union(includedModules.map(providedTypeKey))
+    for (type, component) in unscannedInjections where !provided.contains(providedTypeKey(type)) {
+        emit(
+            "warning",
+            "@Inject type '\(type)' in \(component.typeName) is not a scanned @Component"
+                + (includedModules.isEmpty ? "" : " and no module in this application provides it")
+                + ". If it is provided some other way — a value a module holds, or an external input — acknowledge it with a `// alula:hand-registered` comment on the property; otherwise composition will fail.",
+            file: component.file, line: component.line
+        )
+    }
+}
+warnUnscannedInjections()
 
 /// Every module nominated by some `defaultProviders` in this application.
 ///
@@ -2899,7 +2938,8 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
     out += "        /// nil when the lane argument is not a literal or a\n"
     out += "        /// canonical member — a computed name, unknowable here.\n"
     out += "        public let name: String?\n"
-    out += "        /// Middleware type names, outermost first.\n"
+    out += "        /// Middleware type names, outermost first; empty when the\n"
+    out += "        /// declaration's list is not an array literal.\n"
     out += "        public let middleware: [String]\n"
     out += "        /// The type whose body declared it — nearly always a\n"
     out += "        /// AlulaModule, and the reason this lane may or may not\n"

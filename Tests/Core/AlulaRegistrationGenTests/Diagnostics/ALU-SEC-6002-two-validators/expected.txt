@@ -1,0 +1,9 @@
+Main.swift:13:28: error: [ALU-SEC-6002] 2 modules provide the bearer-token validator: CorporateSSOModule, PartnerTokensModule
+    An application has one `any TokenValidator`, the fallback for tokens no strategy claims.
+    Authentication methods sit side by side as token strategies, each recognizing its own tokens.
+    help: keep one module's `any TokenValidator`; have the others contribute
+              let tokenStrategies: [TokenStrategy]  // e.g. tokens starting "sk_"
+          as AlulaAPIKeyModule does.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-SEC-6002.md
+Main.swift:4:9: note: `CorporateSSOModule.validator` provides `TokenValidator`
+Main.swift:8:9: note: `PartnerTokensModule.validator` provides `TokenValidator`

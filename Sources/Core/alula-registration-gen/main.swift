@@ -2914,6 +2914,26 @@ func emitComposer(into out: inout String) {
         let suggestion = modules.first ?? "SomeModule"
         let other = modules.count > 1 ? modules[1] : "OtherModule"
         let askers = consumers(of: wanted)
+        // Two authentication modules each offering the validator is not a
+        // wiring choice to make with `defaultProviders`: strategies compose
+        // (D55), and saying so beats a generic ambiguity that suggests
+        // picking one and dropping the other.
+        if baseName(wanted.replacingOccurrences(of: "any ", with: "")) == "TokenValidator" {
+            return Diagnostic(
+                .competingTokenValidators,
+                "\(matches.count) modules provide the bearer-token validator: \(modules.joined(separator: ", "))",
+                at: askers.first?.location,
+                explanation: [
+                    "An application has one `any TokenValidator`, the fallback for tokens no strategy claims.",
+                    "Authentication methods sit side by side as token strategies, each recognizing its own tokens.",
+                ],
+                help: [
+                    "keep one module's `any TokenValidator`; have the others contribute\n"
+                        + "    let tokenStrategies: [TokenStrategy]  // e.g. tokens starting \"sk_\"\n"
+                        + "as AlulaAPIKeyModule does."
+                ],
+                notes: providerNotes(matches, of: wanted))
+        }
         return Diagnostic(
             .ambiguousProvider,
             "\(matches.count) modules provide `\(wanted)`, and it is asked for by type",

@@ -142,6 +142,8 @@ extension DiagnosticCode {
     // Security and authentication composition.
     public static let rolesWithoutAuthentication = DiagnosticCode(
         "ALU-SEC-6001", "A route requires roles but authenticates no one")
+    public static let competingTokenValidators = DiagnosticCode(
+        "ALU-SEC-6002", "Several modules provide the bearer-token validator")
 
     // Commands.
     public static let duplicateCommand = DiagnosticCode("ALU-CMD-7001", "Two modules declare one command name")
@@ -182,7 +184,7 @@ extension DiagnosticCode {
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
         .invalidConfigValue, .configSourceFailed, .missingBaseConfigFile, .unsetConfigVariable,
         .preRenameConfiguration,
-        .rolesWithoutAuthentication,
+        .rolesWithoutAuthentication, .competingTokenValidators,
         .duplicateCommand, .unknownCommand,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,
         .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,

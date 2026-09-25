@@ -81,6 +81,18 @@ struct OpenAPIGeneratorTests {
         return try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     }
 
+    /// Handlers return `Response` to pick a status far more often than to
+    /// hide a body; on by default, ALU-OAPI-3002 warned on most routes of
+    /// the starter templates. It is a check a team turns on.
+    @Test("a Response handler is not a warning unless alula.yaml asks for the check")
+    func undocumentedResponsesAreOptIn() throws {
+        let quiet = try generator.generate(sources)
+        #expect(!quiet.diagnostics.contains("[ALU-OAPI-3002]"), "\(quiet.diagnostics)")
+        let strict = try generator.generate(
+            sources, alulaYAML: "openapi:\n  warn-undocumented-responses: true\n")
+        #expect(strict.diagnostics.contains("[ALU-OAPI-3002]"))
+    }
+
     @Test("paths: methods, templated parameters, query fields, bodies and responses")
     func paths() throws {
         let document = try document()

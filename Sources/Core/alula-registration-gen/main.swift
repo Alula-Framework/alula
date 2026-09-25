@@ -1914,6 +1914,12 @@ func reportOpenAPIGaps(_ gaps: [OpenAPIBuilder.Gap]) {
                 ],
                 help: ["use a plain Codable wire type, declared in this package, for what the route sends."]))
         case .untypedResponse:
+            // Opt-in. Handlers return `Response` to choose a status — a 201,
+            // a 409 — far more often than to hide a body, and on by default
+            // this was a warning on most routes of the starter templates.
+            // A team publishing its document turns it on in alula.yaml.
+            guard baseConfiguration?.rawValue(for: "openapi.warn-undocumented-responses") == "true"
+            else { continue }
             report(Diagnostic(
                 .undocumentedResponse,
                 "the OpenAPI document cannot say what `\(route.httpMethod) \(route.path)` returns",
@@ -2010,6 +2016,10 @@ func resolvedConfigPrefix() -> ConfigPrefix? {
     return ConfigPrefix.default
 }
 
+/// The base configuration file, once the key check has read it — for the
+/// other build-time settings that live there.
+var baseConfiguration: AlulaYAMLDocument?
+
 @MainActor
 func checkConfigKeys() {
     guard let packageDirectory = manifest.packageDirectory else { return }
@@ -2043,7 +2053,9 @@ func checkConfigKeys() {
         // .none: build-machine env vars are meaningless here, and the check
         // only needs the key *structure*. Same parser as the runtime, so the
         // two can never disagree about what keys the file defines.
-        baseKeys = try AlulaYAMLDocument(contentsOf: baseURL, substitution: .none).keys
+        let document = try AlulaYAMLDocument(contentsOf: baseURL, substitution: .none)
+        baseConfiguration = document
+        baseKeys = document.keys
     } catch let error as ConfigLoadError {
         if case .parseFailed(_, let line, let column, let message) = error {
             report(Diagnostic(

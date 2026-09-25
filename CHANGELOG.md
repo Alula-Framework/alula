@@ -55,6 +55,11 @@ without its fix.
 
 ### Changed
 
+- **`ALU-OAPI-3002` (a handler returning `Response`) is opt-in.** Handlers
+  return `Response` to choose a status far more often than to hide a body, and
+  on by default 0.51.0 warned on most routes of the starter templates. Turn it
+  on with `openapi.warn-undocumented-responses: true` in `alula.yaml`.
+  `ALU-OAPI-3001`, a type with no schema, is unchanged.
 - **Configuration keys are consistent** (Relay #33). `pubsub.node_id` and
   `pubsub.broadcast_timeout` are now `pubsub.node-id` and
   `pubsub.broadcast-timeout`, kebab-case like every other key; the

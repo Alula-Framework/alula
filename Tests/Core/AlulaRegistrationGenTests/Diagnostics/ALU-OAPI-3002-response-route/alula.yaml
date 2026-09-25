@@ -1,0 +1,2 @@
+openapi:
+  warn-undocumented-responses: true

@@ -1387,6 +1387,27 @@ struct GeneratorTests {
             result.generated.contains("let pubSubModule = try PubSubModule(configuration: configuration)"))
     }
 
+    @Test("an optional parameter with no default and no provider is passed nil, not omitted")
+    func composerPassesNilForRequiredOptionals() throws {
+        // AlulaSecurityModule's shape: the validator is optional, but has no
+        // default, so the call does not compile without it.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaWeb
+            struct SecurityModule: AlulaModule {
+            init(validator: (any TokenValidator)?, sessions: SessionRuntime? = nil) {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(configuration: .load(), modules: [SecurityModule.self])
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(result.generated.contains("let securityModule = SecurityModule(validator: nil)"))
+    }
+
     @Test("two modules providing the same type is a build error naming both")
     func composerRefusesAmbiguousProviders() throws {
         let result = try generate([

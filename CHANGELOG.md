@@ -4,6 +4,28 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.1] - 2026-09-25
+
+Fixes found building Relay, the reference application (relay/docs/ISSUES.md
+#4, #7, #8).
+
+### Fixed
+
+- **`Authentication` no longer swallows errors thrown after it.** It called
+  the rest of the chain inside the `do/catch` that guarded token validation
+  and session decoding, so an error from any later middleware (CSRF, for
+  one) was logged as a failed credential and the chain ran a second time as
+  `.invalidCredential`. A bearer request then got 401 in place of the real
+  answer. Settling the identity is now its own step, and the chain runs once.
+- **CSRF protection exempts bearer-token requests.** `Sessions` gives every
+  request a session, so on any lane with it an API key's POST was refused as
+  a forgery. `Authorization: Bearer` is not ambient: another site cannot
+  make a browser attach it. `Basic` stays checked; browsers replay it.
+- **The composer passes `nil` for an optional parameter with no default and
+  no provider**, rather than omitting it. `AlulaSecurityModule(validator:…)`
+  did not compile for an application with sessions and no bearer validator,
+  the configuration its documentation describes.
+
 ## [0.48.0] - 2026-09-25
 
 Fixes from the 0.46.0 architecture audit (D55).

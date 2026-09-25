@@ -125,6 +125,31 @@ struct CSRFProtectionTests {
         #expect(response.status == .forbidden)
     }
 
+    // MARK: Bearer tokens
+
+    @Test("a bearer-token POST is not checked, session or not: nothing ambient to forge")
+    func bearerRequestsPass() async throws {
+        let client = try client()
+        let bare = await client.post("/transfer", headers: [.authorization: "Bearer rk_key"])
+        #expect(bare.status == .ok)
+        // A cookie beside it changes nothing: the header was set by the
+        // caller, which a page on another site cannot do.
+        let form = await client.get("/form")
+        let cookie = try #require(sessionCookie(form))
+        let withCookie = await client.post(
+            "/transfer", headers: [.cookie: cookie, .authorization: "bearer rk_key"])
+        #expect(withCookie.status == .ok)
+    }
+
+    @Test("Basic credentials are still checked: browsers replay them on their own")
+    func basicIsNotExempt() async throws {
+        let response = await (try client()).post(
+            "/transfer", headers: [.authorization: "Basic YWRhOnB3"])
+        #expect(response.status == .forbidden)
+        let empty = await (try client()).post("/transfer", headers: [.authorization: "Bearer "])
+        #expect(empty.status == .forbidden)
+    }
+
     // MARK: The real round trip
 
     @Test("the token a GET hands out is accepted on the POST that follows")

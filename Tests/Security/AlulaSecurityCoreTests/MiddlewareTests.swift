@@ -83,6 +83,24 @@ struct MiddlewareTests {
         }
     }
 
+    @Test("an error thrown further down the chain propagates, and the chain runs once")
+    func downstreamErrorsPropagate() async throws {
+        struct Refused: Error {}
+        for authorization in ["Bearer \(StubSecurity.token)", nil] {
+            let context = try makeContext(authorization: authorization)
+            let calls = Mutex(0)
+            await #expect(throws: Refused.self) {
+                _ = try await authentication().handle(context) { _ in
+                    calls.withLock { $0 += 1 }
+                    throw Refused()
+                }
+            }
+            // It used to be caught as a failed credential, and the chain run
+            // again as `.invalidCredential`: a 401 in place of the real error.
+            #expect(calls.withLock { $0 } == 1, "\(authorization ?? "no token")")
+        }
+    }
+
     @Test("an invalid token continues unauthenticated, with the failure recorded")
     func invalidToken() async throws {
         let context = try makeContext(authorization: "Bearer forged")

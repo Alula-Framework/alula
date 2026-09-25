@@ -71,41 +71,52 @@ public struct Authentication: Sendable, SessionReading {
     }
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
+        // Only establishing the identity is guarded here. `next` runs outside
+        // every `do`: an error thrown further down the chain (CSRF, the
+        // handler's middleware, a store) used to be caught as if the
+        // credential had failed, logged as "token validation failed" or "did
+        // not decode", and the rest of the chain run a second time — for a
+        // bearer request, with a 401 in place of the real answer.
+        try await next(authenticated(context))
+    }
+
+    /// The request with its identity settled: a principal, an invalid
+    /// credential, or anonymous. Never throws for a bad credential.
+    private func authenticated(_ context: RequestContext) async -> RequestContext {
         guard let token = context.request.bearerToken else {
             // No token. A session may still say who this is.
-            if let session = context.session {
-                do {
-                    if let principal = try session.principal() {
-                        guard try isWithinLifetime(session) else {
-                            // Past the absolute lifetime: signed out here, the
-                            // rest of the session kept, and the request goes on
-                            // anonymous — a protected route answers 401 and the
-                            // browser signs in again.
-                            context.logger.info(
-                                "session sign-in past its absolute lifetime; signing out",
-                                metadata: ["subject": "\(principal.subject)"])
-                            session.signOut()
-                            Telemetry.emit(SignInEvents.Expired.self)
-                            return try await next(context)
-                        }
-                        return try await next(context.authenticated(as: principal))
-                    }
-                } catch {
-                    // A stored principal that no longer decodes — a format
-                    // change, or something else writing under the key.
-                    // Anonymous rather than a 500 on every request until the
-                    // cookie expires; the next sign-in overwrites it.
-                    context.logger.warning(
-                        "stored session principal did not decode; treating the request as anonymous",
-                        metadata: ["reason": "\(error)"])
-                }
+            guard let session = context.session else { return context }
+            let principal: Principal?
+            let withinLifetime: Bool
+            do {
+                principal = try session.principal()
+                withinLifetime = principal == nil ? true : try isWithinLifetime(session)
+            } catch {
+                // A stored principal that no longer decodes — a format
+                // change, or something else writing under the key.
+                // Anonymous rather than a 500 on every request until the
+                // cookie expires; the next sign-in overwrites it.
+                context.logger.warning(
+                    "stored session principal did not decode; treating the request as anonymous",
+                    metadata: ["reason": "\(error)"])
+                return context
             }
-            // No credential: unauthenticated, not an error.
-            return try await next(context)
+            guard let principal else { return context }
+            guard withinLifetime else {
+                // Past the absolute lifetime: signed out here, the rest of
+                // the session kept, and the request goes on anonymous — a
+                // protected route answers 401 and the browser signs in again.
+                context.logger.info(
+                    "session sign-in past its absolute lifetime; signing out",
+                    metadata: ["subject": "\(principal.subject)"])
+                session.signOut()
+                Telemetry.emit(SignInEvents.Expired.self)
+                return context
+            }
+            return context.authenticated(as: principal)
         }
         do {
-            let principal = try await validator.validate(token)
-            return try await next(context.authenticated(as: principal))
+            return context.authenticated(as: try await validator.validate(token))
         } catch {
             // Error hygiene: the specific reason stays in the internal log;
             // the wire sees nothing here, and enforcement points return a
@@ -116,7 +127,7 @@ public struct Authentication: Sendable, SessionReading {
             )
             var rejected = context
             rejected.identity = .invalidCredential
-            return try await next(rejected)
+            return rejected
         }
     }
 }

@@ -65,6 +65,16 @@ public struct CSRFProtection: Middleware, SessionReading {
         guard let session = context.session else {
             return try await next(context)
         }
+        // A bearer token is not ambient: a page on another site cannot make a
+        // browser attach an `Authorization` header it chose, which is the
+        // same property `X-CSRF-Token` relies on. Without this, an API key
+        // calling a route whose lanes include `Sessions` — which gives every
+        // request a session, cookie or not — was refused as a forgery.
+        // `Basic` is excluded on purpose: browsers do replay cached Basic
+        // credentials on their own.
+        if Self.carriesBearerToken(context.request) {
+            return try await next(context)
+        }
         let expected = try session.csrfToken()
         guard let provided = context.request.headers[.xCSRFToken],
             CSRFToken.matches(provided, expected)
@@ -72,6 +82,18 @@ public struct CSRFProtection: Middleware, SessionReading {
             throw CSRFError.tokenMismatch
         }
         return try await next(context)
+    }
+}
+
+extension CSRFProtection {
+    /// `Authorization: Bearer <token>`, scheme matched case-insensitively
+    /// (RFC 9110 §11.1). Only the scheme matters here, not whether the token
+    /// is any good: a bad one is `Authentication`'s to refuse.
+    static func carriesBearerToken(_ request: Request) -> Bool {
+        guard let value = request.headers[.authorization] else { return false }
+        let parts = value.split(separator: " ", maxSplits: 1)
+        return parts.count == 2 && parts[0].lowercased() == "bearer"
+            && !parts[1].trimmingCharacters(in: .whitespaces).isEmpty
     }
 }
 

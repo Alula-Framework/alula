@@ -2686,7 +2686,17 @@ func emitComposer(into out: inout String) {
                     ok = false
                     break
                 }
-                if let resolved { built.append(resolved) }
+                if let resolved {
+                    built.append(resolved)
+                } else if !(candidate.defaulted.indices.contains(index) && candidate.defaulted[index]) {
+                    // An optional nothing provides, with no default to fall
+                    // back on: the argument is still required, and `nil` is
+                    // the answer. Omitting it made `AlulaSecurityModule(
+                    // validator:sessions:)` uncompilable for exactly the
+                    // application it documents as supported, sessions and no
+                    // bearer validator.
+                    built.append("\(label): nil")
+                }
             }
             // The most arguments *supplied* wins, not the most declared: with
             // defaults omittable, an all-defaulted test seam would otherwise

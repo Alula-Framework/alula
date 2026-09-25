@@ -1,0 +1,4 @@
+Main.swift:4:8: error: [ALU-DI-1013] `Reports` declares `scope: .transient`, which was removed in 0.20.0
+    Singleton is the only lifetime: nothing needed the others, and removing them removed the captive-dependency class with them. Per-request state travels on `RequestContext` — the authenticated principal is the worked example — and a pooled connection is leased per operation by the repository that holds the pool.
+    help: delete the argument: `@Service`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1013.md

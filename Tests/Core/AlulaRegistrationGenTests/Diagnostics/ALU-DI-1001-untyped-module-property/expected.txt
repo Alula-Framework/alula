@@ -1,0 +1,7 @@
+Main.swift:16:24: error: [ALU-DI-1001] no module in this application provides `LabState`
+    needed by:
+      ExperimentService.state → LabState
+    A module provides a value by holding it as a stored property with a written type.
+    help: write the type of the property named below; that is what composition matches on.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1001.md
+Main.swift:6:9: note: `LabModule.labState` constructs a `LabState` but has no written type, so it provides nothing — write `let labState: LabState = …`

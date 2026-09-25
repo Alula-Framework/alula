@@ -1,0 +1,5 @@
+Main.swift:6:9: warning: [ALU-DI-1011] `SchedulerModule.status` has no written type, so composition cannot provide it
+    Composition matches what is needed against the type as written.
+    help: write the type: `let status: SchedulerStatus = …`,
+          or mark it private if it is not meant to be provided.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1011.md

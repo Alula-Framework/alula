@@ -1,0 +1,4 @@
+Main.swift:8:24: error: [ALU-DI-1008] `@Inject` does not support the optional type `Clock?`
+    Nothing provides `Optional<Clock>`, so the dependency would never arrive.
+    help: drop the `?` if the dependency is required, or resolve it by hand where absence is meaningful.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1008.md

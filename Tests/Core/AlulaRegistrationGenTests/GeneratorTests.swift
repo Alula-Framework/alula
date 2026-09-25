@@ -1244,7 +1244,7 @@ struct GeneratorTests {
             @Repository struct UserRepository { @Inject var pool: DataSource }
             """
         ])
-        #expect(result.diagnostics.contains("@Inject type 'DataSource' in UserRepository is not a scanned @Component."))
+        #expect(result.diagnostics.contains("[ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Component"))
     }
 
     @Test("a graph root nothing provides is a build error naming the type")
@@ -1264,8 +1264,11 @@ struct GeneratorTests {
             }
             """
         ])
-        #expect(result.generated.contains("#error("))
-        #expect(result.generated.contains("The component graph needs DataSource"))
+        // Reported against the source, and the build stops: nothing is
+        // generated for a graph that cannot be wired (relay ISSUES #32).
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1001] no module in this application provides `DataSource`"))
+        #expect(!result.generated.contains("#error("))
     }
 
     @Test("a contribution nothing collects is a build error naming the module to add")
@@ -1290,10 +1293,10 @@ struct GeneratorTests {
             }
             """
         ])
-        #expect(result.generated.contains("#error("))
-        #expect(result.generated.contains("ChatModule.channels is declared but nothing"))
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-LIFE-8003] `ChatModule.channels` is contributed, but nothing"))
         // Names what to add, rather than only observing that it went unused.
-        #expect(result.generated.contains("AlulaChannelsModule"))
+        #expect(result.diagnostics.contains("add AlulaChannelsModule to `modules:`"))
     }
 
     @Test("a collected contribution is not reported")
@@ -1474,18 +1477,17 @@ struct GeneratorTests {
             }
             """
         ])
-        // The generated file carries the reason, so the consumer's compiler
-        // points at it. Silently picking one would give a cluster wired to the
-        // wrong transport.
-        #expect(result.generated.contains("#error("))
-        #expect(result.generated.contains("Composition is ambiguous"))
+        // Reported against the source, failing the build. Silently picking
+        // one would give a cluster wired to the wrong transport.
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1002] 2 modules provide"))
         // Named as `Module.property`, not by the binding this generator
         // invented — `natsModule.adapter` is an identifier the reader has
-        // never seen and cannot search for.
-        #expect(result.generated.contains("NatsModule.adapter"))
-        #expect(result.generated.contains("ValkeyModule.adapter"))
+        // never seen and cannot search for — each as a note at the property.
+        #expect(result.diagnostics.contains("note: `NatsModule.adapter` provides"))
+        #expect(result.diagnostics.contains("note: `ValkeyModule.adapter` provides"))
         // And it carries the remedy, which is the point of the message.
-        #expect(result.generated.contains("defaultProviders"))
+        #expect(result.diagnostics.contains("defaultProviders"))
     }
 
     @Test("a module's computed service is not something another module can take")
@@ -1569,7 +1571,8 @@ struct GeneratorTests {
         // provide it, and a build that refused would be worse than one that
         // says so.
         #expect(result.exitCode == 0)
-        #expect(result.diagnostics.contains("helper has no written type"))
+        #expect(result.diagnostics.contains("[ALU-DI-1011]"))
+        #expect(result.diagnostics.contains("helper` has no written type"))
         // `private` is how you say "not provided", so it must stay quiet.
         #expect(!result.diagnostics.contains("hidden"))
     }
@@ -1696,19 +1699,19 @@ struct GeneratorTests {
             }
             """
         ])
-        // Carried into the generated file as `#error`, not to stderr: the
-        // consumer's compiler is what must refuse, at a line it points at.
-        #expect(result.generated.contains("Composition is ambiguous"))
+        // Reported against the source, and the build stops there.
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1002]"))
         // The remedy, not just the complaint — this is the moment an
         // application acquires a second provider and the build is the only
         // thing that knows.
-        #expect(result.generated.contains("defaultProviders"))
-        #expect(result.generated.contains("@Inject(from:"))
+        #expect(result.diagnostics.contains("defaultProviders"))
+        #expect(result.diagnostics.contains("@Inject(from:"))
         // And not the contradiction it used to print alongside: `provider`
         // returns nil for ambiguity as well as absence, and claiming nothing
         // provides Pool while two modules do sent people hunting for a module
         // to add.
-        #expect(!result.generated.contains("no module in this application provides it"))
+        #expect(!result.diagnostics.contains("[ALU-DI-1001]"))
         // No editor placeholder either: `<#…#>` is itself a compile error, so
         // it buried the message above under "editor placeholder in source file".
         #expect(!result.generated.contains("<#"))
@@ -1755,7 +1758,7 @@ struct GeneratorTests {
         // The nominated module's property, not the other one and not a
         // stalled composition.
         #expect(result.generated.contains("GreetingModule(clock: clockModuleSystem.clock)"))
-        #expect(!result.generated.contains("Composition is ambiguous"))
+        #expect(!result.diagnostics.contains("[ALU-DI-1002]"))
     }
 
     @Test("from: naming a module the application does not include is an error")
@@ -1787,7 +1790,9 @@ struct GeneratorTests {
             }
             """
         ])
-        #expect(result.generated.contains("does not include"))
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1006]"))
+        #expect(result.diagnostics.contains("does not include"))
     }
 
     @Test("two instantiations of one generic module get two bindings")
@@ -2106,7 +2111,8 @@ struct GeneratorTests {
         #expect(result.exitCode != 0)
         #expect(result.diagnostics.contains("Reports"))
         #expect(result.diagnostics.contains("removed in 0.20.0"))
-        #expect(result.diagnostics.contains("Delete the argument: `@Service`"))
+        #expect(result.diagnostics.contains("[ALU-DI-1013]"))
+        #expect(result.diagnostics.contains("delete the argument: `@Service`"))
         // The migration prose survives the broadening: where the other
         // lifetimes went is still what the author needs to know.
         #expect(result.diagnostics.contains("RequestContext"))
@@ -2131,7 +2137,7 @@ struct GeneratorTests {
         ])
         #expect(result.exitCode != 0)
         #expect(result.diagnostics.contains("UserRepository"))
-        #expect(result.diagnostics.contains("no longer exists"))
+        #expect(result.diagnostics.contains("[ALU-DI-1013]"))
         #expect(result.diagnostics.contains("RequestContext"))
     }
 
@@ -2530,7 +2536,8 @@ struct GeneratorTests {
         #expect(result.exitCode != 0)
         #expect(result.diagnostics.contains("Pool"))
         #expect(result.diagnostics.contains("removed in 0.20.0"))
-        #expect(result.diagnostics.contains("Delete the argument: `@Repository`"))
+        #expect(result.diagnostics.contains("[ALU-DI-1014]"))
+        #expect(result.diagnostics.contains("delete the argument: `@Repository`"))
         // Both qualifiers went in 0.20.0, and an author deleting this one will
         // hit the other next, so the message says so rather than letting them
         // find out one call site at a time.

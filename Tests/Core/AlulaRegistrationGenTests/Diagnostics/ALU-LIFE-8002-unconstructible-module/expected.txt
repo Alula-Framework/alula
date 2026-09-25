@@ -1,0 +1,7 @@
+Main.swift:3:8: error: [ALU-LIFE-8002] no initializer of `ReportingModule` can be satisfied by this application
+    init(warehouse:clock:) needs:
+      warehouse: Warehouse — nothing provides it
+      clock: Clock — nothing provides it
+    A module's parameters must be values another module provides, `Configuration`, or the component graph.
+    help: add the modules that provide those values, give the parameters defaults, or add an initializer this application can satisfy.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-LIFE-8002.md

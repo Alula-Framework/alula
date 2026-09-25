@@ -1,0 +1,6 @@
+Main.swift:18:52: error: [ALU-DI-1006] `@Inject(from: TestClockModule.self)` names a module this application does not include
+    asked for by: Reminders.clock
+    A module takes part only when it is in `modules:`, or in the `dependencies` of one that is.
+    help: add TestClockModule to `modules:`, or to the `dependencies` of a module already there.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1006.md
+Main.swift:4:9: note: `ClockModule.clock` provides `Clock`

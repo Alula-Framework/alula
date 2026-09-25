@@ -1,0 +1,6 @@
+Main.swift:15:48: error: [ALU-DI-1007] `@Inject(from: ClockModule.self)` does not pick one `Clock`: that module provides it 2 times
+    asked for by: Reminders.clock
+    help: give each value its own type (a small wrapper struct is enough), or keep only one.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1007.md
+Main.swift:5:9: note: `ClockModule.monotonicClock` provides `Clock`
+Main.swift:4:9: note: `ClockModule.wallClock` provides `Clock`

@@ -22,6 +22,10 @@ let package = Package(
         .library(name: "AlulaConfigCore", targets: ["AlulaConfigCore"]),
         .library(name: "AlulaConfig", targets: ["AlulaConfig"]),
 
+        // Stable diagnostic codes, their pages, and the compiler-format
+        // renderer — dependency-free, for the build tool and `alula explain`.
+        .library(name: "AlulaDiagnostics", targets: ["AlulaDiagnostics"]),
+
         // The framework core: container, modules, lifecycle, registration.
         .library(name: "AlulaCore", targets: ["AlulaCore"]),
         .plugin(name: "AlulaRegistrationPlugin", targets: ["AlulaRegistrationPlugin"]),
@@ -205,6 +209,9 @@ let package = Package(
             name: "AlulaConfigCore", path: "Sources/Config/AlulaConfigCore",
             swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(
+            name: "AlulaDiagnostics", path: "Sources/Core/AlulaDiagnostics",
+            swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
             name: "AlulaConfig",
             dependencies: [
                 "AlulaConfigCore",
@@ -253,6 +260,7 @@ let package = Package(
             name: "alula-registration-gen",
             dependencies: [
                 "AlulaConfigCore",
+                "AlulaDiagnostics",
                 "AlulaRouteScan",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
@@ -861,9 +869,18 @@ let package = Package(
             path: "Tests/Core/AlulaCoreMacroTests"
         ),
         .testTarget(
+            name: "AlulaDiagnosticsTests",
+            dependencies: ["AlulaDiagnostics"],
+            path: "Tests/Core/AlulaDiagnosticsTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
             name: "AlulaRegistrationGenTests",
-            dependencies: ["alula-registration-gen"],
+            dependencies: ["alula-registration-gen", "AlulaDiagnostics"],
             path: "Tests/Core/AlulaRegistrationGenTests",
+            // Golden diagnostic fixtures: source the generator reads, not
+            // source this target compiles.
+            exclude: ["Diagnostics"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

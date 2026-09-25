@@ -25,6 +25,7 @@
 // form, which SwiftPM surfaces in build logs and IDEs.
 
 import AlulaConfigCore
+import AlulaDiagnostics
 import AlulaRouteScan
 import Foundation
 import SwiftParser
@@ -112,6 +113,11 @@ struct ScannedComponent {
     let configValues: [ScannedConfigValue]
     let file: String
     let line: Int
+    /// The type's name, where a diagnostic about the component points.
+    let location: DiagnosticLocation
+    /// Each `@Inject` property's written type, by property name — where a
+    /// diagnostic about that injection points.
+    let injectLocations: [String: DiagnosticLocation]
 }
 
 /// One required-key site — an explicit `@ConfigValue`, or a plain property
@@ -252,6 +258,21 @@ struct ScannedModule {
     /// naming the other.
     let provides: [(name: String, type: String)]
     let module: String
+    /// The type's name.
+    let location: DiagnosticLocation
+    /// Each provided property's name, by property name.
+    let provideLocations: [String: DiagnosticLocation]
+    /// Stored properties with no written type, and the type their initializer
+    /// constructs when it is a plain call — `let state = LabState()` names
+    /// `LabState`. Not provided; kept so a missing provider can name them.
+    let untypedProperties: [UntypedProperty]
+}
+
+struct UntypedProperty {
+    let module: String
+    let name: String
+    let constructedType: String?
+    let location: DiagnosticLocation
 }
 
 /// Finds `MiddlewareRegistration.lane(_:_:)` calls and `AlulaModule` declarations.
@@ -273,7 +294,7 @@ final class ModuleVisitor: SyntaxVisitor {
     var modules: [ScannedModule] = []
     /// Non-private stored properties with no written type. Collected rather
     /// than emitted here: this is a `SyntaxVisitor`, and `emit` is MainActor.
-    var untypedProvides: [(file: String, line: Int, message: String)] = []
+    var untypedProvides: [UntypedProperty] = []
     /// Module types named in a `modules:` argument — the bootstrap list.
     ///
     /// This is the fact that makes conditional inclusion static. It was
@@ -307,7 +328,8 @@ final class ModuleVisitor: SyntaxVisitor {
     override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
         typeStack.append(node.name.text)
         collectModule(
-            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock,
+            nameToken: node.name)
         return .visitChildren
     }
     override func visitPost(_ node: ClassDeclSyntax) { typeStack.removeLast() }
@@ -315,7 +337,8 @@ final class ModuleVisitor: SyntaxVisitor {
     override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
         typeStack.append(node.name.text)
         collectModule(
-            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock,
+            nameToken: node.name)
         return .visitChildren
     }
     override func visitPost(_ node: StructDeclSyntax) { typeStack.removeLast() }
@@ -323,7 +346,8 @@ final class ModuleVisitor: SyntaxVisitor {
     override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
         typeStack.append(node.name.text)
         collectModule(
-            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock)
+            named: node.name.text, inheritance: node.inheritanceClause, members: node.memberBlock,
+            nameToken: node.name)
         return .visitChildren
     }
     override func visitPost(_ node: EnumDeclSyntax) { typeStack.removeLast() }
@@ -343,8 +367,10 @@ final class ModuleVisitor: SyntaxVisitor {
     /// component scan has and the same reason `extension T: P` clauses are
     /// merged in separately there.
     private func collectModule(
-        named name: String, inheritance: InheritanceClauseSyntax?, members: MemberBlockSyntax
+        named name: String, inheritance: InheritanceClauseSyntax?, members: MemberBlockSyntax,
+        nameToken: TokenSyntax? = nil
     ) {
+        let nameLocation = nameToken.map { sourceLocation(of: $0) }
         guard let inheritance,
               inheritance.inheritedTypes.contains(where: {
                   baseName($0.type.trimmedDescription) == "AlulaModule"
@@ -410,6 +436,8 @@ final class ModuleVisitor: SyntaxVisitor {
         // (any Service)?` is one, and a module's service is bootstrap's to
         // collect, not another module's to take.
         var provides: [(name: String, type: String)] = []
+        var provideLocations: [String: DiagnosticLocation] = [:]
+        var untyped: [UntypedProperty] = []
         for member in members.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self),
                   !variable.modifiers.contains(where: {
@@ -434,28 +462,38 @@ final class ModuleVisitor: SyntaxVisitor {
                     // `@Inject var scheduler: SchedulerStatus`, which
                     // Actuator's own documentation shows, could not be
                     // satisfied by any application. Nothing said anything.
-                    if binding.initializer != nil {
-                        let location = converter.location(for: variable.position)
-                        untypedProvides.append(
-                            (
-                                file: file, line: location.line,
-                                message:
-                                    "\(name).\(identifier) has no written type, so composition "
-                                    + "cannot provide it — matching needs the type as written. "
-                                    + "Annotate it (`let \(identifier): SomeType = …`), or mark "
-                                    + "it private if it is not meant to be provided."
-                            ))
+                    if let initializer = binding.initializer {
+                        // `LabState()` or `LabState.init(…)`: the type the
+                        // property would have been, had it been written.
+                        let constructed = initializer.value.as(FunctionCallExprSyntax.self)
+                            .map { call -> String in
+                                let callee = call.calledExpression.trimmedDescription
+                                return callee.hasSuffix(".init") ? String(callee.dropLast(5)) : callee
+                            }
+                        let property = UntypedProperty(
+                            module: name, name: identifier, constructedType: constructed,
+                            location: sourceLocation(of: binding.pattern))
+                        untypedProvides.append(property)
+                        untyped.append(property)
                     }
                     continue
                 }
                 provides.append((name: identifier, type: type))
+                provideLocations[identifier] = sourceLocation(of: binding.pattern)
             }
         }
         modules.append(
             ScannedModule(
                 typeName: name, initializers: initializers,
                 dependencies: dependencies, defaultProviders: defaultProviders,
-                provides: provides, module: module))
+                provides: provides, module: module,
+                location: nameLocation ?? DiagnosticLocation(file: file, line: 1),
+                provideLocations: provideLocations, untypedProperties: untyped))
+    }
+
+    private func sourceLocation(of node: some SyntaxProtocol) -> DiagnosticLocation {
+        let location = converter.location(for: node.positionAfterSkippingLeadingTrivia)
+        return DiagnosticLocation(file: file, line: location.line, column: location.column)
     }
 
     /// The elements of the array literal a `dependencies` property returns,
@@ -656,7 +694,7 @@ final class ComponentVisitor: SyntaxVisitor {
             name: node.name.text, attributes: node.attributes,
             modifiers: node.modifiers, members: node.memberBlock,
             inheritanceClause: node.inheritanceClause, position: node.position,
-            leadingTrivia: node.leadingTrivia.description)
+            leadingTrivia: node.leadingTrivia.description, nameToken: node.name)
         return .skipChildren
     }
 
@@ -665,7 +703,7 @@ final class ComponentVisitor: SyntaxVisitor {
             name: node.name.text, attributes: node.attributes,
             modifiers: node.modifiers, members: node.memberBlock,
             inheritanceClause: node.inheritanceClause, position: node.position,
-            leadingTrivia: node.leadingTrivia.description)
+            leadingTrivia: node.leadingTrivia.description, nameToken: node.name)
         return .skipChildren
     }
 
@@ -728,7 +766,8 @@ final class ComponentVisitor: SyntaxVisitor {
         members: MemberBlockSyntax,
         inheritanceClause: InheritanceClauseSyntax?,
         position: AbsolutePosition,
-        leadingTrivia: String
+        leadingTrivia: String,
+        nameToken: TokenSyntax? = nil
     ) {
         let registrable = attributes.lazy
             .compactMap { $0.as(AttributeSyntax.self) }
@@ -765,6 +804,7 @@ final class ComponentVisitor: SyntaxVisitor {
         var acknowledged: [String] = []
         var acknowledgedNames: [String] = []
         var dependencyOrder: [(type: String, label: String, from: String?)] = []
+        var injectLocations: [String: DiagnosticLocation] = [:]
         var configValues: [ScannedConfigValue] = []
         for member in members.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
@@ -786,6 +826,7 @@ final class ComponentVisitor: SyntaxVisitor {
                 // found whether it sits on the line above the property or as
                 // a same-line trailing comment.
                 dependencyOrder.append((type: type, label: propertyName, from: namedProvider))
+                injectLocations[propertyName] = sourceLocation(of: binding.typeAnnotation!.type)
                 if member.description.contains("alula:hand-registered") {
                     acknowledged.append(type)
                     acknowledgedNames.append(propertyName)
@@ -857,8 +898,16 @@ final class ComponentVisitor: SyntaxVisitor {
             isModuleRegistered: leadingTrivia.contains("alula:module-registered"),
                 configValues: configValues,
                 file: file,
-                line: location.line
+                line: location.line,
+                location: nameToken.map { sourceLocation(of: $0) }
+                    ?? DiagnosticLocation(file: file, line: location.line),
+                injectLocations: injectLocations
             ))
+    }
+
+    private func sourceLocation(of node: some SyntaxProtocol) -> DiagnosticLocation {
+        let location = converter.location(for: node.positionAfterSkippingLeadingTrivia)
+        return DiagnosticLocation(file: file, line: location.line, column: location.column)
     }
 
     private func hasAttribute(_ attributes: AttributeListSyntax, named name: String) -> Bool {
@@ -930,6 +979,28 @@ func emit(_ severity: String, _ message: String, file: String, line: Int) {
     if severity == "error" { errorCount += 1 }
 }
 
+/// Reports a coded diagnostic in the compiler's format, against the
+/// developer's source. See `AlulaDiagnostics`.
+@MainActor
+func report(_ diagnostic: Diagnostic) {
+    FileHandle.standardError.write((diagnostic.rendered + "\n").data(using: .utf8)!)
+    if diagnostic.severity == .error { errorCount += 1 }
+    for note in diagnostic.notes {
+        if let location = note.location { reportedNoteLocations.insert(location.description) }
+    }
+}
+
+/// Locations some reported diagnostic already points at in a note, so a
+/// later warning about the same line can stand down.
+var reportedNoteLocations: Set<String> = []
+
+/// Where a component's `@Inject` of `type` is written, falling back to the
+/// component itself.
+func injectLocation(of type: String, in component: ScannedComponent) -> DiagnosticLocation {
+    let label = component.dependencyOrder.first { $0.type == type }?.label
+    return label.flatMap { component.injectLocations[$0] } ?? component.location
+}
+
 // MARK: - Main
 
 let arguments = CommandLine.arguments
@@ -950,6 +1021,10 @@ do {
 }
 
 var components: [ScannedComponent] = []
+/// ALU-DI-1011 warnings, held until composition has run: when a missing
+/// provider is explained by one of these properties, the error names it and
+/// the warning would only say the same thing twice.
+var pendingUntypedWarnings: [Diagnostic] = []
 /// Imports written by the target's own sources.
 ///
 /// The generated file is a separate file, so it inherits nothing. It has
@@ -1036,8 +1111,16 @@ for module in manifest.modules {
             moduleScan.walk(tree)
             lanes.append(contentsOf: moduleScan.lanes)
             moduleGraph.append(contentsOf: moduleScan.modules)
-            for warning in moduleScan.untypedProvides {
-                emit("warning", warning.message, file: warning.file, line: warning.line)
+            for property in moduleScan.untypedProvides {
+                pendingUntypedWarnings.append(Diagnostic(
+                    .untypedProvidedProperty,
+                    "`\(property.module).\(property.name)` has no written type, so composition cannot provide it",
+                    at: property.location,
+                    explanation: ["Composition matches what is needed against the type as written."],
+                    help: [
+                        "write the type: `let \(property.name): \(property.constructedType ?? "SomeType") = …`,\n"
+                            + "or mark it private if it is not meant to be provided."
+                    ]))
             }
             if module.name == manifest.targetModuleName {
                 bootstrapModules.append(contentsOf: moduleScan.bootstrapModules)
@@ -1293,6 +1376,10 @@ struct SynthesizedBridge {
     let component: ScannedComponent
 }
 
+/// Protocols injected as `any P` with more than one conforming component,
+/// already reported as ALU-DI-1010 — so not reported again as unscanned.
+var ambiguousExistentialBases: Set<String> = []
+
 @MainActor
 func synthesizeBridges() -> [SynthesizedBridge] {
     var suppressed: Set<String> = []
@@ -1306,12 +1393,12 @@ func synthesizeBridges() -> [SynthesizedBridge] {
 
     // First demand site wins for spelling/diagnostics; the key is the same
     // type however it is spelled.
-    var demands: [String: (protocolName: String, demandedBy: ScannedComponent)] = [:]
+    var demands: [String: (protocolName: String, written: String, demandedBy: ScannedComponent)] = [:]
     for component in components {
         for dependency in component.injectTypeNames {
             guard let name = existentialProtocolName(dependency) else { continue }
             let base = baseName(name)
-            if demands[base] == nil { demands[base] = (name, component) }
+            if demands[base] == nil { demands[base] = (name, dependency, component) }
         }
     }
 
@@ -1334,11 +1421,19 @@ func synthesizeBridges() -> [SynthesizedBridge] {
             bridges.append(
                 SynthesizedBridge(protocolName: demand.protocolName, component: conformers[0]))
         default:
-            emit(
-                "warning",
-                "@Inject type '(any \(demand.protocolName))' in \(demand.demandedBy.typeName) has \(conformers.count) scanned conformers (\(conformers.map(\.typeName).sorted().joined(separator: ", "))) — no bridge was generated. Provide it from a module and acknowledge the property with a `// alula:hand-registered` comment.",
-                file: demand.demandedBy.file, line: demand.demandedBy.line
-            )
+            ambiguousExistentialBases.insert(base)
+            report(Diagnostic(
+                .ambiguousExistential,
+                "`\(demand.demandedBy.typeName)` injects `any \(demand.protocolName)`, and \(conformers.count) components conform to it",
+                at: injectLocation(of: demand.written, in: demand.demandedBy),
+                explanation: ["Alula bridges a protocol to a component only when exactly one conforms."],
+                help: [
+                    "inject the concrete type you mean, or have a module hold the `any \(demand.protocolName)`\n"
+                        + "and acknowledge the property with `// alula:hand-registered`."
+                ],
+                notes: conformers.sorted { $0.typeName < $1.typeName }.map {
+                    .init("`\($0.typeName)` conforms to `\(demand.protocolName)`", at: $0.location)
+                }))
         }
     }
     return bridges
@@ -1367,9 +1462,11 @@ let alwaysAvailable: Set<String> = [
 
 for component in components {
     for dependency in component.injectTypeNames {
-        // Demands satisfied by a synthesized bridge are no longer suspicious.
+        // Demands satisfied by a synthesized bridge are no longer suspicious,
+        // and one with several conformers has had its own warning (ALU-DI-1010).
         if let name = existentialProtocolName(dependency),
             bridgedProtocolBaseNames.contains(baseName(name))
+                || ambiguousExistentialBases.contains(baseName(name))
         {
             continue
         }
@@ -1380,17 +1477,14 @@ for component in components {
         // at bootstrap with `notRegistered` — against Docs/core.md's promise
         // that missing registrations are reported at build time.
         if written.hasSuffix("?") {
-            emit(
-                "error",
-                """
-                @Inject does not support optional types: '\(written)' in \
-                \(component.typeName) would resolve Optional<\
-                \(written.dropLast())>, which nothing registers. Drop the '?' if the \
-                dependency is required, or resolve it by hand where absence is \
-                meaningful.
-                """,
-                file: component.file, line: component.line
-            )
+            report(Diagnostic(
+                .optionalInjection,
+                "`@Inject` does not support the optional type `\(written)`",
+                at: injectLocation(of: dependency, in: component),
+                explanation: [
+                    "Nothing provides `Optional<\(written.dropLast())>`, so the dependency would never arrive."
+                ],
+                help: ["drop the `?` if the dependency is required, or resolve it by hand where absence is meaningful."]))
             continue
         }
         let base = written
@@ -1426,10 +1520,23 @@ func detectCycles() {
         if finished.contains(name) { return }
         if inProgress.contains(name) {
             let cycleStart = stack.firstIndex(of: name) ?? 0
-            let chain = (stack[cycleStart...] + [name]).joined(separator: " → ")
-            emit(
-                "error", "Dependency cycle among @Component types: \(chain)", file: component.file,
-                line: component.line)
+            let members = Array(stack[cycleStart...])
+            let chain = (members + [name]).joined(separator: " → ")
+            // The edge that closes the cycle is where it is reported; each
+            // other edge is a note at its own @Inject.
+            let closing = byName[members.last ?? name]
+            report(Diagnostic(
+                .componentCycle,
+                "`\(name)` depends on itself: \(chain)",
+                at: closing.map { injectLocation(of: name, in: $0) } ?? component.location,
+                context: ["dependency cycle:"] + (members + [name]).enumerated().map {
+                    "  " + String(repeating: "  ", count: $0.offset) + ($0.offset == 0 ? "" : "→ ") + $0.element
+                },
+                explanation: ["Components are built once, in dependency order, and a cycle has no first member."],
+                help: ["extract the shared responsibility into a component both depend on, or inject a narrower dependency."],
+                notes: zip(members, members.dropFirst() + [name]).dropLast().compactMap { from, to in
+                    byName[from].map { .init("`\(from)` injects `\(to)` here", at: injectLocation(of: to, in: $0)) }
+                }))
             return
         }
         inProgress.insert(name)
@@ -1484,27 +1591,26 @@ func diagnoseRemovedComponentArguments() {
                 scopeText.hasSuffix(".scoped") || scopeText.hasSuffix(".transient")
             let opening =
                 namesARemovedLifetime
-                ? "'\(component.typeName)' declares `scope: \(scopeText)`, which no longer exists, "
-                    + "and `scope:` itself was removed in 0.20.0. "
-                : "'\(component.typeName)' declares `scope: \(scopeText)`. The `scope:` argument "
-                    + "was removed in 0.20.0: it had one legal value and expanded to nothing. "
-            emit(
-                "error",
-                opening + whereTheLifetimesWent
-                    + " Delete the argument: `@\(component.attributeName)`.",
-                file: component.file, line: component.line)
+                ? ""
+                : "It had one legal value and expanded to nothing. "
+            report(Diagnostic(
+                .removedScopeArgument,
+                "`\(component.typeName)` declares `scope: \(scopeText)`, which was removed in 0.20.0",
+                at: component.location,
+                explanation: [opening + whereTheLifetimesWent],
+                help: ["delete the argument: `@\(component.attributeName)`."]))
         }
 
         if let qualifierText = component.removedQualifierText {
-            emit(
-                "error",
-                "'\(component.typeName)' declares `qualifier: \(qualifierText)`. The type-level "
-                    + "`qualifier:` argument was removed in 0.20.0: it expanded to nothing, "
-                    + "because composition wires by type rather than by name. Delete the "
-                    + "argument: `@\(component.attributeName)`. The property-level "
-                    + "`@Inject(\"name\")` went in the same release — two @Inject properties of "
-                    + "one type are now a build error, because nothing distinguishes them.",
-                file: component.file, line: component.line)
+            report(Diagnostic(
+                .removedQualifierArgument,
+                "`\(component.typeName)` declares `qualifier: \(qualifierText)`, which was removed in 0.20.0",
+                at: component.location,
+                explanation: [
+                    "It expanded to nothing: composition wires by type, not by name. The property-level "
+                        + "`@Inject(\"name\")` went in the same release."
+                ],
+                help: ["delete the argument: `@\(component.attributeName)`."]))
         }
     }
 }
@@ -1514,11 +1620,12 @@ diagnoseRemovedComponentArguments()
 // generated code.
 for component in components
 where component.module != manifest.targetModuleName && !component.isPublic {
-    emit(
-        "error",
-        "@Component type '\(component.typeName)' in module \(component.module) must be public to be built from \(manifest.targetModuleName)'s generated composition root.",
-        file: component.file, line: component.line
-    )
+    report(Diagnostic(
+        .nonPublicCrossModuleComponent,
+        "`\(component.typeName)` in \(component.module) must be public to be built from \(manifest.targetModuleName)",
+        at: component.location,
+        explanation: ["\(manifest.targetModuleName)'s generated composition names the type, so it must be visible there."],
+        help: ["declare `\(component.typeName)` public, or move it into \(manifest.targetModuleName)."]))
 }
 
 // MARK: - Undeclared lanes (compile-time case)
@@ -1642,14 +1749,21 @@ func warnUnscannedInjections() {
     let modules = includedModules.compactMap { scannedModule($0, in: byName) }
     let provided = Set(modules.flatMap { $0.provides.map { providedTypeKey($0.type) } })
         .union(includedModules.map(providedTypeKey))
+    // In an application the composer reports a type nothing provides as an
+    // error (ALU-DI-1001), with every place that asks for it; warning here too
+    // would say it twice. A library composes nothing, so this is all it gets.
+    guard includedModules.isEmpty else { return }
     for (type, component) in unscannedInjections where !provided.contains(providedTypeKey(type)) {
-        emit(
-            "warning",
-            "@Inject type '\(type)' in \(component.typeName) is not a scanned @Component"
-                + (includedModules.isEmpty ? "" : " and no module in this application provides it")
-                + ". If it is provided some other way — a value a module holds, or an external input — acknowledge it with a `// alula:hand-registered` comment on the property; otherwise composition will fail.",
-            file: component.file, line: component.line
-        )
+        report(Diagnostic(
+            .unscannedInjection,
+            "`\(component.typeName)` injects `\(type)`, which is not a scanned @Component"
+                + (includedModules.isEmpty ? "" : " and no module in this application provides it"),
+            at: injectLocation(of: type, in: component),
+            explanation: ["If nothing supplies it, composition fails."],
+            help: [
+                "make `\(type)` a @Component, or have a module hold it; if it is supplied some other way,\n"
+                    + "acknowledge the property with a `// alula:hand-registered` comment."
+            ]))
     }
 }
 warnUnscannedInjections()
@@ -2060,7 +2174,7 @@ func emitAlulaGraph(into out: inout String) {
     // use — so `@Inject var store: (any RoomStore)` resolves to the concrete
     // type the graph already builds.
     var conformerOfProtocol: [String: ScannedComponent] = [:]
-    for bridge in synthesizeBridges() {
+    for bridge in bridges {
         conformerOfProtocol[baseName(bridge.protocolName)] = bridge.component
     }
 
@@ -2389,11 +2503,97 @@ func emitComposer(into out: inout String) {
         moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
 
     func binding(_ text: String) -> String { moduleBindingName(text) }
-    // Carried into the generated file as `#error`, rather than to stderr.
-    // A composition that cannot be wired should fail the consumer's build with
-    // the reason attached, at a line their compiler points at — not as a
-    // warning scrolled past on the way to a confusing type error.
-    var compositionDiagnostics: [String] = []
+    // Reported to stderr against the application's own source, and the
+    // generator then exits non-zero before writing anything: a composition
+    // that cannot be wired fails the build with the reason attached, at a
+    // line of the reader's code — never at generated code, and never followed
+    // by the type errors that code would have caused (D56).
+    var compositionDiagnostics: [Diagnostic] = []
+    /// Types an ambiguity was reported for, so the same type is not also
+    /// reported as missing.
+    var ambiguousTypes: Set<String> = []
+    /// Types a named-provider diagnostic (ALU-DI-1005…1007) already covers.
+    var explainedTypes: Set<String> = []
+
+    /// Where `type` is asked for: each `@Inject` of it, the application's own
+    /// code first, so a diagnostic's primary location is code the reader
+    /// wrote rather than a framework checkout.
+    func consumers(of type: String, from namedProvider: String? = nil)
+        -> [(name: String, location: DiagnosticLocation)]
+    {
+        let wanted = providedTypeKey(type)
+        var found: [(name: String, location: DiagnosticLocation, own: Bool)] = []
+        for component in components {
+            for edge in component.dependencyOrder where providedTypeKey(edge.type) == wanted {
+                if let namedProvider, edge.from.map(moduleIdentity) != moduleIdentity(namedProvider) {
+                    continue
+                }
+                found.append((
+                    "\(component.typeName).\(edge.label)",
+                    component.injectLocations[edge.label] ?? component.location,
+                    component.module == manifest.targetModuleName))
+            }
+        }
+        return found
+            .sorted { ($0.own ? 0 : 1, $0.name) < ($1.own ? 0 : 1, $1.name) }
+            .map { ($0.name, $0.location) }
+    }
+
+    /// A located note per provider: `Module.property` holds a `T`.
+    func providerNotes(_ matches: [(expression: String, module: String)], of type: String)
+        -> [Diagnostic.Note]
+    {
+        matches.map { match -> Diagnostic.Note in
+            let property = match.expression.split(separator: ".").last.map(String.init) ?? ""
+            let module = scannedModule(match.module, in: byName)
+            return .init(
+                "`\(match.module).\(property)` provides `\(type)`",
+                at: module?.provideLocations[property] ?? module?.location)
+        }.sorted { $0.message < $1.message }
+    }
+
+    /// Stored properties that would provide `type` if their type were written
+    /// — `let state = LabState()` — which is the likeliest reason nothing does.
+    func untypedCandidates(for type: String) -> [Diagnostic.Note] {
+        let wanted = baseName(providedTypeKey(type))
+        return includedModules.compactMap { scannedModule($0, in: byName) }
+            .flatMap(\.untypedProperties)
+            .filter { $0.constructedType.map { baseName($0) } == wanted }
+            .map {
+                .init(
+                    "`\($0.module).\($0.name)` constructs a `\(wanted)` but has no written type, so it provides nothing — write `let \($0.name): \(wanted) = …`",
+                    at: $0.location)
+            }
+    }
+
+    /// No module provides `type`: said once, at the first place that asks
+    /// for it, with every other asker and any untyped would-be provider as
+    /// notes.
+    func missingProvider(_ type: String, neededBy what: String) {
+        let wanted = providedTypeKey(type)
+        guard !ambiguousTypes.contains(wanted), !explainedTypes.contains(wanted),
+              !compositionDiagnostics.contains(where: {
+                  $0.code == .missingProvider && $0.summary.contains("`\(wanted)`")
+              })
+        else { return }
+        let askers = consumers(of: type)
+        let untyped = untypedCandidates(for: type)
+        compositionDiagnostics.append(Diagnostic(
+            .missingProvider,
+            "no module in this application provides `\(wanted)`",
+            at: askers.first?.location,
+            context: askers.isEmpty
+                ? ["needed by: \(what)"]
+                : ["needed by:"] + askers.map { "  \($0.name) → \(wanted)" },
+            explanation: ["A module provides a value by holding it as a stored property with a written type."],
+            help: untyped.isEmpty
+                ? [
+                    "add the module that owns a `\(wanted)` to `modules:`,\n"
+                        + "or have one of your modules hold it: `let value: \(wanted) = …`."
+                ]
+                : ["write the type of the property named below; that is what composition matches on."],
+            notes: untyped + askers.dropFirst().map { .init("`\($0.name)` also needs `\(wanted)`", at: $0.location) }))
+    }
     /// Where a parameter's value comes from: another module, or a property of
     /// one. This is how one module's output becomes another's input, and
     /// neither module names the other — the type is the whole connection.
@@ -2465,22 +2665,42 @@ func emitComposer(into out: inout String) {
             let wantedIdentity = moduleIdentity(namedProvider)
             let named = matches.filter { moduleIdentity($0.module) == wantedIdentity }
             if named.count == 1 { return named[0] }
+            // Whatever is reported below explains why this property has no
+            // provider; ALU-DI-1001 at the same place would say it again, and
+            // wrongly — another module may well provide the type.
+            explainedTypes.insert(wanted)
             if named.isEmpty {
                 let inApplication = includedModules.contains {
                     moduleIdentity($0) == wantedIdentity
                 }
+                let asker = consumers(of: type, from: namedProvider).first
                 compositionDiagnostics.append(
                     inApplication
-                        ? "@Inject(from: \(namedProvider).self) names a module that does not "
-                            + "provide \(wanted). A module provides a value by holding it as a "
-                            + "stored property."
-                        : "@Inject(from: \(namedProvider).self) names a module this application "
-                            + "does not include. Add it to `modules:`, or to the `dependencies` "
-                            + "of a module that is already there.")
+                        ? Diagnostic(
+                            .namedProviderLacksType,
+                            "`@Inject(from: \(namedProvider).self)` names a module that does not provide `\(wanted)`",
+                            at: asker?.location,
+                            context: asker.map { ["asked for by: \($0.name)"] } ?? [],
+                            explanation: ["A module provides a value by holding it as a stored property with a written type."],
+                            help: ["name the module that holds the `\(wanted)`, or give \(namedProvider) a stored property of that type."],
+                            notes: providerNotes(matches, of: wanted))
+                        : Diagnostic(
+                            .namedProviderNotIncluded,
+                            "`@Inject(from: \(namedProvider).self)` names a module this application does not include",
+                            at: asker?.location,
+                            context: asker.map { ["asked for by: \($0.name)"] } ?? [],
+                            explanation: ["A module takes part only when it is in `modules:`, or in the `dependencies` of one that is."],
+                            help: ["add \(namedProvider) to `modules:`, or to the `dependencies` of a module already there."],
+                            notes: providerNotes(matches, of: wanted)))
             } else {
-                compositionDiagnostics.append(
-                    "@Inject(from: \(namedProvider).self) is ambiguous: that module provides "
-                        + "\(wanted) more than once (\(named.map(\.expression).sorted().joined(separator: ", "))).")
+                let asker = consumers(of: type, from: namedProvider).first
+                compositionDiagnostics.append(Diagnostic(
+                    .namedProviderAmbiguous,
+                    "`@Inject(from: \(namedProvider).self)` does not pick one `\(wanted)`: that module provides it \(named.count) times",
+                    at: asker?.location,
+                    context: asker.map { ["asked for by: \($0.name)"] } ?? [],
+                    help: ["give each value its own type (a small wrapper struct is enough), or keep only one."],
+                    notes: providerNotes(named, of: wanted)))
             }
             return nil
         }
@@ -2497,7 +2717,10 @@ func emitComposer(into out: inout String) {
             // which is why the message shows both rather than only naming the
             // problem (D27).
             if let chosen = defaultProviderChoice(for: wanted, among: matches) { return chosen }
-            compositionDiagnostics.append(ambiguityDiagnostic(wanted: wanted, matches: matches))
+            if !ambiguousTypes.contains(wanted) {
+                ambiguousTypes.insert(wanted)
+                compositionDiagnostics.append(ambiguityDiagnostic(wanted: wanted, matches: matches))
+            }
             return nil
         }
     }
@@ -2509,10 +2732,7 @@ func emitComposer(into out: inout String) {
     /// neither: the second message contradicts the first and sends the reader
     /// looking for a module to add.
     func reportedAmbiguity(for type: String) -> Bool {
-        let wanted = providedTypeKey(type)
-        return compositionDiagnostics.contains {
-            $0.hasPrefix("Composition is ambiguous") && $0.contains(wanted)
-        }
+        ambiguousTypes.contains(providedTypeKey(type))
     }
 
     /// The provider a module's `defaultProviders` nominated for this type.
@@ -2532,23 +2752,25 @@ func emitComposer(into out: inout String) {
     /// that knows.
     func ambiguityDiagnostic(
         wanted: String, matches: [(expression: String, module: String)]
-    ) -> String {
-        // `Module.property`, not the generated binding name: the binding is an
-        // identifier this file invented, and the reader has never seen it.
-        let described = matches.map { match -> String in
-            let property = match.expression.split(separator: ".").last.map(String.init) ?? ""
-            return "\(match.module).\(property)"
-        }.sorted()
+    ) -> Diagnostic {
         let modules = matches.map(\.module).sorted()
         let suggestion = modules.first ?? "SomeModule"
         let other = modules.count > 1 ? modules[1] : "OtherModule"
-        return "Composition is ambiguous: "
-            + described.joined(separator: " and ")
-            + " both provide \(wanted), and it is asked for by type.\n"
-            + "Say which one an unqualified @Inject means, in the module that lists them:\n"
-            + "    static var defaultProviders: [any AlulaModule.Type] { [\(suggestion).self] }\n"
-            + "Then name the other one only where you want it:\n"
-            + "    @Inject(from: \(other).self) var name: \(wanted)"
+        let askers = consumers(of: wanted)
+        return Diagnostic(
+            .ambiguousProvider,
+            "\(matches.count) modules provide `\(wanted)`, and it is asked for by type",
+            at: askers.first?.location,
+            context: ["asked for by:"] + (askers.isEmpty ? ["  the composition root"] : askers.map { "  \($0.name)" }),
+            explanation: ["Composition never guesses between providers: picking one silently is how a service talks to the wrong database."],
+            help: [
+                "say which one an unqualified @Inject means, in the module that lists them:\n"
+                    + "    static var defaultProviders: [any AlulaModule.Type] { [\(suggestion).self] }\n"
+                    + "then name the other only where you want it:\n"
+                    + "    @Inject(from: \(other).self) var name: \(wanted)"
+            ],
+            notes: providerNotes(matches, of: wanted)
+                + askers.dropFirst().map { .init("`\($0.name)` also asks for `\(wanted)`", at: $0.location) })
     }
 
     out += "\n"
@@ -2608,11 +2830,10 @@ func emitComposer(into out: inout String) {
                         callArguments.append("\(root.label): \(source.expression)")
                     } else {
                         callArguments.append(
-                            "\(root.label): fatalError(\"unresolved: see the #error below\")")
-                        compositionDiagnostics.append(
-                            "A route terminal needs \(root.type), and no module in this "
-                                + "application provides it. A module that owns it should expose "
-                                + "it as a stored property.")
+                            "\(root.label): fatalError(\"unresolved: see the composition diagnostic\")")
+                        if !reportedAmbiguity(for: root.type) {
+                            missingProvider(root.type, neededBy: "a route handler")
+                        }
                     }
                 }
                 expressions.append("alulaRoutes(\(callArguments.joined(separator: ", ")))")
@@ -2670,18 +2891,15 @@ func emitComposer(into out: inout String) {
                 // No editor placeholder: `<#…#>` is itself a compile error
                 // ("editor placeholder in source file"), so it added a third
                 // error above the explanatory one and pointed at generated
-                // code. The `#error` below already fails the build, with the
-                // reason attached.
+                // code. The composition diagnostic stops the build before
+                // this text is ever written.
                 arguments.append(
-                    "\(root.label): fatalError(\"unresolved: see the #error below\")")
+                    "\(root.label): fatalError(\"unresolved: see the composition diagnostic\")")
                 // Only when nothing provides it. `provider` returns nil for
                 // ambiguity too, and claiming "no module provides it" while
                 // two do sent people looking for a missing module.
                 if !reportedAmbiguity(for: root.type) {
-                    compositionDiagnostics.append(
-                        "The component graph needs \(root.type), and no module in this application "
-                            + "provides it. A module that owns it should expose it as a stored "
-                            + "property, which is how the composition root finds it.")
+                    missingProvider(root.type, neededBy: "the component graph")
                 }
             }
         }
@@ -2704,12 +2922,15 @@ func emitComposer(into out: inout String) {
         var satisfiable = false
         var canThrow = false
         var needs: Set<String> = []
+        /// Each initializer tried, and the parameters nothing could supply.
+        var unmet: [(signature: String, missing: [String])] = []
         for candidate in (module?.initializers ?? [(labels: [], types: [], defaulted: [], throws: false)])
             .sorted(by: { $0.labels.count > $1.labels.count })
         {
             var built: [String] = []
             var candidateNeeds: Set<String> = []
             var ok = true
+            var missing: [String] = []
             for (index, (label, type)) in zip(candidate.labels, candidate.types).enumerated() {
                 guard
                     let resolved = argument(
@@ -2725,7 +2946,8 @@ func emitComposer(into out: inout String) {
                         continue
                     }
                     ok = false
-                    break
+                    missing.append("\(label): \(type)")
+                    continue
                 }
                 if let resolved {
                     built.append(resolved)
@@ -2743,6 +2965,10 @@ func emitComposer(into out: inout String) {
             // defaults omittable, an all-defaulted test seam would otherwise
             // outrank `init(configuration:)` and ignore the configuration.
             // Ties keep the declared-count order above.
+            if !ok {
+                unmet.append((
+                    "init(" + candidate.labels.map { "\($0):" }.joined() + ")", missing))
+            }
             if ok, !satisfiable || built.count > arguments.count {
                 arguments = built
                 satisfiable = true
@@ -2755,11 +2981,19 @@ func emitComposer(into out: inout String) {
             // error. The placeholder is gone, and `fatalError` type-checks, so
             // without this the module would compose silently and trap at
             // start-up — a loud failure turned into a quiet one.
-            arguments = ["fatalError(\"unresolved: see the #error below\")"]
-            compositionDiagnostics.append(
-                "\(name) has no initializer this composer can supply. Its parameters have to be "
-                    + "values some module in this application provides, `Configuration`, or the "
-                    + "component graph — or it needs an `init()`.")
+            arguments = ["fatalError(\"unresolved: see the composition diagnostic\")"]
+            let declared = module ?? moduleGraph.first { moduleKey($0.typeName) == moduleKey(name) }
+            compositionDiagnostics.append(Diagnostic(
+                .unconstructibleModule,
+                "no initializer of `\(name)` can be satisfied by this application",
+                at: declared?.location,
+                context: unmet.flatMap { attempt in
+                    ["\(attempt.signature) needs:"] + attempt.missing.map { "  \($0) — nothing provides it" }
+                },
+                explanation: [
+                    "A module's parameters must be values another module provides, `Configuration`, or the component graph."
+                ],
+                help: ["add the modules that provide those values, give the parameters defaults, or add an initializer this application can satisfy."]))
         }
         // `try` only where the initializer throws: an unnecessary one is a
         // warning in every consumer's build.
@@ -2795,11 +3029,31 @@ func emitComposer(into out: inout String) {
             // Emit the rest in declared order so the failure is Swift's
             // "used before initialized" at a named line, not a silent
             // reordering that happens to compile.
-            compositionDiagnostics.append(
-                "Modules "
-                    + remaining.map(\.name).sorted().joined(separator: ", ")
-                    + " form a composition cycle: each needs a value another holds. Break it by "
-                    + "moving the shared value into a module both can take it from.")
+            let cyclic = remaining.map(\.name).sorted()
+            let cyclicModules = cyclic.map { name in
+                (name, moduleGraph.first { moduleKey($0.typeName) == moduleKey(name) })
+            }
+            // The application's own module first: the location should be
+            // code the reader wrote, not a framework checkout.
+            let primary =
+                cyclicModules.first { $0.1?.module == manifest.targetModuleName }
+                ?? cyclicModules.first
+            let edges: [String] = remaining.sorted { $0.name < $1.name }.map { construction in
+                let wants = construction.needs
+                    .filter { need in cyclic.contains { moduleIdentity($0) == need } }
+                    .sorted()
+                return "  \(construction.name) needs a value from " + wants.joined(separator: ", ")
+            }
+            compositionDiagnostics.append(Diagnostic(
+                .moduleCycle,
+                "modules \(cyclic.joined(separator: ", ")) need each other's values in a cycle",
+                at: primary?.1?.location,
+                context: ["composition cycle:"] + edges,
+                explanation: ["Modules are built in dependency order, and a cycle has no first member."],
+                help: ["move the shared value into a module both can take it from — often a small module that only holds it."],
+                notes: cyclicModules.filter { $0.0 != primary?.0 }.compactMap { name, module in
+                    module.map { .init("`\(name)` is part of the cycle", at: $0.location) }
+                }))
             ordered.append(contentsOf: remaining)
             break
         }
@@ -2838,11 +3092,13 @@ func emitComposer(into out: inout String) {
                     }
             }
             guard !aggregators.isEmpty else { continue }
-            compositionDiagnostics.append(
-                "\(name).\(property.name) is declared but nothing in this application collects "
-                    + "it. Add "
-                    + aggregators.map(\.typeName).sorted().joined(separator: " or ")
-                    + " to the modules: list.")
+            let collectors = aggregators.map(\.typeName).sorted()
+            compositionDiagnostics.append(Diagnostic(
+                .uncollectedContribution,
+                "`\(name).\(property.name)` is contributed, but nothing in this application collects it",
+                at: module.provideLocations[property.name] ?? module.location,
+                explanation: ["Without a collector the contribution is dropped, and nothing else would say so."],
+                help: ["add " + collectors.joined(separator: " or ") + " to `modules:`."]))
         }
     }
 
@@ -2863,16 +3119,11 @@ func emitComposer(into out: inout String) {
         out += "    ###\"\(document)\"###\n"
         out += "}\n"
     }
+    // Reported against the developer's source, and the build stops here:
+    // generated code for a composition that cannot be wired would only add
+    // Swift errors pointing into a file nobody wrote (relay ISSUES #32).
     for diagnostic in compositionDiagnostics {
-        // Newlines have to be escaped, not emitted: a real one inside
-        // `#error("…")` ends the string literal, and the generated file then
-        // fails to parse — which buries the message this exists to deliver
-        // under whatever the parser says next.
-        let text =
-            diagnostic
-            .replacingOccurrences(of: "\"", with: "'")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        out += "#error(\"\(text)\")\n"
+        report(diagnostic)
     }
 }
 
@@ -3071,6 +3322,13 @@ if !components.isEmpty {
 
 emitAlulaGraph(into: &out)
 emitComposer(into: &out)
+for warning in pendingUntypedWarnings
+where !reportedNoteLocations.contains(warning.location.map(\.description) ?? "") {
+    report(warning)
+}
+// Nothing is written once an error is known: the build fails on the reported
+// diagnostics, not on generated code built from an invalid model.
+if errorCount > 0 { exit(1) }
 
 do {
     let outputURL = URL(fileURLWithPath: manifest.output)

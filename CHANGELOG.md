@@ -4,6 +4,43 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.0] - 2026-09-25
+
+The first phase of the diagnostics design: every failure the registration
+generator owns has a stable code, a page, and a message aimed at your code.
+
+### Added
+
+- **Diagnostic codes.** Composition and component failures carry a code —
+  `ALU-DI-1xxx` for dependency wiring, `ALU-LIFE-8xxx` for module
+  composition — and each code has a page in `Diagnostics/` (meaning, why
+  Alula rejects it, common causes, fixes, an example). Every message ends
+  with a `docs:` link to its page. Sixteen codes in this release; the
+  families for web, OpenAPI, configuration, security and commands are
+  reserved.
+- **`AlulaDiagnostics`**, a dependency-free library holding the codes, the
+  page text and the renderer, so tools (the coming `alula explain`) read
+  the same source of truth as the build.
+- **Notes that point at the cause.** A missing provider lists every place
+  that asks for it, and names a module property that constructs the type but
+  has no written type — the usual reason nothing provides it. An ambiguity
+  points at both providers; a cycle at each component in it; a module cycle
+  at each module.
+
+### Changed
+
+- **Composition errors are reported against your source and stop the
+  build.** They used to be `#error` lines in `AlulaRegistration.generated.swift`,
+  which put the error in generated code and let the compiler go on to report
+  the type errors that code caused. Now each is a diagnostic at the `@Inject`,
+  module or component it concerns, and the generator exits before anything is
+  compiled. Tests that grepped the generated file for `#error` should look at
+  the build's diagnostics instead.
+- **One problem, one message.** An `@Inject(from:)` that names the wrong module
+  no longer also reports that nothing provides the type; an `any P` with
+  several conformers is reported once, not once plus an "unscanned" warning;
+  and the untyped-property warning is dropped when a note already says it.
+
 ## [0.48.4] - 2026-09-25
 
 Found building Relay's front end (relay/docs/ISSUES.md #23, #24).

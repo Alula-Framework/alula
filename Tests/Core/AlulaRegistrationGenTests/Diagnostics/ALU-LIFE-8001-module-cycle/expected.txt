@@ -1,0 +1,8 @@
+Main.swift:3:8: error: [ALU-LIFE-8001] modules InventoryModule, PricingModule need each other's values in a cycle
+    composition cycle:
+      InventoryModule needs a value from PricingModule
+      PricingModule needs a value from InventoryModule
+    Modules are built in dependency order, and a cycle has no first member.
+    help: move the shared value into a module both can take it from — often a small module that only holds it.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-LIFE-8001.md
+Main.swift:8:8: note: `PricingModule` is part of the cycle

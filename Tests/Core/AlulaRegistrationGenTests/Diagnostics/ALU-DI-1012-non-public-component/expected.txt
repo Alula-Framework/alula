@@ -1,0 +1,4 @@
+Billing/Invoices.swift:4:8: error: [ALU-DI-1012] `InvoiceService` in Billing must be public to be built from AppModule
+    AppModule's generated composition names the type, so it must be visible there.
+    help: declare `InvoiceService` public, or move it into AppModule.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1012.md

@@ -1,0 +1,11 @@
+Main.swift:15:24: error: [ALU-DI-1003] `UserService` depends on itself: UserService → AuditService → NotificationService → UserService
+    dependency cycle:
+      UserService
+        → AuditService
+          → NotificationService
+            → UserService
+    Components are built once, in dependency order, and a cycle has no first member.
+    help: extract the shared responsibility into a component both depend on, or inject a narrower dependency.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1003.md
+Main.swift:5:24: note: `UserService` injects `AuditService` here
+Main.swift:10:32: note: `AuditService` injects `NotificationService` here

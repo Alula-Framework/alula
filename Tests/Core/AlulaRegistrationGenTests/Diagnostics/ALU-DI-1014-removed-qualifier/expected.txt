@@ -1,0 +1,4 @@
+Main.swift:4:8: error: [ALU-DI-1014] `Pool` declares `qualifier: "primary"`, which was removed in 0.20.0
+    It expanded to nothing: composition wires by type, not by name. The property-level `@Inject("name")` went in the same release.
+    help: delete the argument: `@Repository`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1014.md

@@ -1,0 +1,4 @@
+Main.swift:8:9: error: [ALU-LIFE-8003] `ChatModule.channels` is contributed, but nothing in this application collects it
+    Without a collector the contribution is dropped, and nothing else would say so.
+    help: add AlulaChannelsModule to `modules:`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-LIFE-8003.md

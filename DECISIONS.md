@@ -7,6 +7,35 @@ wrong, say so and it changes.
 
 ---
 
+## D56 — Framework diagnostics have codes, pages, and user-source locations
+
+**Context.** The diagnostics design (Alula-Diagnostics-Design). Composition
+failures were `#error` lines in the generated file: located in nobody's code,
+followed by cascading type errors (Relay #32), and silent about the usual
+cause, a module property with no written type (Relay #19). Messages had no
+stable identity, so nothing could link to them, test them, or explain them.
+
+**Chosen.**
+- **Stable codes by family**: `ALU-DI-1xxx`, `ALU-WEB-2xxx`, `ALU-OAPI-3xxx`,
+  `HGR-QUERY-4xxx`, `ALU-CONFIG-5xxx`, `ALU-SEC-6xxx`, `ALU-CMD-7xxx`,
+  `ALU-LIFE-8xxx`. A code is never reused. ALU-DI-1004 is deliberately
+  unassigned: Alula has no scopes to mismatch.
+- **One source of truth.** `Diagnostics/<CODE>.md` is the page; the
+  `AlulaDiagnostics` catalog is generated from it and a test fails when they
+  drift. The docs site and `alula explain` read the same text.
+- **stderr, then exit.** The generator writes `file:line:col: error: [CODE] …`
+  to stderr — SwiftPM surfaces that against the user's file — and exits
+  non-zero before writing output, so nothing downstream compiles. Verified
+  with a probe package before committing to it.
+- **Golden tests are the contract.** Each code has a fixture under
+  `Tests/Core/AlulaRegistrationGenTests/Diagnostics/` whose full rendered
+  output is recorded (`ALULA_UPDATE_GOLDEN=1`), and a coverage test reports
+  how many codes have one. Wording changes show up in review as a diff.
+
+**Rejected.** Emitting through SwiftSyntax's `DiagnosticsEngine` from the
+generator: a build tool has no channel for it, and stderr is what SwiftPM
+already parses. Keeping `#error` alongside: it is what caused the cascade.
+
 ## D55 — Bearer-token strategies compose; startup errors print what the error chose to say
 
 **Context.** The 0.46.0 architecture audit. API keys and OIDC both wanted to

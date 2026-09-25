@@ -1,0 +1,5 @@
+Library.swift:5:23: warning: [ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Component
+    If nothing supplies it, composition fails.
+    help: make `DataSource` a @Component, or have a module hold it; if it is supplied some other way,
+          acknowledge the property with a `// alula:hand-registered` comment.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1009.md

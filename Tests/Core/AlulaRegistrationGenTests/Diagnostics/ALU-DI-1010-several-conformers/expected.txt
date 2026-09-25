@@ -1,0 +1,7 @@
+Main.swift:13:25: warning: [ALU-DI-1010] `PasswordReset` injects `any Mailer`, and 2 components conform to it
+    Alula bridges a protocol to a component only when exactly one conforms.
+    help: inject the concrete type you mean, or have a module hold the `any Mailer`
+          and acknowledge the property with `// alula:hand-registered`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1010.md
+Main.swift:9:8: note: `LogMailer` conforms to `Mailer`
+Main.swift:6:8: note: `SMTPMailer` conforms to `Mailer`

@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.3] - 2026-09-25
+
+Found building Relay (relay/docs/ISSUES.md #12, #13, #18).
+
+### Added
+
+- **`apns.endpoint`**: a gateway other than Apple's, for an APNs emulator in an
+  integration environment. `https` anywhere, plain `http` only on loopback,
+  since every request carries the provider token. Without it nothing could
+  point AlulaAPNS at anything that returns a 410 on demand.
+- **`MailError.isRetryable`**: true only for `.transient`, for applications
+  that send mail from their own jobs.
+
+### Fixed
+
+- **A failed sign-in is logged.** `SignInProvider.signIn(_:)` logs the
+  reason at `info`, with the provider's type, sanitized (control characters,
+  length), since part of an OIDC failure arrives in the callback URL. The
+  client still learns only that sign-in failed; the operator had learned
+  nothing at all.
+
 ## [0.48.2] - 2026-09-25
 
 ### Fixed

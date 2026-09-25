@@ -54,8 +54,25 @@ extension SignInProvider {
     /// ``completeSignIn(_:)``, then `Session.signIn(_:)` — which regenerates
     /// the session id, so an id planted before sign-in never becomes the
     /// signed-in one.
+    ///
+    /// A failure is logged, at `info`, with its reason: the client is told
+    /// only that sign-in failed, and without this line nobody else learned
+    /// why either. The reason is sanitized (control characters, length) since
+    /// part of it — a provider's `error` parameter — arrives in the callback
+    /// URL, which anyone can write.
     public func signIn(_ context: RequestContext) async throws -> SignInResult {
-        let result = try await completeSignIn(context)
+        let result: SignInResult
+        do {
+            result = try await completeSignIn(context)
+        } catch {
+            context.logger.info(
+                "sign-in failed",
+                metadata: [
+                    "provider": "\(type(of: self))",
+                    "reason": "\(TokenValidationError.sanitizedForLog(String(describing: error)))",
+                ])
+            throw error
+        }
         try context.requireSession().signIn(result.principal)
         return result
     }

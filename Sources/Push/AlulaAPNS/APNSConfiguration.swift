@@ -23,6 +23,11 @@ public enum APNSConfigKey {
     public static let environment = "apns.environment"
     /// `apns.request-timeout` — one request, connection included.
     public static let requestTimeout = "apns.request-timeout"
+    /// `apns.endpoint` — a gateway other than Apple's, such as an emulator in
+    /// an integration environment (`http://127.0.0.1:56500`). Overrides
+    /// `environment`. `https` anywhere; plain `http` only on loopback, since
+    /// every request carries the provider token.
+    public static let endpoint = "apns.endpoint"
 }
 
 /// Which of Apple's two gateways to talk to.
@@ -57,6 +62,18 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
     public let topic: String
     public let environment: APNSEnvironment
     public let requestTimeout: Duration
+    /// Set when `apns.endpoint` names a gateway other than Apple's.
+    public let endpoint: URL?
+
+    /// Where requests go: `endpoint`, or the environment's gateway.
+    public var baseURL: String {
+        if let endpoint {
+            var text = endpoint.absoluteString
+            while text.hasSuffix("/") { text.removeLast() }
+            return text
+        }
+        return "https://\(environment.host)"
+    }
 
     public enum Defaults {
         public static let environment = APNSEnvironment.production
@@ -71,13 +88,15 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
     ///   - topic: The bundle identifier.
     ///   - environment: Production or sandbox.
     ///   - requestTimeout: One request, connection included.
+    ///   - endpoint: A gateway other than Apple's; see `apns.endpoint`.
     public init(
         keyID: String,
         teamID: String,
         privateKeyPEM: String,
         topic: String,
         environment: APNSEnvironment = Defaults.environment,
-        requestTimeout: Duration = Defaults.requestTimeout
+        requestTimeout: Duration = Defaults.requestTimeout,
+        endpoint: URL? = nil
     ) throws {
         guard !keyID.isEmpty else {
             throw APNSConfigurationError.emptyValue(key: APNSConfigKey.keyID)
@@ -101,6 +120,14 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
         self.topic = topic
         self.environment = environment
         self.requestTimeout = requestTimeout
+        if let endpoint {
+            let host = endpoint.host ?? ""
+            let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+            guard endpoint.scheme == "https" || (endpoint.scheme == "http" && loopback) else {
+                throw APNSConfigurationError.insecureEndpoint(endpoint.absoluteString)
+            }
+        }
+        self.endpoint = endpoint
     }
 
     /// Reads `apns.*`. Exactly one of `private-key` and `private-key-path`
@@ -132,7 +159,14 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
             environment: try configuration.getIfPresent(APNSConfigKey.environment)
                 ?? Defaults.environment,
             requestTimeout: try configuration.getIfPresent(APNSConfigKey.requestTimeout)
-                ?? Defaults.requestTimeout)
+                ?? Defaults.requestTimeout,
+            endpoint: try configuration.getIfPresent(APNSConfigKey.endpoint, as: String.self)
+                .map { raw in
+                    guard let url = URL(string: raw), url.host != nil else {
+                        throw APNSConfigurationError.insecureEndpoint(raw)
+                    }
+                    return url
+                })
     }
 
     /// Everything but the key.
@@ -150,6 +184,8 @@ public enum APNSConfigurationError: Error, Sendable, Equatable, CustomStringConv
     case invalidPrivateKey(reason: String)
     case emptyValue(key: String)
     case nonPositiveTimeout(Duration)
+    /// `apns.endpoint` is not a URL, or is plain `http` off loopback.
+    case insecureEndpoint(String)
 
     public var description: String {
         switch self {
@@ -172,6 +208,10 @@ public enum APNSConfigurationError: Error, Sendable, Equatable, CustomStringConv
                 """
         case .emptyValue(let key):
             return "\(key) is empty."
+        case .insecureEndpoint(let raw):
+            return
+                "apns.endpoint must be an https URL, or http on loopback for an emulator (got '\(raw)'). "
+                + "Every request carries the provider token."
         case .nonPositiveTimeout(let value):
             return "\(APNSConfigKey.requestTimeout) must be positive; it is \(value)."
         }

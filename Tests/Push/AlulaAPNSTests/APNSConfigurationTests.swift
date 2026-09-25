@@ -135,3 +135,32 @@ struct APNSConfigurationTests {
         #expect(DeviceToken(bytes: [0xAB, 0x01]).hex == "ab01")
     }
 }
+
+@Suite("apns.endpoint")
+struct APNSEndpointTests {
+    private func configuration(_ endpoint: String?) throws -> APNSConfiguration {
+        var values = [
+            "apns.key-id": "ABC123DEFG", "apns.team-id": "TEAM123456", "apns.topic": "com.example.app",
+            "apns.private-key": ES256PrivateKey().pemRepresentation,
+        ]
+        values["apns.endpoint"] = endpoint
+        return try APNSConfiguration(configuration: Configuration(values: values))
+    }
+
+    @Test("unset is Apple's gateway for the environment")
+    func defaultGateway() throws {
+        #expect(try configuration(nil).baseURL == "https://api.push.apple.com")
+    }
+
+    @Test("an emulator on loopback may be plain http; a trailing slash is dropped")
+    func loopbackEmulator() throws {
+        #expect(try configuration("http://127.0.0.1:56500/").baseURL == "http://127.0.0.1:56500")
+        #expect(try configuration("https://apns-gateway.internal").baseURL == "https://apns-gateway.internal")
+    }
+
+    @Test("plain http anywhere else is refused: every request carries the provider token")
+    func insecureRefused() {
+        #expect(throws: APNSConfigurationError.self) { try configuration("http://apns-emulator.internal:8080") }
+        #expect(throws: APNSConfigurationError.self) { try configuration("not a url") }
+    }
+}

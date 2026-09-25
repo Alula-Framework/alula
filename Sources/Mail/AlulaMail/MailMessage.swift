@@ -139,6 +139,13 @@ public enum MailError: Error, Sendable, Equatable, CustomStringConvertible {
     /// Refused for now: a busy server, a dropped connection. Retrying may help.
     case transient(String)
 
+    /// Whether sending again may succeed: only a transient failure. A job
+    /// that sends mail itself retries on this and records the rest.
+    public var isRetryable: Bool {
+        if case .transient = self { return true }
+        return false
+    }
+
     public var description: String {
         switch self {
         case .invalidAddress(let address): "not a usable email address: \(address)"

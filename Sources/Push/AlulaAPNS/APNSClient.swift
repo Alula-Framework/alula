@@ -124,7 +124,7 @@ public final class APNSClient: Sendable {
         for notification: APNSNotification<Custom>, to token: DeviceToken, body: Data
     ) async throws -> APNSRequest {
         guard
-            let url = URL(string: "https://\(configuration.environment.host)/3/device/\(token.hex)")
+            let url = URL(string: "\(configuration.baseURL)/3/device/\(token.hex)")
         else {
             throw APNSError(
                 status: 0, reason: .badDeviceToken, rawReason: "device token does not form a URL")

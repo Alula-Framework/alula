@@ -223,11 +223,13 @@
                     configuration: Configuration(),
                     metrics: [.counter(BridgeRequest.self, name: "bridgetest.module")],
                     metricsFactory: metrics)
+                // Contributed first, then the module's own, then the queue's.
                 #expect(
-                    module.reportedMetrics.map(\.descriptor.name) == [
+                    Array(module.reportedMetrics.map(\.descriptor.name).prefix(3)) == [
                         "bridgetest.module", "telemetry.handler_failed",
                         "telemetry.cardinality_exceeded",
                     ])
+                #expect(module.reportedMetrics.contains { $0.descriptor.name == "alula.queue.attempts" })
                 emitRequest("/m")
                 #expect(try metrics.expectCounter("bridgetest_module").totalValue == 1)
 

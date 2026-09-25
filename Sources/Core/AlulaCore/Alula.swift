@@ -157,7 +157,7 @@ public enum Alula {
                 break
             case .listCommands:
                 let modules = try compose(configuration, health)
-                print(CommandListing.text(modules.flatMap(\.commands)))
+                print(CommandListing.text(try CommandCatalog.commands(of: modules)))
                 exit(0)
             case .command(let name, let arguments):
                 try await runCommand(
@@ -176,14 +176,15 @@ public enum Alula {
             // Foundation: this file is in the module every other one imports,
             // and a startup message is not worth a dependency. (`stderr`
             // itself is a `var` in Glibc, which strict concurrency refuses.)
-            // `String(reflecting:)`, not plain interpolation: PostgresNIO's
-            // `description` is deliberately redacted ("Generic description to
-            // prevent accidental leakage of sensitive data"), and the
-            // reflected form names the host, the port and the errno — which
-            // is the whole content of "why did it not start". Safe here
-            // specifically: a startup failure has no user queries or bind
-            // values in it, and the process is about to exit.
-            let message = "alula: could not start.\n\(String(reflecting: error))\n"
+            // The error's own description, never `String(reflecting:)` of it:
+            // this catch receives errors from configuration, every module,
+            // third-party code and application commands, and a reflected
+            // error can carry a connection URL with its password, a token, or
+            // a secret configuration value. An error that has something safe
+            // and more useful to say conforms to `StartupDiagnostic`.
+            // `ALULA_STARTUP_ERROR_DETAIL=reflect` prints the reflected form
+            // for a local session that needs it, and only when asked.
+            let message = "alula: could not start.\n\(startupReport(for: error))\n"
             let bytes = Array(message.utf8)
             bytes.withUnsafeBufferPointer { buffer in
                 var written = 0
@@ -197,4 +198,37 @@ public enum Alula {
         }
     }
 
+}
+
+/// An error that knows what about itself is safe and useful to print when the
+/// application cannot start: the host and port it could not reach, the errno,
+/// the configuration key that was wrong. Never credentials, tokens or values
+/// a key holds.
+///
+/// ```swift
+/// struct PoolStartFailed: Error, StartupDiagnostic {
+///     let host: String, port: Int, reason: String
+///     var startupDiagnostic: String { "could not connect to \(host):\(port): \(reason)" }
+/// }
+/// ```
+///
+/// `Alula.run` prints this in place of the error's description. Anything that
+/// does not conform is printed with `String(describing:)`, which respects the
+/// redaction an error's author chose.
+public protocol StartupDiagnostic: Error {
+    var startupDiagnostic: String { get }
+}
+
+/// What `Alula.run` prints for an error that stopped the start.
+func startupReport(
+    for error: any Error,
+    detail: String? = getenv("ALULA_STARTUP_ERROR_DETAIL").map { String(cString: $0) }
+) -> String {
+    if detail == "reflect" {
+        return String(reflecting: error)
+    }
+    if let diagnostic = error as? any StartupDiagnostic {
+        return diagnostic.startupDiagnostic
+    }
+    return String(describing: error)
 }

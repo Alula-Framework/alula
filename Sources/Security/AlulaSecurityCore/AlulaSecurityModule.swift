@@ -92,16 +92,26 @@ public struct AlulaSecurityModule: AlulaModule {
     ///     `Sessions` is idempotent, so the default lane carrying it twice —
     ///     once from each module — costs one load. Without it, nothing
     ///     changes: tokens only.
-    public init(validator: (any TokenValidator)?, sessions: SessionRuntime? = nil) {
+    ///   - tokenStrategies: Every ``TokenStrategy`` any module contributes,
+    ///     collected in composition. A token one of them recognizes goes to
+    ///     it; any other goes to `validator`.
+    public init(
+        validator: (any TokenValidator)?, tokenStrategies: [TokenStrategy] = [],
+        sessions: SessionRuntime? = nil
+    ) {
         precondition(
-            validator != nil || sessions != nil,
+            validator != nil || sessions != nil || !tokenStrategies.isEmpty,
             """
             AlulaSecurityModule has neither a token validator nor sessions, so no request could \
             ever be authenticated. List AlulaOIDCModule (or provide `any TokenValidator`) for \
             bearer tokens, and/or AlulaSessionsModule with a sign-in module for browsers.
             """)
+        let bearer: any TokenValidator =
+            tokenStrategies.isEmpty
+            ? validator ?? RejectingTokenValidator()
+            : CompositeTokenValidator(strategies: tokenStrategies, fallback: validator)
         let authentication = Authentication(
-            validator: validator ?? RejectingTokenValidator(),
+            validator: bearer,
             authenticatedLifetime: sessions?.settings.authenticatedLifetime,
             now: sessions?.now ?? Date.init)
         let require = RequireAuthentication()

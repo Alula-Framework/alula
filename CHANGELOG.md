@@ -4,6 +4,57 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.0] - 2026-09-25
+
+Fixes from the 0.46.0 architecture audit (D55).
+
+### Security
+
+- **Startup errors no longer print reflected contents.** `Alula.run` printed
+  any error that stopped the start with `String(reflecting:)`, bypassing
+  redaction; a connection URL with its password could reach the log. It now
+  prints `String(describing:)`, or `StartupDiagnostic.startupDiagnostic` for
+  an error that chooses what is safe to show.
+  `ALULA_STARTUP_ERROR_DETAIL=reflect` restores the old output for a local
+  session.
+- **The logging mail transport withholds bodies outside dev and test.**
+  Bodies carry reset links and personal data. `mail.log-body: true` logs
+  them anyway. `LoggingMailTransport(logBody:)` is the switch.
+
+### Added
+
+- **Token strategies.** A module contributes `tokenStrategies:
+  [TokenStrategy]`; `AlulaSecurityModule` routes each bearer token to the
+  one strategy that recognizes it, and anything else to the application's
+  `any TokenValidator`. `CompositeTokenValidator` is the router. A token two
+  strategies recognize is refused.
+- **`AlulaAPIKeyModule`**: API keys as a strategy, beside `AlulaOIDCModule`.
+  Reads `security.api-keys.prefix` and `security.api-keys.issuer`.
+  `APIKeyValidator.strategy` for wiring by hand.
+- **Queue telemetry** (with the `Telemetry` trait): enqueues, attempts by
+  outcome, handler duration, wait time, depth per queue, and lease and claim
+  failures, reported by `AlulaTelemetryModule`. See Docs/queue.md.
+
+### Changed
+
+- **`WebhookSignature`'s constructors throw `WebhookConfigurationError`** for
+  no secrets, an empty secret, or a Standard Webhooks secret that is not
+  base64. The last used to become its UTF-8 bytes, a key no sender signs
+  with, so every webhook failed for as long as the process ran.
+- **A command name two modules declare fails assembly**, naming both, rather
+  than resolving to whichever module was listed first.
+
+### Fixed
+
+- **Retries of a failed connection honour the deadline.** Only
+  status-code retries checked that the backoff fit in `Deadline.remaining`;
+  a transport failure slept the full backoff whenever any time was left.
+- **`Retry-After` as an HTTP-date is honoured**, in all three RFC 9110 forms.
+  It used to fall back to exponential backoff.
+- Docs: controllers are built per request, not shared (Docs/web.md, and the
+  mutating-handler diagnostic said the opposite). The OpenAPI document's
+  claim is narrowed to what the scan can know.
+
 ## [0.47.0] - 2026-09-24
 
 More of the smaller list from the 2026-09-24 audit (GAPS.md §0).

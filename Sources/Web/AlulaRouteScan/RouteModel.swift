@@ -217,7 +217,7 @@ public enum RouteScanning {
         if function.modifiers.contains(where: { $0.name.tokenKind == .keyword(.mutating) }) {
             diagnostics.error(
                 "route.mutating",
-                "Route handler '\(name)' must not be mutating — the controller component is shared across requests.",
+                "Route handler '\(name)' must not be mutating — the controller is built for each request and discarded after it, so a change to its properties would outlive nothing. Keep state in an injected component or the request context.",
                 at: function
             )
             return []

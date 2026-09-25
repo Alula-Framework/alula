@@ -55,6 +55,9 @@ func _alulaAssemble(
     health: ModuleHealthRegistry = ModuleHealthRegistry()
 ) throws -> AssembledApplication {
     let names = instances.map { type(of: $0).moduleName }
+    // Checked when serving too, not only when a command runs: a duplicate
+    // should fail the first start, not the first time someone needs it.
+    _ = try CommandCatalog.commands(of: instances)
     health.beginTracking(moduleNames: names)
 
     var services:

@@ -1,5 +1,6 @@
 import CoreMetrics
 import AlulaCore
+import AlulaQueue
 import Logging
 import ServiceLifecycle
 import Synchronization
@@ -190,10 +191,16 @@ public struct AlulaTelemetryModule: AlulaModule {
     }
 
     /// The telemetry runtime's own failures, counted.
-    static let ownMetrics: [TelemetryMetric] = [
-        .counter(TelemetryHandlerFailed.self, tags: \.event),
-        .counter(TelemetryCardinalityExceeded.self, tags: \.metric),
-    ]
+    /// This module's own, and the job queue's. The queue's are here rather
+    /// than contributed by `AlulaQueueModule` because the queue is built
+    /// without telemetry for a consumer without the trait, and a
+    /// contribution that existed only under a compilation condition would be
+    /// one the composition root could not see.
+    static let ownMetrics: [TelemetryMetric] =
+        [
+            .counter(TelemetryHandlerFailed.self, tags: \.event),
+            .counter(TelemetryCardinalityExceeded.self, tags: \.metric),
+        ] + QueueMetrics.definitions
 
     /// Two definitions with one name would report into one instrument as if
     /// they were one metric, so it is refused here, at composition, naming

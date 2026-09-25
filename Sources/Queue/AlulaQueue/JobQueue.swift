@@ -66,7 +66,9 @@ public struct JobQueue: Sendable {
     public func enqueue<Job: QueuedJob>(_ job: Job, options: EnqueueOptions = EnqueueOptions())
         async throws -> EnqueueResult
     {
-        let result = try await store.enqueue(prepare(job, options: options))
+        let prepared = try prepare(job, options: options)
+        let result = try await store.enqueue(prepared)
+        QueueTelemetry.enqueued(kind: prepared.kind, queue: prepared.queue)
         wake.signal(Job.self)
         return result
     }

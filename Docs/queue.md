@@ -180,12 +180,29 @@ harness.advance(by: .seconds(15))
 await harness.drain()
 ```
 
+## Telemetry
+
+With the `Telemetry` trait (on with `Web`), the queue reports through
+`AlulaTelemetryModule`, tagged by queue and job kind, never by job id:
+
+| Metric | What |
+|---|---|
+| `alula.queue.enqueued` | jobs enqueued |
+| `alula.queue.attempts` | attempts finished, by `outcome`: `completed`, `retrying`, `discarded`, `superseded` |
+| `alula.queue.duration` | how long handlers ran |
+| `alula.queue.wait` | from enqueue to an attempt's start, delays and backoff included |
+| `alula.queue.available`, `.running`, `.discarded` | each queue's depth, sampled by workers at the poll interval (at least every 5 s) |
+| `alula.queue.lease_renewal_failures`, `.claim_failures` | the store refusing a worker |
+
+Alert on `available` growing and on `discarded`: a queue that is correct but
+backing up is invisible without them. The events themselves are
+`QueueEvents`, for anything else (a log line, a test). Without the trait the
+queue reports nothing and depends on nothing extra.
+
 ## Not here yet
 
-- **Telemetry events and metrics** for job outcomes. Today outcomes are
-  logged: retries as warnings, discards as errors.
-- **An Actuator view of queue depth.** `QueueStore.counts(queue:)` has the
-  numbers.
+- **An Actuator view of queue depth.** The depth metrics above carry it;
+  the dashboard does not show it yet.
 - **LISTEN/NOTIFY wakeups**, so another process's enqueue is seen at once
   rather than on the next poll.
 - **A Valkey store.**

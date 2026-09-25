@@ -6,16 +6,25 @@ import HTTPTypes
 /// Checks that an incoming webhook was signed by the sender that holds the
 /// shared secret, before the handler trusts a byte of it.
 ///
+/// Build it where the application is composed, so a missing or malformed
+/// secret stops the start instead of failing every webhook later:
+///
 /// ```swift
-/// @PostRoute("/webhooks/stripe", pipelines: ["webhooks"])
-/// func stripe(_ context: RequestContext) async throws -> Response {
-///     try WebhookSignature.stripe(secrets: [settings.stripeSecret]).verify(context)
-///     let event = try JSONDecoder().decode(StripeEvent.self, from: context.request.body)
-///     …
+/// struct WebhooksModule: AlulaModule {
+///     let middleware: [MiddlewareRegistration]
+///
+///     init(configuration: Configuration) throws {
+///         let secret = try configuration.getIfPresent("stripe.webhook-secret", as: String.self)
+///         let stripe = try WebhookSignature.stripe(secrets: [secret ?? ""])
+///         middleware = MiddlewareRegistration.lane("stripe", [VerifyWebhookSignature(stripe)])
+///     }
 /// }
+///
+/// @PostRoute("/webhooks/stripe", pipelines: [.default, "stripe"])
+/// func stripe(_ context: RequestContext) async throws -> Response { … }
 /// ```
 ///
-/// Or for every route on a lane, with ``VerifyWebhookSignature``.
+/// Or call ``verify(_:)`` from a handler that holds one.
 ///
 /// - **HMAC-SHA256 over the exact bytes received**, compared in constant
 ///   time. Verify before decoding, never after re-encoding: a re-encoded
@@ -45,42 +54,50 @@ public struct WebhookSignature: Sendable {
     let keys: [SymmetricKey]
     let now: @Sendable () -> Date
 
-    init(scheme: Scheme, keys: [SymmetricKey], now: @escaping @Sendable () -> Date) {
-        precondition(!keys.isEmpty, "a webhook signature needs at least one secret")
+    init(scheme: Scheme, keys: [SymmetricKey], now: @escaping @Sendable () -> Date) throws {
+        guard !keys.isEmpty else { throw WebhookConfigurationError.noSecrets }
         self.scheme = scheme
         self.keys = keys
         self.now = now
     }
 
     /// GitHub: `X-Hub-Signature-256: sha256=<hex>`.
-    public static func github(secrets: [String]) -> WebhookSignature {
-        WebhookSignature(
+    public static func github(secrets: [String]) throws -> WebhookSignature {
+        try WebhookSignature(
             scheme: .simple(
                 header: HTTPField.Name("X-Hub-Signature-256")!, prefix: "sha256=", base64: false),
-            keys: secrets.map { SymmetricKey(data: Data($0.utf8)) }, now: Date.init)
+            keys: try plainKeys(secrets), now: Date.init)
     }
 
     /// Stripe: `Stripe-Signature: t=…,v1=…`, signing `"<t>.<body>"`.
     public static func stripe(
         secrets: [String], tolerance: Duration = .seconds(300),
         now: @escaping @Sendable () -> Date = Date.init
-    ) -> WebhookSignature {
-        WebhookSignature(
-            scheme: .stripe(tolerance: tolerance),
-            keys: secrets.map { SymmetricKey(data: Data($0.utf8)) }, now: now)
+    ) throws -> WebhookSignature {
+        try WebhookSignature(
+            scheme: .stripe(tolerance: tolerance), keys: try plainKeys(secrets), now: now)
     }
 
     /// Standard Webhooks (standardwebhooks.com; Svix, Resend and others).
-    /// Secrets are given as issued, `whsec_<base64>`.
+    /// Secrets are given as issued, `whsec_<base64>`; the `whsec_` is
+    /// optional.
+    ///
+    /// - Throws: ``WebhookConfigurationError`` for a secret that is not valid
+    ///   base64. Using its bytes as they are instead would start the
+    ///   application with a key no sender signs with, and every webhook
+    ///   would fail its check for as long as it ran.
     public static func standardWebhooks(
         secrets: [String], tolerance: Duration = .seconds(300),
         now: @escaping @Sendable () -> Date = Date.init
-    ) -> WebhookSignature {
-        let keys = secrets.map { secret in
+    ) throws -> WebhookSignature {
+        let keys = try secrets.enumerated().map { index, secret in
             let encoded = secret.hasPrefix("whsec_") ? String(secret.dropFirst(6)) : secret
-            return SymmetricKey(data: Data(base64Encoded: encoded) ?? Data(encoded.utf8))
+            guard let data = Data(base64Encoded: encoded), !data.isEmpty else {
+                throw WebhookConfigurationError.invalidSecret(index: index)
+            }
+            return SymmetricKey(data: data)
         }
-        return WebhookSignature(
+        return try WebhookSignature(
             scheme: .standardWebhooks(tolerance: tolerance), keys: keys, now: now)
     }
 
@@ -93,10 +110,19 @@ public struct WebhookSignature: Sendable {
     ///   - secrets: The shared secrets, as the sender shows them.
     public static func hmacSHA256(
         header: HTTPField.Name, prefix: String = "", base64: Bool = false, secrets: [String]
-    ) -> WebhookSignature {
-        WebhookSignature(
+    ) throws -> WebhookSignature {
+        try WebhookSignature(
             scheme: .simple(header: header, prefix: prefix, base64: base64),
-            keys: secrets.map { SymmetricKey(data: Data($0.utf8)) }, now: Date.init)
+            keys: try plainKeys(secrets), now: Date.init)
+    }
+
+    private static func plainKeys(_ secrets: [String]) throws -> [SymmetricKey] {
+        try secrets.enumerated().map { index, secret in
+            guard !secret.isEmpty else {
+                throw WebhookConfigurationError.invalidSecret(index: index)
+            }
+            return SymmetricKey(data: Data(secret.utf8))
+        }
     }
 
     /// Throws a `401` unless the request carries a valid signature.
@@ -180,11 +206,29 @@ public struct WebhookSignature: Sendable {
     }
 }
 
+/// A webhook secret that cannot be used, found when the signature is built:
+/// at composition, when that is where it is built.
+public enum WebhookConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// No secrets were given.
+    case noSecrets
+    /// The secret at this position is empty, or for Standard Webhooks not
+    /// valid base64. The value itself is never repeated.
+    case invalidSecret(index: Int)
+
+    public var description: String {
+        switch self {
+        case .noSecrets: "a webhook signature needs at least one secret"
+        case .invalidSecret(let index):
+            "webhook secret #\(index + 1) is empty or not in the sender's format"
+        }
+    }
+}
+
 /// Verifies a ``WebhookSignature`` for every route on the lane it is put in.
 ///
 /// ```swift
 /// let middleware = MiddlewareRegistration.lane(
-///     "github-webhooks", [VerifyWebhookSignature(.github(secrets: [secret]))])
+///     "github-webhooks", [VerifyWebhookSignature(try .github(secrets: [secret]))])
 /// ```
 public struct VerifyWebhookSignature: Middleware {
     let signature: WebhookSignature

@@ -196,6 +196,20 @@ struct MailModuleTests {
         #expect(dev.mailer.transport is LoggingMailTransport)
     }
 
+    @Test("the logging transport keeps bodies out of the log outside dev and test")
+    func logBody() throws {
+        func logging(_ values: [String: String], _ environment: AlulaEnvironment) throws -> LoggingMailTransport {
+            let module = try AlulaMailModule(
+                configuration: Configuration(sources: [TestConfigSource(values)], environment: environment))
+            return try #require(module.mailer.transport as? LoggingMailTransport)
+        }
+        #expect(try logging([:], .dev).logBody)
+        #expect(try logging([:], .test).logBody)
+        #expect(try !logging(["mail.transport": "log"], .staging).logBody)
+        #expect(try logging(["mail.transport": "log", "mail.log-body": "true"], .staging).logBody)
+        #expect(try !logging(["mail.log-body": "false"], .dev).logBody)
+    }
+
     @Test("a provided transport is used in any environment")
     func providedTransport() throws {
         let module = try AlulaMailModule(

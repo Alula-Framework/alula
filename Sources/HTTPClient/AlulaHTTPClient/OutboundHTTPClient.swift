@@ -253,10 +253,19 @@ public struct OutboundHTTPClient: Sendable {
                 return response
             } catch let error as OutboundHTTPError
                 where error.isRetryable && request.isIdempotent && attempt < policy.maxAttempts
-                    && (Deadline.remaining.map { $0 > .zero } ?? true)
             {
+                // The same rule as a retried status: the wait must end
+                // before the deadline does, or there is no retry. Checking
+                // only that some time remained let a 180 ms backoff start
+                // with 40 ms left.
+                let wait = policy.backoff(after: attempt)
+                guard wait < (Deadline.remaining ?? .seconds(Int64.max)) else {
+                    span.recordError(error)
+                    span.setStatus(SpanStatus(code: .error))
+                    throw error
+                }
                 logger.debug("retrying", metadata: ["error": "\(error)", "host": "\(host)"])
-                try await Task.sleep(for: policy.backoff(after: attempt))
+                try await Task.sleep(for: wait)
             } catch {
                 span.recordError(error)
                 span.setStatus(SpanStatus(code: .error))
@@ -282,11 +291,9 @@ public struct OutboundHTTPClient: Sendable {
     }
 
     private func retryDelay(_ response: OutboundResponse, attempt: Int) -> Duration? {
-        guard let raw = response.headers[.retryAfter] else { return policy.backoff(after: attempt) }
-        guard let seconds = Int(raw.trimmingCharacters(in: .whitespaces)), seconds >= 0 else {
-            return policy.backoff(after: attempt)
-        }
-        let wait = Duration.seconds(seconds)
+        guard let raw = response.headers[.retryAfter],
+            let wait = RetryAfter.parse(raw, now: Date())
+        else { return policy.backoff(after: attempt) }
         return wait <= policy.maxRetryAfter ? wait : nil
     }
 
@@ -308,4 +315,40 @@ struct HTTPFieldsInjector: Injector {
         guard let name = HTTPField.Name(key) else { return }
         carrier[name] = value
     }
+}
+
+/// `Retry-After` in both of RFC 9110's forms (§10.2.3): delay-seconds, or an
+/// HTTP-date. A date in the past means now. Nil when it is neither, and the
+/// caller falls back to its own backoff.
+enum RetryAfter {
+    static func parse(_ raw: String, now: Date) -> Duration? {
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        if let seconds = Int(value) {
+            return seconds >= 0 ? .seconds(seconds) : nil
+        }
+        guard let date = httpDate(value) else { return nil }
+        let delta = date.timeIntervalSince(now)
+        return delta <= 0 ? .zero : .milliseconds(Int64((delta * 1000).rounded(.up)))
+    }
+
+    /// IMF-fixdate, and the two obsolete forms a recipient must still accept
+    /// (RFC 9110 §5.6.7): RFC 850 and asctime.
+    static func httpDate(_ value: String) -> Date? {
+        // Built per call: this runs only on a retried response, and a shared
+        // formatter would need a lock to be safe across tasks.
+        for pattern in patterns {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(identifier: "GMT")
+            formatter.dateFormat = pattern
+            if let date = formatter.date(from: value) { return date }
+        }
+        return nil
+    }
+
+    private static let patterns = [
+        "EEE, dd MMM yyyy HH:mm:ss 'GMT'",
+        "EEEE, dd-MMM-yy HH:mm:ss 'GMT'",
+        "EEE MMM d HH:mm:ss yyyy",
+    ]
 }

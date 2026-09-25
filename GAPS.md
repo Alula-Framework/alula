@@ -209,9 +209,8 @@ check that looked present did nothing.
 - **Security:**
   - Authorization is roles and scopes only: no policy or ownership checks (M).
   - No MFA (TOTP planned for phase 5; WebAuthn L).
-  - ~~No API-key validator (S–M).~~ *Built in 0.46.0. Still open: it cannot
-    fall back to `AlulaOIDCModule`'s validator, since that module provides
-    `any TokenValidator` itself.*
+  - ~~No API-key validator (S–M).~~ *Built in 0.46.0; composes with
+    `AlulaOIDCModule` since 0.48.0 through `tokenStrategies` (D55).*
   - mTLS verifies the client certificate but never hands it to the request (M).
   - No first-party JWT or refresh-token issuance (M).
   - No audit trail carrying subject and address.

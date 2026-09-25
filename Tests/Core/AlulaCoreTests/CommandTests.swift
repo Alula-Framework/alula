@@ -115,3 +115,26 @@ struct CommandTests {
         }
     }
 }
+
+@Suite("Command names")
+struct CommandNameTests {
+    struct First: AlulaModule {
+        var commands: [CommandRegistration] { [CommandRegistration("migrate-users", abstract: "a") { _ in }] }
+    }
+    struct Second: AlulaModule {
+        var commands: [CommandRegistration] { [CommandRegistration("migrate-users", abstract: "b") { _ in }] }
+    }
+
+    @Test("a name two modules declare is refused, naming both, in either order")
+    func duplicate() throws {
+        for modules in [[First(), Second()] as [any AlulaModule], [Second(), First()]] {
+            do {
+                _ = try Alula.assemble(configuration: Configuration(), modules: modules)
+                Issue.record("assembled with a duplicate command")
+            } catch let error as DuplicateCommand {
+                #expect(error.name == "migrate-users")
+                #expect(Set(error.modules) == ["First", "Second"])
+            }
+        }
+    }
+}

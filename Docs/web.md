@@ -853,11 +853,16 @@ leave these keys out and Alula serves plaintext to the proxy. Either way,
 upgrades ride whatever the listener is doing, so `wss://` needs no separate
 configuration.
 
-Controllers must be `Sendable` — one instance serves concurrent requests.
-An internal struct whose `@Inject`/`@ConfigValue` dependencies are
-Sendable gets the conformance implicitly; `public` controllers declare it
-(`public struct UserController: Sendable`). A non-Sendable controller is a
-compile error at the generated registration, not a runtime race.
+A controller is constructed for each request, from the components the graph
+built once at startup, and discarded when its handler returns. So state kept
+in a controller's own stored properties lasts one request. What it injects is
+shared by every request running at once, which is why those dependencies must
+be `Sendable`. The controller type still has to be `Sendable` itself, because
+the generated route closure is: an internal struct whose `@Inject` and
+`@ConfigValue` dependencies are Sendable gets the conformance implicitly, and
+`public` controllers declare it (`public struct UserController: Sendable`). A
+non-Sendable controller is a compile error at the generated registration, not
+a runtime race.
 
 Testing (§7) needs no socket:
 

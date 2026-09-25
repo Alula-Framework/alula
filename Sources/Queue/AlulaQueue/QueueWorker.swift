@@ -40,6 +40,7 @@ struct QueueWorkerService: Service {
             await withDiscardingTaskGroup { group in
                 group.addTask { await renewLeases(running) }
                 group.addTask { await prune(running) }
+                group.addTask { await sampleDepth() }
                 await withDiscardingTaskGroup { loops in
                     for queue in queues {
                         loops.addTask { await claimLoop(queue, running: running, runner: runner) }
@@ -83,6 +84,7 @@ struct QueueWorkerService: Service {
                         }
                         claimedAll = !claimed.isEmpty && claimed.count == free
                     } catch {
+                        QueueTelemetry.claimFailed(queue: queue)
                         logger.error(
                             "could not claim jobs", metadata: ["queue": "\(queue)", "error": "\(error)"])
                     }
@@ -103,10 +105,26 @@ struct QueueWorkerService: Service {
                     try await store.extendLeases(
                         held, until: now().addingTimeInterval(settings.lease.queueSeconds))
                 } catch {
+                    QueueTelemetry.leaseRenewalFailed()
                     logger.error("could not renew job leases", metadata: ["error": "\(error)"])
                 }
             }
             try? await Task.sleep(for: settings.lease / 3)
+        }
+    }
+
+    /// Reports each queue's depth at the poll interval, when anything is
+    /// listening: it costs one store query per queue.
+    private func sampleDepth() async {
+        while !Task.isCancelled {
+            if QueueTelemetry.reportsDepth {
+                for queue in queues {
+                    if let counts = try? await store.counts(queue: queue) {
+                        QueueTelemetry.depth(queue: queue, counts)
+                    }
+                }
+            }
+            try? await Task.sleep(for: max(settings.pollInterval, .seconds(5)))
         }
     }
 

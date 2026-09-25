@@ -1,9 +1,14 @@
 # Alula OpenAPI
 
 An OpenAPI 3.1 document for your application, generated at build time from
-the same scan that builds the route table. There is nothing to annotate, and
-the document cannot drift from the routes, because it is written by the same
-pass that registers them.
+the same scan that builds the route table. There is nothing to annotate. The
+route table and the document's routes come from one source, so the methods,
+paths and static request and response types cannot drift apart.
+
+What a handler decides at runtime is beyond what a scan can see: the status
+of a `Response`-returning handler, which of several responses it chose, a
+type's custom `encode(to:)`, and what middleware adds or refuses. See
+*Where it cannot see* below.
 
 ## Adding this module
 

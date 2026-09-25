@@ -33,6 +33,15 @@ public struct QueueRunner: Sendable {
     /// Runs `job` with `handler` (nil when this process has none for it) and
     /// records what happened.
     public func run(_ job: ClaimedJob, handler: QueueHandler?) async -> QueueAttemptOutcome {
+        let startedAt = now()
+        let clock = ContinuousClock.now
+        let outcome = await attempt(job, handler: handler)
+        QueueTelemetry.attempt(
+            job, outcome: outcome, duration: ContinuousClock.now - clock, startedAt: startedAt)
+        return outcome
+    }
+
+    private func attempt(_ job: ClaimedJob, handler: QueueHandler?) async -> QueueAttemptOutcome {
         var logger = logger
         logger[metadataKey: "job-id"] = "\(job.id)"
         logger[metadataKey: "job-kind"] = "\(job.kind)"

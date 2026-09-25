@@ -75,6 +75,37 @@ enum Invocation: Equatable {
     }
 }
 
+/// Two modules declaring a command under one name. Refused rather than
+/// resolved by whichever module was listed first, which would make the order
+/// of the module list decide what a command does.
+struct DuplicateCommand: Error, CustomStringConvertible {
+    let name: String
+    let modules: [String]
+    var description: String {
+        "duplicate command '\(name)', declared by \(modules.joined(separator: " and ")). "
+            + "Rename one; command names are one namespace across the application."
+    }
+}
+
+enum CommandCatalog {
+    /// Every command the modules declare, refusing a name declared twice.
+    static func commands(of modules: [any AlulaModule]) throws -> [CommandRegistration] {
+        var owners: [String: [String]] = [:]
+        var all: [CommandRegistration] = []
+        for module in modules {
+            for command in module.commands {
+                owners[command.name, default: []].append(type(of: module).moduleName)
+                all.append(command)
+            }
+        }
+        if let (name, modules) = owners.filter({ $0.value.count > 1 }).min(by: { $0.key < $1.key })
+        {
+            throw DuplicateCommand(name: name, modules: modules)
+        }
+        return all
+    }
+}
+
 struct CommandNotFound: Error, CustomStringConvertible {
     let name: String
     let available: [CommandRegistration]
@@ -140,7 +171,7 @@ extension Alula {
         _ name: String, arguments: [String], configuration: Configuration,
         modules instances: [any AlulaModule], health: ModuleHealthRegistry, logger: Logger
     ) async throws {
-        let commands = instances.flatMap(\.commands)
+        let commands = try CommandCatalog.commands(of: instances)
         guard let command = commands.first(where: { $0.name == name }) else {
             throw CommandNotFound(name: name, available: commands)
         }

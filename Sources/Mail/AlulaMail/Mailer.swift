@@ -107,21 +107,32 @@ extension MailError {
 
 /// Writes each message to the log instead of sending it: the development
 /// transport, so a password-reset link can be read off the console.
+///
+/// **The body carries whatever the message does**: reset and sign-in links,
+/// verification tokens, personal data. Logged, it goes wherever the logs go
+/// and stays as long as they are kept. With `logBody: false` only the
+/// recipients, subject and body size are logged. `AlulaMailModule` turns the
+/// body off everywhere but development and test unless `mail.log-body: true`.
 public struct LoggingMailTransport: MailTransport {
     let logger: Logger
+    let logBody: Bool
 
-    public init(logger: Logger = Logger(label: "alula.mail")) {
+    public init(logger: Logger = Logger(label: "alula.mail"), logBody: Bool = true) {
         self.logger = logger
+        self.logBody = logBody
     }
 
     public func send(_ message: MailMessage) async throws {
-        logger.info(
-            "mail not sent — logged instead (development transport)",
-            metadata: [
-                "to": "\(message.recipients.map(\.address).joined(separator: ", "))",
-                "subject": "\(message.subject)",
-                "text": "\(message.text ?? "(no text part)")",
-            ])
+        var metadata: Logger.Metadata = [
+            "to": "\(message.recipients.map(\.address).joined(separator: ", "))",
+            "subject": "\(message.subject)",
+        ]
+        if logBody {
+            metadata["text"] = "\(message.text ?? "(no text part)")"
+        } else {
+            metadata["text"] = "(withheld: \(message.text?.utf8.count ?? 0) bytes; mail.log-body is off)"
+        }
+        logger.info("mail not sent — logged instead (logging transport)", metadata: metadata)
     }
 }
 
@@ -132,7 +143,9 @@ public struct LoggingMailTransport: MailTransport {
 /// and test log each message instead of sending it. Anywhere else this module
 /// fails composition, rather than let password resets vanish into a log. Set
 /// `mail.transport: log` to choose logging on purpose, such as in a staging
-/// environment with no mail server.
+/// environment with no mail server. There the message bodies are withheld
+/// from the log, since they carry reset links and personal data, unless
+/// `mail.log-body: true`.
 ///
 /// ```yaml
 /// mail:
@@ -153,7 +166,12 @@ public struct AlulaMailModule: AlulaModule {
         guard environment == .dev || environment == .test || chosen == "log" else {
             throw MailConfigurationError.noTransport(environment: environment.rawValue)
         }
-        self.mailer = Mailer(transport: LoggingMailTransport(), defaultFrom: from)
+        // Bodies carry reset links and personal data; outside development
+        // and test they stay out of the log unless asked for.
+        let logBody =
+            try configuration.getIfPresent("mail.log-body", as: Bool.self)
+            ?? (environment == .dev || environment == .test)
+        self.mailer = Mailer(transport: LoggingMailTransport(logBody: logBody), defaultFrom: from)
     }
 
     public init() {

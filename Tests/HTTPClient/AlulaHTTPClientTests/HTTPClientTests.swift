@@ -130,6 +130,39 @@ struct OutboundHTTPClientTests {
         #expect(injected == span.spanContext.spanID)
     }
 
+    @Test("a connection failure is not retried when the backoff would outlast the deadline")
+    func transportRetryRespectsDeadline() async throws {
+        let calls = Mutex(0)
+        let failing = StubHTTPTransport { _ in
+            calls.withLock { $0 += 1 }
+            throw OutboundHTTPError.transport("connection reset")
+        }
+        // Backoff of at least 90 ms; 40 ms of budget.
+        let slowBackoff = OutboundHTTPPolicy(
+            maxAttempts: 3, backoffBase: .milliseconds(180), backoffCap: .seconds(1))
+        let client = OutboundHTTPClient(transport: failing, policy: slowBackoff)
+        let started = ContinuousClock.now
+        await #expect(throws: OutboundHTTPError.self) {
+            try await Deadline.$current.withValue(ContinuousClock.now.advanced(by: .milliseconds(40))) {
+                _ = try await client.get(url)
+            }
+        }
+        #expect(calls.withLock { $0 } == 1)
+        #expect(ContinuousClock.now - started < .milliseconds(90))
+    }
+
+    @Test("Retry-After is read as delay-seconds or as any of the three HTTP-date forms")
+    func retryAfterForms() throws {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)  // Mon, 21 Sep 2026 14:13:20 GMT
+        #expect(RetryAfter.parse("5", now: now) == .seconds(5))
+        #expect(RetryAfter.parse("Mon, 21 Sep 2026 14:13:30 GMT", now: now) == .seconds(10))
+        #expect(RetryAfter.parse("Monday, 21-Sep-26 14:13:30 GMT", now: now) == .seconds(10))
+        #expect(RetryAfter.parse("Mon Sep 21 14:13:30 2026", now: now) == .seconds(10))
+        #expect(RetryAfter.parse("Mon, 21 Sep 2026 14:00:00 GMT", now: now) == .zero)
+        #expect(RetryAfter.parse("soon", now: now) == nil)
+        #expect(RetryAfter.parse("-3", now: now) == nil)
+    }
+
     @Test("inside a request deadline, the attempt timeout shrinks to the time left")
     func deadlineClamps() async throws {
         final class Capturing: OutboundHTTPTransport {

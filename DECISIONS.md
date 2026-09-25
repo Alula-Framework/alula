@@ -7,6 +7,36 @@ wrong, say so and it changes.
 
 ---
 
+## D55 — Bearer-token strategies compose; startup errors print what the error chose to say
+
+**Context.** The 0.46.0 architecture audit. API keys and OIDC both wanted to
+be the application's one `any TokenValidator`, so listing both was refused as
+two providers of one type. And `Alula.run` printed any startup error with
+`String(reflecting:)`, which bypasses the redaction an error's author chose
+(PSQLError's, for one) and can print a connection URL with its password.
+
+**Chosen.**
+- **Strategies are an aggregate, not a replacement.** A module contributes
+  `tokenStrategies: [TokenStrategy]`, each with a cheap syntactic
+  `recognizes`; the existing `any TokenValidator` is the fallback for
+  anything none recognizes. No existing composition changes. `AlulaAPIKeyModule`
+  is the first strategy.
+- **Overlap is refused per token**, not ordered: a token two strategies
+  recognize fails, so module order never decides who authenticates it.
+  Checked per token rather than at composition because recognition is a
+  closure; prefixes make overlap a configuration mistake worth a loud 401.
+- **`String(describing:)` by default, `StartupDiagnostic` to say more**, and
+  `ALULA_STARTUP_ERROR_DETAIL=reflect` for a local session. The cost: a
+  Postgres start failure now prints PSQLError's generic text until alula-data
+  wraps its start errors in a `StartupDiagnostic` naming host, port and
+  errno. Accepted: a less helpful message beats a leaked password.
+
+**Rejected.** Named providers (`@Inject(from: "oidc")`) for validators: it
+solves "which one" by making the application pick, when the question is
+"both, by token shape".
+
+---
+
 ## D54 — Commands run in the composed application with only its infrastructure started
 
 **Context.** GAPS.md §0 gap #10, the framework half. Maintenance tasks were

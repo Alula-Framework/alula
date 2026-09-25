@@ -507,6 +507,8 @@ let package = Package(
             name: "AlulaQueue",
             dependencies: [
                 "AlulaCore",
+                .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
+                .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
@@ -652,6 +654,7 @@ let package = Package(
             name: "AlulaTelemetryBridges",
             dependencies: [
                 "AlulaCore",
+                .target(name: "AlulaQueue", condition: .when(traits: ["Telemetry"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
                 .product(name: "CoreMetrics", package: "swift-metrics", condition: .when(traits: ["Telemetry"])),
                 .product(
@@ -813,6 +816,9 @@ let package = Package(
             name: "AlulaQueueTests",
             dependencies: [
                 "AlulaQueue", "AlulaQueueTesting", "AlulaCore",
+                .target(name: "AlulaTelemetryBridges", condition: .when(traits: ["Telemetry"])),
+                .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
+                .product(name: "TelemetryTesting", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],

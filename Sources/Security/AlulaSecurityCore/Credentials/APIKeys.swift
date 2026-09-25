@@ -9,10 +9,10 @@ import Synchronization
 /// let issued = APIKeys.issue(prefix: "sk", subject: "svc-billing", scopes: ["invoices:read"])
 /// try await keys.save(issued.stored)
 ///
-/// // Checking: provide it as the application's `any TokenValidator`.
-/// let tokenValidator: any TokenValidator = APIKeyValidator(
-///     store: keys, prefix: "sk", issuer: "https://app.example.com",
-///     fallback: oidcValidator)   // everything else still goes to OIDC
+/// // Checking: list AlulaAPIKeyModule and provide `any APIKeyStore`. Keys go
+/// // to it; every other bearer token still goes to AlulaOIDCModule, or to
+/// // whatever `any TokenValidator` the application has.
+/// modules: [AlulaOIDCModule.self, AlulaAPIKeyModule.self, AppModule.self]
 /// ```
 ///
 /// A key reads `sk_<id>_<secret>`. The prefix says what kind of credential it
@@ -178,6 +178,13 @@ public struct APIKeyValidator: TokenValidator {
         self.issuer = issuer
         self.fallback = fallback
         self.now = now
+    }
+
+    /// This validator as a ``TokenStrategy``: it recognizes tokens with its
+    /// prefix, so it composes with the application's other validators.
+    public var strategy: TokenStrategy {
+        let prefix = prefix
+        return TokenStrategy("api-keys (\(prefix)_)", recognizes: { $0.hasPrefix(prefix + "_") }, validator: self)
     }
 
     public func validate(_ token: String) async throws -> Principal {

@@ -449,47 +449,61 @@ composition fails at startup, naming the type.
 > and your validator silently lost — and an internal flag decided whether the
 > JWKS refresher ran. Choosing a module is explicit and order-independent.
 
-### API keys
+### API keys, and more than one kind of token
 
 `APIKeyValidator` checks keys for machine clients, sent as
-`Authorization: Bearer sk_<id>_<secret>`:
+`Authorization: Bearer sk_<id>_<secret>`. List `AlulaAPIKeyModule` and provide
+`any APIKeyStore` over your own table:
 
 ```swift
-// Issuing, from an admin route or an application command.
+modules: [
+    AlulaOIDCModule.self,     // tokens for people
+    AlulaAPIKeyModule.self,   // keys for automation
+    AppModule.self,           // provides `let apiKeys: any APIKeyStore`
+]
+
+// Issuing, from an admin route or an application command:
 let issued = APIKeys.issue(prefix: "sk", subject: "svc-billing", scopes: ["invoices:read"])
-try await keyTable.insert(issued.stored)   // your APIKeyStore's table
-print(issued.key)                           // shown once, never stored
-
-// Checking.
-struct KeysModule: AlulaModule {
-    let tokenValidator: any TokenValidator
-
-    init(dataSource: PostgresDataSource) {
-        tokenValidator = APIKeyValidator(
-            store: MyAPIKeys(pool: dataSource), prefix: "sk", issuer: "https://app.example.com")
-    }
-}
+try await keyTable.insert(issued.stored)
+print(issued.key)             // shown once, never stored
 ```
 
 The store keeps a SHA-256 digest of the secret, never the secret. A key is
 found by its id and compared in constant time. `revoked` and `expiresAt` on
 the stored key refuse it like an unknown one. The principal carries the
 key's subject, roles and scopes, and its id as the `api_key_id` claim.
+`security.api-keys.prefix` (default `sk`) and `security.api-keys.issuer`
+configure it.
 
-A token without the prefix goes to `fallback:` when one is given, so API
-keys and another bearer format can share the header. `AlulaOIDCModule`
-cannot be that fallback yet: it provides `any TokenValidator` itself, and
-two providers of one type are refused at composition.
+Authentication strategies compose rather than compete for the one
+`any TokenValidator`. A module contributes `tokenStrategies: [TokenStrategy]`,
+each saying which tokens it recognizes. `AlulaSecurityModule` collects them
+all: a token one strategy recognizes goes to it, and anything else goes to
+the application's `any TokenValidator` (OIDC above). A token two strategies
+both recognize is refused, not settled by the order modules are listed in.
+Write your own strategy the same way for HMAC-signed service tokens or
+anything else with a recognizable shape.
 
 ### Webhook signatures
 
 `WebhookSignature` checks that a webhook came from the sender holding the
-shared secret, over the exact bytes received:
+shared secret, over the exact bytes received. Build it where the application
+is composed, so a missing or malformed secret stops the start rather than
+failing every webhook afterwards:
 
 ```swift
-@PostRoute("/webhooks/github")
+struct WebhooksModule: AlulaModule {
+    let middleware: [MiddlewareRegistration]
+
+    init(configuration: Configuration) throws {
+        let secret = try configuration.getIfPresent("github.webhook-secret", as: String.self)
+        let github = try WebhookSignature.github(secrets: [secret ?? ""])
+        middleware = MiddlewareRegistration.lane("github", [VerifyWebhookSignature(github)])
+    }
+}
+
+@PostRoute("/webhooks/github", pipelines: [.default, "github"])
 func github(_ context: RequestContext) async throws -> Response {
-    try WebhookSignature.github(secrets: [settings.githubSecret]).verify(context)
     let event = try JSONDecoder().decode(PushEvent.self, from: context.request.body)
     …
 }
@@ -501,8 +515,12 @@ and `.hmacSHA256(header:prefix:base64:secrets:)` for a sender that puts an
 HMAC of the body in one header. Stripe and Standard Webhooks sign a
 timestamp, and a request more than five minutes old is refused
 (`tolerance:`), so a captured request cannot be replayed later. Pass two
-secrets while rotating. `VerifyWebhookSignature(_:)` applies one to a whole
-lane. Every failure is a `401`. The route must buffer its body, which is the
+secrets while rotating. The constructors throw `WebhookConfigurationError` for
+no secrets, an empty one, or a Standard Webhooks secret that is not base64.
+The tolerance is a replay *window*: it stops an old request being replayed
+later, not the same request being delivered twice within five minutes, so
+deduplicate on the sender's event id when an event must be handled once.
+Every verification failure is a `401`. The route must buffer its body, which is the
 default.
 
 ## Implementation notes worth knowing

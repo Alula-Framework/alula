@@ -23,40 +23,42 @@ struct WebhookSignatureTests {
     }
 
     @Test("GitHub: the right secret passes, another secret or a changed body does not")
-    func github() {
+    func github() throws {
         let good = "sha256=" + hex(hmac(body, key: Data(secret.utf8)))
         let name = HTTPField.Name("X-Hub-Signature-256")!
-        #expect(WebhookSignature.github(secrets: [secret]).isValid(request([name: good])))
-        #expect(!WebhookSignature.github(secrets: ["other"]).isValid(request([name: good])))
+        #expect(try WebhookSignature.github(secrets: [secret]).isValid(request([name: good])))
+        #expect(try !WebhookSignature.github(secrets: ["other"]).isValid(request([name: good])))
         #expect(
-            !WebhookSignature.github(secrets: [secret]).isValid(
+            try !WebhookSignature.github(secrets: [secret]).isValid(
                 request([name: good], body: Data("{}".utf8))))
-        #expect(!WebhookSignature.github(secrets: [secret]).isValid(request([:])))
+        #expect(try !WebhookSignature.github(secrets: [secret]).isValid(request([:])))
     }
 
     @Test("rotation: either of two secrets is accepted")
-    func rotation() {
+    func rotation() throws {
         let name = HTTPField.Name("X-Hub-Signature-256")!
         let signedWithOld = "sha256=" + hex(hmac(body, key: Data("old".utf8)))
         #expect(
-            WebhookSignature.github(secrets: ["new", "old"]).isValid(request([name: signedWithOld]))
+            try WebhookSignature.github(secrets: ["new", "old"]).isValid(
+                request([name: signedWithOld]))
         )
     }
 
     @Test("Stripe: signs t.body, and a stale timestamp is refused")
-    func stripe() {
+    func stripe() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let t = "1800000000"
         let v1 = hex(hmac(Data((t + ".").utf8) + body, key: Data(secret.utf8)))
         let header = HTTPField.Name("Stripe-Signature")!
-        let fresh = WebhookSignature.stripe(secrets: [secret], now: { now })
+        let fresh = try WebhookSignature.stripe(secrets: [secret], now: { now })
         #expect(fresh.isValid(request([header: "t=\(t),v1=deadbeef,v1=\(v1)"])))
-        let later = WebhookSignature.stripe(secrets: [secret], now: { now.addingTimeInterval(301) })
+        let later = try WebhookSignature.stripe(
+            secrets: [secret], now: { now.addingTimeInterval(301) })
         #expect(!later.isValid(request([header: "t=\(t),v1=\(v1)"])))
     }
 
     @Test("Standard Webhooks: signs id.timestamp.body with the decoded whsec_ key")
-    func standardWebhooks() {
+    func standardWebhooks() throws {
         let key = Data("0123456789abcdef0123456789abcdef".utf8)
         let secretText = "whsec_" + key.base64EncodedString()
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -67,10 +69,10 @@ struct WebhookSignatureTests {
             HTTPField.Name("webhook-signature")!: "v1,bm9wZQ== v1,\(signature)",
         ]
         #expect(
-            WebhookSignature.standardWebhooks(secrets: [secretText], now: { now }).isValid(
+            try WebhookSignature.standardWebhooks(secrets: [secretText], now: { now }).isValid(
                 request(headers)))
         #expect(
-            !WebhookSignature.standardWebhooks(
+            try !WebhookSignature.standardWebhooks(
                 secrets: ["whsec_" + Data("wrong".utf8).base64EncodedString()], now: { now }
             )
             .isValid(request(headers)))
@@ -84,12 +86,29 @@ struct WebhookSignatureTests {
         let client = try TestClient(
             routes: [route],
             middleware: MiddlewareRegistration.lane(
-                .default, [VerifyWebhookSignature(.github(secrets: [secret]))]))
+                .default, [VerifyWebhookSignature(try .github(secrets: [secret]))]))
         let refused = await client.post("/hook", body: body)
         #expect(refused.status == .unauthorized)
         let good = "sha256=" + hex(hmac(body, key: Data(secret.utf8)))
         let accepted = await client.post(
             "/hook", headers: [HTTPField.Name("X-Hub-Signature-256")!: good], body: body)
         #expect(accepted.bodyText == "handled")
+    }
+
+    @Test("unusable secrets fail when the signature is built, never silently")
+    func configurationErrors() {
+        #expect(throws: WebhookConfigurationError.noSecrets) {
+            try WebhookSignature.github(secrets: [])
+        }
+        #expect(throws: WebhookConfigurationError.invalidSecret(index: 0)) {
+            try WebhookSignature.stripe(secrets: [""])
+        }
+        // A typo that makes the value not base64 used to become its UTF-8
+        // bytes: a key no sender signs with.
+        #expect(throws: WebhookConfigurationError.invalidSecret(index: 1)) {
+            try WebhookSignature.standardWebhooks(secrets: [
+                "whsec_" + Data("ok".utf8).base64EncodedString(), "whsec_not base64!",
+            ])
+        }
     }
 }

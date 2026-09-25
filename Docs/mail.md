@@ -92,6 +92,11 @@ discarded.
 - **No transport, no start.** Outside `dev` and `test`, `AlulaMailModule`
   without a transport fails composition. `mail.transport: log` logs mail on
   purpose, for a staging environment with no server.
+- **Bodies stay out of the log outside development.** A logged body carries
+  reset and sign-in links, verification tokens and personal data, and goes
+  wherever the logs go. The logging transport writes recipients, subject and
+  body size everywhere, and the body itself only in `dev` and `test` unless
+  `mail.log-body: true`. Do not turn it on where logs are shipped or kept.
 
 ## What the message looks like
 

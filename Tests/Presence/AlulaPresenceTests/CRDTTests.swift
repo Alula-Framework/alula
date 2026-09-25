@@ -36,6 +36,21 @@ struct CRDTTests {
         #expect(context.cloud.isEmpty)
     }
 
+    /// Versions arrive in peers' gossip. A frame claiming UInt64.max made
+    /// compaction compute `version + 1` and trap, on every node that merged it.
+    @Test("a peer's context at the counter's maximum merges without overflowing")
+    func maximalVersionFromAPeer() {
+        var peer = DotContext()
+        peer.extend(nodeA, through: .max)
+        #expect(peer.versions[nodeA] == .max)
+
+        var local = DotContext()
+        local.insert(PresenceDot(replica: nodeA, counter: 5))
+        local.merge(peer)
+        #expect(local.versions[nodeA] == .max)
+        #expect(local.cloud.isEmpty, "the peer's version covers the clouded dot")
+    }
+
     @Test("extend claims a whole contiguous prefix and absorbs clouded dots")
     func contextExtend() {
         var context = DotContext()

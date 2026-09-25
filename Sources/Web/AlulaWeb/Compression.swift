@@ -270,7 +270,11 @@ public struct ResponseCompression: Middleware {
         var wildcard: Double?
         for entry in acceptEncoding.split(separator: ",") {
             let parts = entry.split(separator: ";", maxSplits: 1)
-            let coding = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+            // An entry of just ";" splits to nothing: `Accept-Encoding: br, ;`
+            // indexed an empty array and trapped, from any request through
+            // this middleware.
+            guard let first = parts.first else { continue }
+            let coding = first.trimmingCharacters(in: .whitespaces).lowercased()
             var quality = 1.0
             if parts.count == 2 {
                 let parameter = parts[1].trimmingCharacters(in: .whitespaces).lowercased()

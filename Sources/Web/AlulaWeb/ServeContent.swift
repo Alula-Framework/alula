@@ -441,7 +441,7 @@ public enum HTTPDate {
             let dateParts = tokens[1].split(separator: "-").map(String.init)
             guard dateParts.count == 3, let day = Int(dateParts[0]),
                 let month = month(dateParts[1]), let shortYear = Int(dateParts[2]),
-                let time = clock(tokens[2])
+                (0...99).contains(shortYear), let time = clock(tokens[2])
             else { return nil }
             let year = shortYear >= 70 ? 1900 + shortYear : 2000 + shortYear
             return date(year: year, month: month, day: day, time: time)
@@ -469,7 +469,12 @@ public enum HTTPDate {
     }
 
     private static func date(year: Int, month: Int, day: Int, time: (Int, Int, Int)) -> Date? {
-        guard (1...12).contains(month), (1...31).contains(day) else { return nil }
+        // The year is a client's number, parsed as far as Int goes, and the
+        // civil-date arithmetic below overflowed on one like 999999999999 —
+        // a trap from any If-Modified-Since header. Four digits is what the
+        // grammar allows (RFC 9110 §5.6.7).
+        guard (0...9999).contains(year), (1...12).contains(month), (1...31).contains(day)
+        else { return nil }
         let days = days(fromCivilYear: year, month: month, day: day)
         let seconds = days * 86_400 + Int64(time.0) * 3_600 + Int64(time.1) * 60 + Int64(time.2)
         return Date(timeIntervalSince1970: TimeInterval(seconds))

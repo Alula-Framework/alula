@@ -174,6 +174,11 @@ struct CompressionTests {
 
     @Test("q-values decide, and q=0 is a refusal rather than an offer")
     func negotiation() {
+        // An entry of just ";" split to nothing and was indexed: a trap from
+        // any request through the middleware.
+        #expect(ResponseCompression.negotiate("br, ;") == nil)
+        #expect(ResponseCompression.negotiate(";") == nil)
+        #expect(ResponseCompression.negotiate(";, gzip") == .gzip)
         #expect(ResponseCompression.negotiate("gzip") == .gzip)
         #expect(ResponseCompression.negotiate("gzip, deflate, br") == .gzip)
         #expect(ResponseCompression.negotiate("gzip;q=0.8") == .gzip)

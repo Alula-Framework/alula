@@ -18,6 +18,19 @@ it. One was reachable by any client.
   the process. The end is now clamped before it is incremented. Every
   combination of boundary values is tested, and the regression test was
   checked to crash without the fix.
+- **A date header could crash the server.** `If-Modified-Since: Sun, 06 Nov
+  999999999999 08:49:37 GMT` — or a negative year, or an RFC 850 date with a
+  huge two-digit year — overflowed the civil-date arithmetic. Any static-file
+  or `serveContent` route parsed it. Years outside 0…9999 are now not dates.
+- **An `Accept-Encoding` entry of `;` crashed `ResponseCompression`**: it
+  split to nothing and was indexed. Such an entry is now skipped.
+- **One presence gossip frame could crash every node that merged it.** A
+  peer's context claiming a counter of `UInt64.max` overflowed compaction.
+  Compaction now stops at the maximum.
+
+Each of these was found by an audit of arithmetic and indexing on untrusted
+input, after the `Range` overflow; each regression test was checked to crash
+without its fix.
 
 ### Fixed
 

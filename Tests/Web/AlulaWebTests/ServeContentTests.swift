@@ -71,6 +71,22 @@ struct ServeContentRangeTests {
         #expect(try await collected(response) == body)
     }
 
+    /// Found by the same audit as the Range overflow: the year is parsed as
+    /// far as Int goes, and the civil-date arithmetic overflowed. Any
+    /// If-Modified-Since header reached it.
+    @Test("a date with an absurd year is not a date — and not a crash", arguments: [
+        "Sun, 06 Nov 999999999999 08:49:37 GMT",
+        "Sun, 06 Jan -9223372036854775808 08:49:37 GMT",
+        "Sunday, 06-Nov-9223372036854775807 08:49:37 GMT",
+        "Sun Nov  6 08:49:37 99999999999999",
+    ])
+    func absurdYears(_ header: String) async throws {
+        #expect(HTTPDate.parse(header) == nil)
+        let response = serveContent(
+            for: request(headers: [.ifModifiedSince: header]), descriptor())
+        #expect(response.status == .ok, "an unparseable validator is ignored")
+    }
+
     /// Every combination of boundary values, for both ends and the size.
     /// Resolution must never trap, and a satisfiable range must lie inside
     /// the representation and be non-empty.

@@ -84,7 +84,11 @@ public struct DotContext: Sendable, Equatable, Codable {
 
     private mutating func compact(_ replica: PresenceReplicaID) {
         var version = versions[replica, default: 0]
-        while cloud.contains(PresenceDot(replica: replica, counter: version + 1)) {
+        // `version < .max` first: versions arrive in peers' gossip, and a
+        // frame claiming UInt64.max made `version + 1` overflow — a trap on
+        // every node that merged it, the same one-frame crash `dropClaims`
+        // closes for claims about this node.
+        while version < .max, cloud.contains(PresenceDot(replica: replica, counter: version + 1)) {
             version += 1
             cloud.remove(PresenceDot(replica: replica, counter: version))
         }

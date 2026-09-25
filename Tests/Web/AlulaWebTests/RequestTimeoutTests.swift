@@ -61,10 +61,15 @@ struct RequestTimeoutTests {
 
     @Test("past its timeout a route answers 503, and the handler is cancelled")
     func timesOut() async throws {
+        let client = try client()
+        // Timed from the request, not from building the client, and bounded
+        // well under the handler's 5-second sleep: the claim is that the 503
+        // did not wait for the handler. Timing the setup too, against 2s,
+        // failed on a loaded runner at 2.3s with the timeout working.
         let started = ContinuousClock.now
-        let response = await (try client()).get("/t/slow")
+        let response = await client.get("/t/slow")
         #expect(response.status == .serviceUnavailable)
-        #expect(ContinuousClock.now - started < .seconds(2))
+        #expect(ContinuousClock.now - started < .seconds(4))
         try await Task.sleep(for: .milliseconds(100))
         let cancelled = timeoutProbe.cancelled.load(ordering: .relaxed)
         #expect(cancelled)

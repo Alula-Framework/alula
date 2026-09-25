@@ -95,6 +95,15 @@ extension GeneratorTests {
                 }
             }
         }
+        // Runtime codes — reported by `Alula.run`, not the build — are proven
+        // by a test asserting the bracketed code in the report.
+        let runtime = root.appendingPathComponent("Tests/Core/AlulaCoreTests")
+        for file in try FileManager.default.contentsOfDirectory(atPath: runtime.path) where file.hasSuffix(".swift") {
+            let source = try String(contentsOf: runtime.appendingPathComponent(file), encoding: .utf8)
+            for match in source.matches(of: /#expect\(.*\[((?:ALU|HGR)-[A-Z]+-\d{4})\]/) {
+                proven.insert(String(match.1))
+            }
+        }
         let codes = DiagnosticCode.all.map(\.id)
         let covered = codes.filter(proven.contains)
         print("framework-owned diagnostic coverage: \(covered.count)/\(codes.count)")

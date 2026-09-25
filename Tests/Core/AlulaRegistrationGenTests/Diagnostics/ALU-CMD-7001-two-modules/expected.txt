@@ -1,0 +1,5 @@
+Main.swift:11:30: error: [ALU-CMD-7001] command 'seed' is declared by BillingModule and CatalogModule
+    Command names are one namespace across the application; it would refuse to start.
+    help: rename one of them.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CMD-7001.md
+Main.swift:5:30: note: `BillingModule` declares it here

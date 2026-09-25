@@ -279,6 +279,7 @@ let package = Package(
             name: "AlulaCore",
             dependencies: [
                 "AlulaCoreMacrosImpl",
+                "AlulaDiagnostics",
                 "AlulaConfig",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),

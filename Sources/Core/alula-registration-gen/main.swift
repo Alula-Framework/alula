@@ -1043,6 +1043,7 @@ var moduleGraph: [ScannedModule] = []
 var bootstrapModules: [String] = []
 var scannedConfigPrefixes: [(text: String?, file: String, line: Int)] = []
 var extensionConformances: [(typeName: String, protocols: [String])] = []
+var declaredCommands: [CommandScan.Command] = []
 var schemaTypes: [SchemaDecl] = []
 for module in manifest.modules {
     for file in module.files {
@@ -1076,6 +1077,7 @@ for module in manifest.modules {
                 // The application's `Configuration.load(prefix:)` — the base
                 // file name the @ConfigValue check verifies against.
                 || source.contains("Configuration.load")
+                || source.contains("CommandRegistration(")
         guard scansComponents || declaresSchema else { continue }
         if !scansComponents {
             let collector = SchemaCollector()
@@ -1099,6 +1101,11 @@ for module in manifest.modules {
             let collector = SchemaCollector()
             collector.walk(tree)
             schemaTypes += collector.types
+        }
+        if source.contains("CommandRegistration(") {
+            let commandScan = CommandScan(file: file, tree: tree)
+            commandScan.walk(tree)
+            declaredCommands += commandScan.commands
         }
         let visitor = ComponentVisitor(module: module.name, file: file, tree: tree)
         visitor.walk(tree)
@@ -1807,6 +1814,76 @@ func reportDuplicateRoutes() {
     }
 }
 reportDuplicateRoutes()
+
+/// Records every `CommandRegistration("name", …)` whose name is a plain
+/// literal, with the type it is declared in.
+final class CommandScan: SyntaxVisitor {
+    struct Command {
+        let name: String
+        let enclosingType: String
+        let location: DiagnosticLocation
+    }
+
+    let file: String
+    let converter: SourceLocationConverter
+    var commands: [Command] = []
+
+    init(file: String, tree: SourceFileSyntax) {
+        self.file = file
+        self.converter = SourceLocationConverter(fileName: file, tree: tree)
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        guard node.calledExpression.as(DeclReferenceExprSyntax.self)?.baseName.text == "CommandRegistration",
+              let first = node.arguments.first, first.label == nil,
+              let literal = first.expression.as(StringLiteralExprSyntax.self),
+              literal.segments.count == 1,
+              let name = literal.segments.first?.as(StringSegmentSyntax.self)?.content.text,
+              let type = Self.enclosingType(of: Syntax(node))
+        else { return .visitChildren }
+        let position = converter.location(for: literal.positionAfterSkippingLeadingTrivia)
+        commands.append(Command(
+            name: name, enclosingType: type,
+            location: DiagnosticLocation(file: file, line: position.line, column: position.column)))
+        return .visitChildren
+    }
+
+    static func enclosingType(of node: Syntax) -> String? {
+        var current = node.parent
+        while let syntax = current {
+            if let decl = syntax.as(StructDeclSyntax.self) { return decl.name.text }
+            if let decl = syntax.as(ClassDeclSyntax.self) { return decl.name.text }
+            if let decl = syntax.as(ExtensionDeclSyntax.self) { return decl.extendedType.trimmedDescription }
+            current = syntax.parent
+        }
+        return nil
+    }
+}
+
+/// Two included modules declaring one command name. `Alula.run` refuses it at
+/// startup (ALU-CMD-7001); the build can say so first, at both declarations,
+/// when both names are literals in modules this application includes.
+@MainActor
+func reportDuplicateCommands() {
+    let included = Set(includedModules.map(moduleIdentity))
+    var first: [String: CommandScan.Command] = [:]
+    for command in declaredCommands where included.contains(moduleIdentity(command.enclosingType)) {
+        guard let earlier = first[command.name] else {
+            first[command.name] = command
+            continue
+        }
+        guard moduleIdentity(earlier.enclosingType) != moduleIdentity(command.enclosingType) else { continue }
+        report(Diagnostic(
+            .duplicateCommand,
+            "command '\(command.name)' is declared by \(earlier.enclosingType) and \(command.enclosingType)",
+            at: command.location,
+            explanation: ["Command names are one namespace across the application; it would refuse to start."],
+            help: ["rename one of them."],
+            notes: [.init("`\(earlier.enclosingType)` declares it here", at: earlier.location)]))
+    }
+}
+reportDuplicateCommands()
 
 /// Every module nominated by some `defaultProviders` in this application.
 ///

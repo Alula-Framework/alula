@@ -155,8 +155,21 @@ struct CommandService: Service {
             }
             try await Task.sleep(for: .milliseconds(5))
         }
-        try await command.run(context)
+        do {
+            try await command.run(context)
+        } catch {
+            throw CommandFailed(name: command.name, underlying: error)
+        }
     }
+}
+
+/// A command's own error, marked as the command's. `Alula.run` reports it as
+/// the command failing — the application started fine — where it used to say
+/// "could not start" about a provider answering 503 (Relay #20).
+struct CommandFailed: Error, CustomStringConvertible {
+    let name: String
+    let underlying: any Error
+    var description: String { String(describing: underlying) }
 }
 
 struct InfrastructureFailed: Error, CustomStringConvertible {

@@ -127,6 +127,10 @@ extension DiagnosticCode {
     public static let rolesWithoutAuthentication = DiagnosticCode(
         "ALU-SEC-6001", "A route requires roles but authenticates no one")
 
+    // Commands.
+    public static let duplicateCommand = DiagnosticCode("ALU-CMD-7001", "Two modules declare one command name")
+    public static let unknownCommand = DiagnosticCode("ALU-CMD-7002", "No command by that name")
+
     // Lifecycle and module composition.
     public static let moduleCycle = DiagnosticCode("ALU-LIFE-8001", "Modules need each other in a cycle")
     public static let unconstructibleModule = DiagnosticCode(
@@ -160,6 +164,7 @@ extension DiagnosticCode {
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
         .rolesWithoutAuthentication,
+        .duplicateCommand, .unknownCommand,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,
         .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,
         .invalidScheduledMethod, .invalidScheduler,

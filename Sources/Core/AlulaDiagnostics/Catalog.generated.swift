@@ -2,6 +2,71 @@
 //   ALULA_REGENERATE_DIAGNOSTICS=1 swift test --filter DiagnosticCatalogTests
 enum DiagnosticCatalog {
     static let pages: [String: String] = [
+        "ALU-CMD-7001": ##"""
+            # ALU-CMD-7001: Two modules declare one command name
+
+            **Severity:** error
+
+            ## Meaning
+
+            Two modules both declare a `CommandRegistration` with the same name.
+
+            ## Why Alula rejects it
+
+            Command names are one namespace across the application. Running whichever
+            module was listed first would let the order of `modules:` decide what
+            `swift run App <name>` does.
+
+            ## Common causes
+
+            - Two modules that each ship a `migrate` or `seed` command.
+
+            ## Fixes
+
+            1. Rename one of them — a module prefix works: `billing-seed`.
+
+            ## Example
+
+            ```swift
+            CommandRegistration("billing-seed", abstract: "Seed billing plans") { context in … }
+            ```
+
+            ## Related
+
+            ALU-CMD-7002.
+
+            """##,
+        "ALU-CMD-7002": ##"""
+            # ALU-CMD-7002: No command by that name
+
+            **Severity:** error
+
+            ## Meaning
+
+            The application was started with an argument that names no command, such as
+            `swift run App sync-inventroy`. The report lists the commands there are.
+
+            ## Why Alula rejects it
+
+            Any first argument that is not a flag is read as a command name, so a typo
+            cannot quietly start the server instead.
+
+            ## Common causes
+
+            - A typo in the name.
+            - The module that declares the command is not in `modules:`.
+
+            ## Fixes
+
+            1. Use a name from the listing — `swift run App commands` prints it.
+            2. Add the module that declares the command to `modules:`.
+            3. To serve, pass no argument, or `serve`.
+
+            ## Related
+
+            ALU-CMD-7001.
+
+            """##,
         "ALU-CONFIG-5001": ##"""
             # ALU-CONFIG-5001: @ConfigValue without a literal key
 

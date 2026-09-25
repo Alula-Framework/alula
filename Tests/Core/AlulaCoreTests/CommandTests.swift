@@ -102,6 +102,22 @@ struct CommandTests {
         #expect(journal.all.last == "pool down")
     }
 
+    /// Relay #20: a command that ran and threw was reported as the
+    /// application failing to start.
+    @Test("a failing command is reported as the command failing, not as a failed start")
+    func failureIsTheCommands() async throws {
+        do {
+            try await Alula.runCommand(
+                "fail", arguments: [], configuration: Configuration(),
+                modules: modules(Journal()), health: ModuleHealthRegistry(), logger: Logger(label: "test"))
+            Issue.record("the failing command succeeded")
+        } catch {
+            let report = failureReport(for: error, detail: nil)
+            #expect(report.hasPrefix("alula: command 'fail' failed.\n"), "\(report)")
+            #expect(!report.contains("could not start"))
+        }
+    }
+
     @Test("an unknown command lists the ones there are")
     func unknown() async throws {
         do {
@@ -112,6 +128,9 @@ struct CommandTests {
         } catch let error as CommandNotFound {
             #expect(error.description.contains("greet"))
             #expect(error.description.contains("Say hello"))
+            let report = failureReport(for: error, detail: nil)
+            #expect(report.hasPrefix("alula: error: [ALU-CMD-7002] no command named 'nope'\n"), "\(report)")
+            #expect(report.contains("greet") && !report.contains("could not start"))
         }
     }
 }
@@ -134,6 +153,7 @@ struct CommandNameTests {
             } catch let error as DuplicateCommand {
                 #expect(error.name == "migrate-users")
                 #expect(Set(error.modules) == ["First", "Second"])
+                #expect(failureReport(for: error, detail: nil).contains("error: [ALU-CMD-7001] command 'migrate-users'"))
             }
         }
     }

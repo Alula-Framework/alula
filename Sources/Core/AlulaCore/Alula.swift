@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import Logging
 import ServiceLifecycle
 
@@ -184,7 +185,7 @@ public enum Alula {
             // and more useful to say conforms to `StartupDiagnostic`.
             // `ALULA_STARTUP_ERROR_DETAIL=reflect` prints the reflected form
             // for a local session that needs it, and only when asked.
-            let message = "alula: could not start.\n\(startupReport(for: error))\n"
+            let message = failureReport(for: error)
             let bytes = Array(message.utf8)
             bytes.withUnsafeBufferPointer { buffer in
                 var written = 0
@@ -231,4 +232,39 @@ func startupReport(
         return diagnostic.startupDiagnostic
     }
     return String(describing: error)
+}
+
+/// Everything `Alula.run` prints when it exits with 1.
+///
+/// Three different things end the process that way, and saying "could not
+/// start" about all of them was wrong twice: a command that ran and threw
+/// had started, and a mistyped command name had nothing to do with starting.
+/// Framework-owned failures carry their code, in the same shape as the
+/// build's diagnostics.
+func failureReport(
+    for error: any Error,
+    detail: String? = getenv("ALULA_STARTUP_ERROR_DETAIL").map { String(cString: $0) }
+) -> String {
+    switch error {
+    case let failed as CommandFailed:
+        return "alula: command '\(failed.name)' failed.\n\(startupReport(for: failed.underlying, detail: detail))\n"
+    case let notFound as CommandNotFound:
+        let listing = CommandListing.text(notFound.available)
+        return "alula: "
+            + AlulaDiagnostics.Diagnostic(
+                .unknownCommand, "no command named '\(notFound.name)'", at: nil,
+                context: listing.split(separator: "\n").map(String.init),
+                help: ["`commands` lists them; with no argument the application serves."]
+            ).rendered + "\n"
+    case let duplicate as DuplicateCommand:
+        return "alula: could not start.\n"
+            + AlulaDiagnostics.Diagnostic(
+                .duplicateCommand,
+                "command '\(duplicate.name)' is declared by \(duplicate.modules.joined(separator: " and "))", at: nil,
+                explanation: ["Command names are one namespace across the application."],
+                help: ["rename one of them."]
+            ).rendered + "\n"
+    default:
+        return "alula: could not start.\n\(startupReport(for: error, detail: detail))\n"
+    }
 }

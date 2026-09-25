@@ -4,6 +4,30 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0] - 2026-09-25
+
+The third phase of the diagnostics design: configuration checks and commands.
+
+### Added
+
+- **Codes for the build's configuration checks.** A key missing from the base
+  file (`ALU-CONFIG-5004`), an unusable prefix (`5005`), a key check that
+  could not run (`5006`, a warning), and a base file that does not parse
+  (`5007`, pointing at the line and column). A route through a lane nothing
+  declares is `ALU-WEB-2009`.
+- **Duplicate command names fail the build (`ALU-CMD-7001`).** Two included
+  modules declaring one command name used to be refused only at startup. The
+  build now reports it at both declarations; a module not in `modules:` is
+  not counted.
+
+### Fixed
+
+- **A failed command no longer says the application "could not start"**
+  (Relay #20). A command that runs and throws prints
+  `alula: command 'sync-inventory' failed.` and its error. An unknown command
+  name prints `[ALU-CMD-7002]` and the command list; a duplicate name prints
+  `[ALU-CMD-7001]`. Exit codes are unchanged.
+
 ## [0.50.0] - 2026-09-25
 
 The second phase of the diagnostics design: the macros' diagnostics get

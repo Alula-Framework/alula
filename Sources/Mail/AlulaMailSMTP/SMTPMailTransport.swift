@@ -369,3 +369,5 @@ public struct AlulaMailSMTPModule: AlulaModule {
                 + "instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
     }
 }
+
+extension SMTPConfigurationError: ModuleConfigurationError {}

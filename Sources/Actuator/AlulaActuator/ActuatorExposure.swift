@@ -99,3 +99,5 @@ public enum ActuatorConfigurationError: Error, CustomStringConvertible {
         }
     }
 }
+
+extension ActuatorConfigurationError: ModuleConfigurationError {}

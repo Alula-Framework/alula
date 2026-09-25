@@ -1,3 +1,4 @@
+import AlulaCore
 import AlulaWeb
 import Crypto
 import Foundation
@@ -242,3 +243,5 @@ public struct VerifyWebhookSignature: Middleware {
         return try await next(context)
     }
 }
+
+extension WebhookConfigurationError: ModuleConfigurationError {}

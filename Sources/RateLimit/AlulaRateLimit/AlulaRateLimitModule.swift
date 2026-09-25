@@ -99,3 +99,5 @@ public enum RateLimitConfigurationError: Error, Sendable, Equatable, CustomStrin
 enum ValkeyRateLimitConfigKeyProbe {
     static let url = "rate-limit.valkey.url"
 }
+
+extension RateLimitConfigurationError: ModuleConfigurationError {}

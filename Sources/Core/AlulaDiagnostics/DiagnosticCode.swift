@@ -138,6 +138,8 @@ extension DiagnosticCode {
         "ALU-CONFIG-5011", "Configuration refers to an unset environment variable")
     public static let preRenameConfiguration = DiagnosticCode(
         "ALU-CONFIG-5012", "Configuration written for Flight, before the rename")
+    public static let invalidModuleSettings = DiagnosticCode(
+        "ALU-CONFIG-5013", "A module's settings are invalid")
 
     // Security and authentication composition.
     public static let rolesWithoutAuthentication = DiagnosticCode(
@@ -183,7 +185,7 @@ extension DiagnosticCode {
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
         .invalidConfigValue, .configSourceFailed, .missingBaseConfigFile, .unsetConfigVariable,
-        .preRenameConfiguration,
+        .preRenameConfiguration, .invalidModuleSettings,
         .rolesWithoutAuthentication, .competingTokenValidators,
         .duplicateCommand, .unknownCommand,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,

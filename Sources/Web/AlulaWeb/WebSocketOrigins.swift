@@ -121,3 +121,5 @@ struct WebSocketOriginsConfigurationError: Error, CustomStringConvertible {
             + "Use \"*\" alone to turn the check off, or list origins."
     }
 }
+
+extension WebSocketOriginsConfigurationError: ModuleConfigurationError {}

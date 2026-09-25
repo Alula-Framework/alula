@@ -310,3 +310,5 @@ struct HealthTrackingService: Service {
         return logger
     }
 }
+
+extension LifecycleSettingsError: ModuleConfigurationError {}

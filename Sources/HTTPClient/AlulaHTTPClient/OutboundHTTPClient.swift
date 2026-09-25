@@ -352,3 +352,5 @@ enum RetryAfter {
         "EEE MMM d HH:mm:ss yyyy",
     ]
 }
+
+extension OutboundHTTPConfigurationError: ModuleConfigurationError {}

@@ -217,3 +217,5 @@ public enum APNSConfigurationError: Error, Sendable, Equatable, CustomStringConv
         }
     }
 }
+
+extension APNSConfigurationError: ModuleConfigurationError {}

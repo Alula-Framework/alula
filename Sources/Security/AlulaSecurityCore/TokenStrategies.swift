@@ -113,3 +113,5 @@ struct APIKeyConfigurationError: Error, CustomStringConvertible {
         "security.api-keys.prefix must be letters and digits only (got '\(prefix)')"
     }
 }
+
+extension APIKeyConfigurationError: ModuleConfigurationError {}

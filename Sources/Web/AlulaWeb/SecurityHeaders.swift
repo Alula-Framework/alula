@@ -281,3 +281,5 @@ extension HTTPField.Name {
     static let xFrameOptions = HTTPField.Name("x-frame-options")!
     static let referrerPolicy = HTTPField.Name("referrer-policy")!
 }
+
+extension SecurityHeadersConfigurationError: ModuleConfigurationError {}

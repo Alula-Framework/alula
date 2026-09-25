@@ -301,3 +301,5 @@ public enum TLSConfigurationError: Error, CustomStringConvertible {
         }
     }
 }
+
+extension TLSConfigurationError: ModuleConfigurationError {}

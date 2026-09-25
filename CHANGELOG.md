@@ -35,6 +35,14 @@ the OpenAPI document.
   route conflict found at startup is `ALU-WEB-2001`. `StartupDiagnostic`
   gains an optional `diagnosticCode`, defaulted to `nil`, so an application's
   own conformers are unchanged.
+- **A module's settings error is `ALU-CONFIG-5013`.** Every module's
+  configuration check (TLS, rate limits, sessions, security headers, actuator
+  exposure, APNs, SMTP, queues, telemetry, …) now conforms to the new marker
+  protocol `ModuleConfigurationError`, and `Alula.run` prints it with the code
+  and the module's own message.
+- **Two modules providing `any TokenValidator` is `ALU-SEC-6002`** rather than
+  a generic ambiguity: the help points at token strategies, which compose,
+  instead of `defaultProviders`, which would switch one method off.
 
 ### Fixed
 

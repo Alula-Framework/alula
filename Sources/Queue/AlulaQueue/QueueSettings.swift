@@ -90,3 +90,5 @@ public struct QueueConfigurationError: Error, Sendable, CustomStringConvertible 
     public let value: String
     public var description: String { "\(key) must be a positive whole number; it is \(value)" }
 }
+
+extension QueueConfigurationError: ModuleConfigurationError {}

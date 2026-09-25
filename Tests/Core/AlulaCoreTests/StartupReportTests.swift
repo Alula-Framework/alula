@@ -56,4 +56,15 @@ struct StartupReportTests {
         #expect(coded.contains("docs: https://"))
         #expect(report(PoolDown()) == "alula: could not start.\ncould not connect to db.internal:5432: connection refused\n")
     }
+
+    struct BadTLS: ModuleConfigurationError, CustomStringConvertible {
+        var description: String { "transport.tls.certificate is set but transport.tls.key is not" }
+    }
+
+    @Test("a module's configuration error carries ALU-CONFIG-5013 and its own message")
+    func moduleSettings() {
+        let report = failureReport(for: BadTLS(), detail: nil)
+        #expect(report.contains("error: [ALU-CONFIG-5013] transport.tls.certificate is set"))
+        #expect(diagnosticCode(for: LifecycleSettingsError(drainSeconds: 30, shutdownTimeoutSeconds: 10)) == .invalidModuleSettings)
+    }
 }

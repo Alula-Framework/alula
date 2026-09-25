@@ -227,6 +227,17 @@ extension StartupDiagnostic {
     public var diagnosticCode: DiagnosticCode? { nil }
 }
 
+/// A module's settings are invalid — the error a module's configuration
+/// check throws while the application starts, such as a TLS certificate path
+/// with no key, or a rate limit of zero.
+///
+/// `Alula.run` prints it as ALU-CONFIG-5013, with the module's own message:
+/// the message says what is wrong, the code says what kind of problem it is
+/// and where the page is. A marker rather than a `StartupDiagnostic`
+/// conformance, so a module declares the kind of error it throws without
+/// depending on the diagnostics.
+public protocol ModuleConfigurationError: Error {}
+
 /// The code for a framework-owned startup failure, if it has one.
 ///
 /// Configuration errors are mapped here rather than conforming where they
@@ -250,6 +261,8 @@ func diagnosticCode(for error: any Error) -> DiagnosticCode? {
         }
     case let diagnostic as any StartupDiagnostic:
         return diagnostic.diagnosticCode
+    case is any ModuleConfigurationError:
+        return .invalidModuleSettings
     default:
         return nil
     }

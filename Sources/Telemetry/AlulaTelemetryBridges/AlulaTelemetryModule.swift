@@ -364,3 +364,5 @@ extension Optional where Wrapped: ~Copyable {
         }
     }
 }
+
+extension TelemetryConfigurationError: ModuleConfigurationError {}

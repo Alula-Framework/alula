@@ -212,3 +212,5 @@ extension MailAddress {
         return try MailAddress(address, name: name.isEmpty ? nil : name)
     }
 }
+
+extension MailConfigurationError: ModuleConfigurationError {}

@@ -216,3 +216,5 @@ extension Cookie.SameSite: ConfigDecodable {
         }
     }
 }
+
+extension SessionConfigurationError: ModuleConfigurationError {}

@@ -147,3 +147,5 @@ public enum PresenceConfigurationError: Error, CustomStringConvertible, Sendable
         }
     }
 }
+
+extension PresenceConfigurationError: ModuleConfigurationError {}

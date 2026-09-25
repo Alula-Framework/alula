@@ -229,6 +229,23 @@ public enum DispatchBuilder {
                     "asset mount root does not exist — every request under \(mount.prefix) will 404 until it does",
                     metadata: ["root": "\(mount.root)"])
             }
+            // A route always beats a mount, so one claiming exactly the
+            // mount's prefix hides its index page there — and every other
+            // path under the mount works, which is what makes it hard to
+            // see (Relay #26: the scaffold's `GET /` answered "flying"
+            // where the built front end's index.html belonged).
+            let index = (mount.root as NSString).appendingPathComponent(mount.options.index)
+            let prefix = mount.prefix.hasSuffix("/") && mount.prefix.count > 1
+                ? String(mount.prefix.dropLast()) : mount.prefix
+            if FileManager.default.fileExists(atPath: index),
+                let shadow = routes.first(where: {
+                    $0.method == .get && ($0.path == prefix || $0.path == prefix + "/")
+                })
+            {
+                logger.warning(
+                    "GET \(shadow.path) is answered by a route, so the asset mount's \(mount.options.index) is never served there",
+                    metadata: ["route": "\(shadow.source)", "mount": "\(mount.prefix)", "root": "\(mount.root)"])
+            }
             logger.debug(
                 "asset mount registered",
                 metadata: [

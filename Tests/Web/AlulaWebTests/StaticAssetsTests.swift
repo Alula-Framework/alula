@@ -3,6 +3,7 @@ import AlulaCore
 import AlulaWebTesting
 import Foundation
 import HTTPTypes
+import Logging
 import Synchronization
 import Testing
 
@@ -297,5 +298,74 @@ struct AssetGlobTests {
         #expect(AssetGlob.matches(pattern: "**", path: "anything/at/all"))
         #expect(AssetGlob.matches(pattern: "index.html", path: "index.html"))
         #expect(!AssetGlob.matches(pattern: "index.html", path: "not-index.html"))
+    }
+}
+
+/// Relay #26: a route at a mount's prefix always wins, so the mount's index
+/// page was never served there — while every other path worked.
+@Suite("A route that hides a mount's index is said out loud")
+struct ShadowedIndexTests {
+    final class Capture: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lines: [(Logger.Level, String)] = []
+        func record(_ level: Logger.Level, _ message: String) {
+            lock.lock(); defer { lock.unlock() }
+            lines.append((level, message))
+        }
+        var all: [(Logger.Level, String)] { lock.lock(); defer { lock.unlock() }; return lines }
+        var logger: Logger { Logger(label: "test") { _ in Handler(capture: self) } }
+        struct Handler: LogHandler {
+            let capture: Capture
+            var metadata: Logger.Metadata = [:]
+            var logLevel: Logger.Level = .trace
+            subscript(metadataKey key: String) -> Logger.Metadata.Value? {
+                get { metadata[key] }
+                set { metadata[key] = newValue }
+            }
+            func log(
+                level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?,
+                source: String, file: String, function: String, line: UInt
+            ) { capture.record(level, message.description) }
+        }
+    }
+
+    private func site(withIndex: Bool) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if withIndex { try Data("<html>".utf8).write(to: root.appendingPathComponent("index.html")) }
+        return root
+    }
+
+    private func route(_ path: String) -> RouteRegistration {
+        RouteRegistration(method: "GET", path: path, kind: .http, source: "HealthController.index") { _ in .noContent }
+    }
+
+    @Test("GET / beside a mount at / with an index.html warns, naming the route")
+    func warns() throws {
+        let root = try site(withIndex: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = Capture()
+        _ = try DispatchBuilder.build(
+            routes: [route("/")], middleware: [],
+            assetMounts: [AssetMountRegistration.mount(at: "/", root: root.path)], logger: capture.logger)
+        #expect(capture.all.contains { $0.0 == .warning && $0.1.contains("never served") })
+    }
+
+    @Test("no warning without an index, or when the route is elsewhere")
+    func quietOtherwise() throws {
+        let bare = try site(withIndex: false)
+        let full = try site(withIndex: true)
+        defer {
+            try? FileManager.default.removeItem(at: bare)
+            try? FileManager.default.removeItem(at: full)
+        }
+        let capture = Capture()
+        _ = try DispatchBuilder.build(
+            routes: [route("/")], middleware: [], assetMounts: [AssetMountRegistration.mount(at: "/", root: bare.path)],
+            logger: capture.logger)
+        _ = try DispatchBuilder.build(
+            routes: [route("/health")], middleware: [], assetMounts: [AssetMountRegistration.mount(at: "/", root: full.path)],
+            logger: capture.logger)
+        #expect(!capture.all.contains { $0.1.contains("never served") })
     }
 }

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # A re-run keeps the reusable workflows (alula-cli's, alula-data's) as
+  # they were when the run started, so a fix to one of them needs a fresh
+  # run — this starts one without a commit.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

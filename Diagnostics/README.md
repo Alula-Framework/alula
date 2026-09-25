@@ -5,9 +5,11 @@
 
 Every error and warning Alula reports carries one of these codes. Each page
 says what the code means, why Alula rejects it, and how to fix it;
-`alula explain <code>` prints the same page offline. Hangar's query codes,
-`HGR-QUERY-4xxx`, are documented in
-[Hangar's repository](https://github.com/Alula-Framework/hangar/tree/main/Diagnostics).
+`alula explain <code>` prints the same page offline. Two packages keep their
+own: Hangar's query codes, `HGR-QUERY-4xxx`, in
+[Hangar's repository](https://github.com/Alula-Framework/hangar/tree/main/Diagnostics),
+and alula-data's cache and migration codes, `ALD-…`, in
+[alula-data's](https://github.com/Alula-Framework/alula-data/tree/main/Diagnostics).
 
 ## Dependency injection and graph construction
 

@@ -147,6 +147,7 @@ jobs:
           # The plugin *moves* its archive to --output-path, so the parent
           # has to exist first.
           mkdir -p ./docs
+          targets=()
           for target in AlulaCore AlulaConfig AlulaConfigCore AlulaWeb \
                         AlulaChannels AlulaChannelsProtocol \
                         AlulaChannelsClient AlulaChannelsTesting \
@@ -162,14 +163,18 @@ jobs:
                         AlulaMail AlulaMailTesting AlulaMailSMTP \
                         AlulaHTTPClient AlulaHTTPClientTesting \
                         AlulaOpenAPI; do
-            echo "::group::$target"
-            swift package --enable-all-traits \
-              --allow-writing-to-directory "./docs/$target" \
-              generate-documentation --target "$target" \
-              --include-extended-types \
-              --warnings-as-errors --output-path "./docs/$target"
-            echo "::endgroup::"
+            targets+=(--target "$target")
           done
+          # One invocation for all of them. It used to be one per module:
+          # thirty-three plugin runs, each checking the build again before
+          # extracting symbols — about nine seconds apiece of the job's
+          # twenty minutes. A warning in any module still fails the run, and
+          # the error names the module and the symbol.
+          swift package --enable-all-traits \
+            --allow-writing-to-directory ./docs \
+            generate-documentation "${targets[@]}" \
+            --include-extended-types \
+            --warnings-as-errors --output-path ./docs
 
   macos:
     name: Build on macOS

@@ -143,6 +143,8 @@ jobs:
       - name: Generate documentation
         env:
           ALULA_BUILD_DOCS: "1"
+        # bash for the target array: the container's default shell is sh.
+        shell: bash
         run: |
           # The plugin *moves* its archive to --output-path, so the parent
           # has to exist first.

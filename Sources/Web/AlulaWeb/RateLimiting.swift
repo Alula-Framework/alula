@@ -104,10 +104,21 @@ public struct RateLimiting: Middleware {
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {
         let quota = quota(context)
+        // A cost below zero is the application's bug — typically a count read
+        // from the request. It used to trap in the store. Refusing it through
+        // the store instead would meet `onStoreFailure`, whose default lets
+        // the request through: a client able to send a negative count would
+        // not be limited at all. So it spends one permit, and says so.
+        var spend = cost(context)
+        if spend < 0 {
+            context.logger.error(
+                "rate limit cost is negative; charging 1", metadata: ["cost": "\(spend)"])
+            spend = 1
+        }
         let decision: RateLimitDecision
         do {
             decision = try await store.consume(
-                key: key(context), cost: cost(context), quota: quota)
+                key: key(context), cost: spend, quota: quota)
         } catch {
             // Per request, at warning level, on purpose. A limiter that is
             // silently not enforcing is the failure nobody notices until the

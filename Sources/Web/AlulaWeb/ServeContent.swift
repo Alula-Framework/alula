@@ -389,7 +389,11 @@ enum RequestedByteRange: Equatable {
             return .satisfiable(max(0, size - n)..<size)
         case .from(let start, let throughInclusive):
             guard start < size else { return .unsatisfiable }
-            let endExclusive = throughInclusive.map { min($0 + 1, size) } ?? size
+            // Clamped *before* the +1: the end comes from the client, up to
+            // Int64.max, and `bytes=0-9223372036854775807` overflowed here —
+            // a trap any client could send to any file route. `start < size`
+            // above makes `size - 1` safe.
+            let endExclusive = throughInclusive.map { min($0, size - 1) + 1 } ?? size
             return .satisfiable(start..<endExclusive)
         }
     }

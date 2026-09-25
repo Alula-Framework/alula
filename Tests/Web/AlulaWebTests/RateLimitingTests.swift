@@ -165,6 +165,18 @@ struct RateLimitingTests {
         }
     }
 
+    /// A negative cost used to trap in the store and stop the server. Sent
+    /// through as a store failure instead, it would have met the default
+    /// `.allow` policy — a client able to make the cost negative would not
+    /// be limited at all. It is charged as one permit.
+    @Test("a negative cost is charged as one permit: no crash, and no way around the limit")
+    func negativeCostIsChargedOne() async throws {
+        let client = try client(cost: { _ in -5 })
+        #expect(await client.get("/search").status == .ok)
+        #expect(await client.get("/search").status == .ok)
+        #expect(await client.get("/search").status == .tooManyRequests)
+    }
+
     @Test("a cost over the burst is refused with no Retry-After, because none would help")
     func unsatisfiableCost() async throws {
         let client = try client(quota: .perMinute(5), cost: { _ in 99 })

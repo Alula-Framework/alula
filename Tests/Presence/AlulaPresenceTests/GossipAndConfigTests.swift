@@ -97,4 +97,20 @@ struct PresenceConfigurationTests {
             )
         }
     }
+
+    /// These used to trap at boot: `get(_:default:)` crashes on a value that
+    /// does not parse, and `inf` passed `> 0` and trapped as a Duration.
+    @Test("a malformed or infinite interval fails configuration instead of the process", arguments: [
+        ("alula.presence.heartbeat-interval-seconds", "5s"),
+        ("alula.presence.down-after-seconds", "fifteen"),
+        ("alula.presence.permdown-after-seconds", "inf"),
+        ("alula.presence.sweep-interval-seconds", "nan"),
+        ("alula.presence.sweep-interval-seconds", "0"),
+        ("alula.presence.membership-fallback-after-seconds", "inf"),
+    ])
+    func malformedIntervalsThrow(key: String, value: String) {
+        #expect(throws: (any Error).self) {
+            _ = try PresenceConfiguration(configuration: Configuration(values: [key: value]))
+        }
+    }
 }

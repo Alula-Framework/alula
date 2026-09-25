@@ -60,6 +60,40 @@ struct ServeContentRangeTests {
         #expect(try await collected(response) == Data("klmnopqrstuvwxyz".utf8))
     }
 
+    /// Any client could send this to any file route, and it crashed the
+    /// server: the end is parsed up to Int64.max, and `end + 1` overflowed.
+    @Test("an end at Int64.max is clamped like any overlong end, not an overflow")
+    func maximalEndIsClamped() async throws {
+        let response = serveContent(
+            for: request(headers: [.range: "bytes=0-9223372036854775807"]), descriptor())
+        #expect(response.status == .partialContent)
+        #expect(response.headers[.contentRange] == "bytes 0-25/26")
+        #expect(try await collected(response) == body)
+    }
+
+    /// Every combination of boundary values, for both ends and the size.
+    /// Resolution must never trap, and a satisfiable range must lie inside
+    /// the representation and be non-empty.
+    @Test("range resolution stays in bounds at every boundary")
+    func boundaries() {
+        let edges: [Int64] = [0, 1, 2, 25, 26, 27, Int64.max - 1, Int64.max]
+        for size in [0, 1, 26, Int64.max - 1, Int64.max] as [Int64] {
+            for start in edges {
+                for end in edges where end >= start {
+                    for range in [
+                        RequestedByteRange.from(start, throughInclusive: end),
+                        .from(start, throughInclusive: nil), .suffix(end),
+                    ] {
+                        if case .satisfiable(let r) = range.resolve(against: size) {
+                            #expect(r.lowerBound >= 0 && r.upperBound <= size && !r.isEmpty,
+                                    "\(range) against \(size) gave \(r)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test("a start at or past the size is 416 with the size advertised")
     func startPastEndIs416() async throws {
         // One framework produces a negative Content-Length here; another a

@@ -49,6 +49,10 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
     public func consume(key: String, cost: Int, quota: RateLimitQuota) async throws
         -> RateLimitDecision
     {
+        // Thrown, not trapped: GCRA's precondition used to stop the process.
+        guard cost >= 0 else {
+            throw RateLimitStoreError(reason: "a rate limit cost cannot be negative; got \(cost)")
+        }
         let now = now()
         return state.withLock { state in
             let outcome = GCRA.decide(now: now, tat: state.arrivals[key], cost: cost, quota: quota)

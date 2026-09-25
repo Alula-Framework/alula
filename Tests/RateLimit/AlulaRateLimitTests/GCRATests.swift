@@ -145,6 +145,22 @@ struct GCRATests {
         #expect(probe.remaining == 7)
         #expect(probe.tat == spent.tat, "probing spends nothing")
     }
+
+    @Test("a quota built from data is nil when the numbers cannot make one, rather than a trap")
+    func validatingQuota() {
+        #expect(RateLimitQuota(validating: 0, per: .seconds(60)) == nil)
+        #expect(RateLimitQuota(validating: 10, per: .zero) == nil)
+        #expect(RateLimitQuota(validating: 10, per: .seconds(60), burst: -1) == nil)
+        #expect(RateLimitQuota(validating: 10, per: .seconds(60))?.burst == 10)
+    }
+
+    @Test("the in-memory store refuses a negative cost with an error, not a trap")
+    func negativeCostThrows() async {
+        let store = InMemoryRateLimitStore()
+        await #expect(throws: RateLimitStoreError.self) {
+            _ = try await store.consume(key: "k", cost: -1, quota: .perMinute(5))
+        }
+    }
 }
 
 extension GCRA.Outcome {

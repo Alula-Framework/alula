@@ -4,6 +4,41 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] - 2026-09-25
+
+A sweep for traps that input from outside can reach — every
+`precondition` and `fatalError` in the framework, triaged by what can reach
+it. One was reachable by any client.
+
+### Security
+
+- **A `Range` header could crash the server.** `bytes=0-9223372036854775807`
+  overflowed while clamping the end of the range, and an overflow traps: one
+  request, from anyone, to any static-file or `serveContent` route, stopped
+  the process. The end is now clamped before it is incremented. Every
+  combination of boundary values is tested, and the regression test was
+  checked to crash without the fix.
+
+### Fixed
+
+- **A malformed presence interval fails configuration, not the process.**
+  `alula.presence.heartbeat-interval-seconds=5s` trapped at boot, and `inf`
+  passed the `> 0` check and trapped as a `Duration`. Both now throw the
+  configuration error (`ALU-CONFIG-5008` / `5013`) naming the problem.
+- **A negative rate-limit cost no longer crashes, and cannot bypass the
+  limit.** A cost computed from the request (a batch count) could go negative
+  and trap in the store. `RateLimiting` now charges it as one permit and logs
+  the application bug; failing it through the store would have met the
+  default `onStoreFailure: .allow` and let such requests through unlimited.
+  `InMemoryRateLimitStore` throws `RateLimitStoreError` for a direct call.
+
+### Added
+
+- **`RateLimitQuota(validating:per:burst:)`**, a failable initializer for a
+  quota built from data. `RateLimiting`'s `quota:` closure runs per request, and
+  the literal initializer's trap on a zero from a tenant's plan row would stop
+  the server.
+
 ## [0.51.0] - 2026-09-25
 
 The third phase of the diagnostics design: configuration checks, commands and

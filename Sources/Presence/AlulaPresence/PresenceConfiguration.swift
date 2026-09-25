@@ -100,14 +100,24 @@ public struct PresenceConfiguration: Sendable, Equatable {
     ///   disables the bound)
     public init(configuration: Configuration) throws {
         let nodeName = try configuration.getIfPresent("alula.presence.node-name", as: String.self)
-        let heartbeat = configuration.get("alula.presence.heartbeat-interval-seconds", default: 5.0)
-        let downAfter = configuration.get("alula.presence.down-after-seconds", default: 15.0)
-        let permdown = configuration.get("alula.presence.permdown-after-seconds", default: 300.0)
+        // `getIfPresent`, never `get(_:default:)`: the latter traps on a
+        // malformed value, and these are deployment settings — an
+        // environment variable of `5s` stopped the process at boot instead
+        // of failing it with the key named.
+        let heartbeat = try configuration.getIfPresent(
+            "alula.presence.heartbeat-interval-seconds", as: Double.self) ?? 5.0
+        let downAfter = try configuration.getIfPresent(
+            "alula.presence.down-after-seconds", as: Double.self) ?? 15.0
+        let permdown = try configuration.getIfPresent(
+            "alula.presence.permdown-after-seconds", as: Double.self) ?? 300.0
         let sweep = try configuration.getIfPresent("alula.presence.sweep-interval-seconds", as: Double.self)
         let fallback = try configuration.getIfPresent(
             "alula.presence.membership-fallback-after-seconds", as: Double.self)
 
-        guard heartbeat > 0, downAfter > 0, permdown > 0 else {
+        // Finite as well as positive: `inf` parses as a Double, passes `> 0`,
+        // and traps when it becomes a Duration.
+        let intervals = [heartbeat, downAfter, permdown] + [sweep].compactMap { $0 }
+        guard intervals.allSatisfy({ $0 > 0 && $0.isFinite }), fallback?.isFinite ?? true else {
             throw PresenceConfigurationError.nonPositiveInterval
         }
         guard downAfter > heartbeat else {
@@ -137,7 +147,7 @@ public enum PresenceConfigurationError: Error, CustomStringConvertible, Sendable
     public var description: String {
         switch self {
         case .nonPositiveInterval:
-            return "alula.presence intervals must be positive."
+            return "alula.presence intervals must be positive, finite numbers of seconds."
         case .downAfterNotAboveHeartbeat(let heartbeat, let downAfter):
             return """
             alula.presence.down-after-seconds (\(downAfter)) must exceed \

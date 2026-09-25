@@ -52,6 +52,25 @@ public struct RateLimitQuota: Sendable, Equatable {
         self.burst = burst
     }
 
+    /// A quota built from data — a tenant's plan read from a row, a number
+    /// from an admin form — or `nil` when the numbers cannot make one.
+    ///
+    /// The unlabelled initializer traps on a non-positive value, which is
+    /// right for a literal and wrong here: `RateLimiting`'s `quota:` closure
+    /// runs per request, and one bad row would stop the server. Fall back to
+    /// a literal quota when this returns `nil`:
+    ///
+    /// ```swift
+    /// RateLimiting(store: store, quota: { context in
+    ///     RateLimitQuota(validating: context.plan.requestsPerMinute, per: .seconds(60))
+    ///         ?? .perMinute(60)
+    /// }, key: { $0.tenantID })
+    /// ```
+    public init?(validating permits: Int, per period: Duration, burst: Int? = nil) {
+        guard permits > 0, period > .zero, (burst ?? permits) > 0 else { return nil }
+        self.init(permits: permits, per: period, burst: burst)
+    }
+
     public static func perSecond(_ permits: Int, burst: Int? = nil) -> RateLimitQuota {
         RateLimitQuota(permits: permits, per: .seconds(1), burst: burst)
     }

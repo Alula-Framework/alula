@@ -75,7 +75,13 @@ struct DiagnosticCatalogTests {
         let ids = DiagnosticCode.all.map(\.id)
         #expect(Set(ids).count == ids.count)
         for id in ids {
-            #expect(id.wholeMatch(of: /(ALU-(DI|WEB|OAPI|CONFIG|SEC|CMD|LIFE)|HGR-QUERY)-\d{4}/) != nil, "\(id)")
+            #expect(id.wholeMatch(of: /(ALU-(DI|WEB|OAPI|CONFIG|SEC|CMD|LIFE|SCHED)|HGR-QUERY)-\d{4}/) != nil, "\(id)")
+            let family = String(id.split(separator: "-").dropLast().joined(separator: "-"))
+            let digit: [String: Character] = [
+                "ALU-DI": "1", "ALU-WEB": "2", "ALU-OAPI": "3", "HGR-QUERY": "4", "ALU-CONFIG": "5",
+                "ALU-SEC": "6", "ALU-CMD": "7", "ALU-LIFE": "8", "ALU-SCHED": "9",
+            ]
+            #expect(id.split(separator: "-").last?.first == digit[family], "\(id) is numbered outside its family")
         }
         #expect(DiagnosticCode.named("alu-di-1001") == .missingProvider)
     }

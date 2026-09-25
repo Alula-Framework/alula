@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxMacros
 
@@ -16,8 +18,8 @@ public struct RouteMacro: PeerMacro {
         let name = node.attributeName.as(IdentifierTypeSyntax.self)?.name.text ?? "Route"
 
         guard let function = declaration.as(FunctionDeclSyntax.self) else {
-            context.diagnoseError(
-                "route.notfunction",
+            context.diagnose(
+                .routeOutsideController,
                 "@\(name) can only be attached to a controller method.",
                 at: node
             )
@@ -45,8 +47,8 @@ public struct RouteMacro: PeerMacro {
         guard let enclosing = context.lexicalContext.first,
             hasControllerAttribute(enclosing)
         else {
-            context.diagnoseError(
-                "route.nocontroller",
+            context.diagnose(
+                .routeOutsideController,
                 """
                 @\(name) registers a route only on a method of a type annotated @Controller, \
                 which is what reads these attributes. This method's enclosing type is not \

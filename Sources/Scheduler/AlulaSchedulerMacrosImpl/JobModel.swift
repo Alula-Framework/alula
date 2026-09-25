@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import Foundation
 import SwiftSyntax
 import SwiftSyntaxMacros
@@ -45,8 +47,8 @@ enum JobScanning {
             // Neither is what "run this twice on two schedules" should mean,
             // and neither said so.
             if scheduled.count > 1 {
-                context.diagnoseError(
-                    "scheduled.duplicate",
+                context.diagnose(
+                    .invalidScheduledMethod,
                     """
                     '\(function.name.text)' has \(scheduled.count) @Scheduled attributes, and \
                     a job is named after its method — so they would collide rather \
@@ -76,8 +78,8 @@ enum JobScanning {
         // enclosing component's injected properties — there is no request,
         // no caller, and nothing to pass.
         guard function.signature.parameterClause.parameters.isEmpty else {
-            context.diagnoseError(
-                "scheduled.parameters",
+            context.diagnose(
+                .invalidScheduledMethod,
                 """
                 @Scheduled method '\(name)' must take no parameters. A scheduled job has \
                 no caller to supply them — inject what it needs into the enclosing type \
@@ -92,8 +94,8 @@ enum JobScanning {
             returnClause.type.trimmedDescription != "Void",
             returnClause.type.trimmedDescription != "()"
         {
-            context.diagnoseError(
-                "scheduled.returns",
+            context.diagnose(
+                .invalidScheduledMethod,
                 """
                 @Scheduled method '\(name)' returns \
                 '\(returnClause.type.trimmedDescription)', which nothing reads. Make it \
@@ -104,8 +106,8 @@ enum JobScanning {
         }
 
         guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
-            context.diagnoseError(
-                "scheduled.noschedule",
+            context.diagnose(
+                .missingOrConflictingSchedule,
                 """
                 @Scheduled needs a schedule: a cron expression — @Scheduled("0 0 3 * * *") \
                 — or an interval — @Scheduled(every: .minutes(5)).
@@ -128,8 +130,8 @@ enum JobScanning {
             case nil:
                 guard let literal = value.as(StringLiteralExprSyntax.self)?.representedLiteralValue
                 else {
-                    context.diagnoseError(
-                        "scheduled.notliteral",
+                    context.diagnose(
+                        .nonLiteralScheduleArgument,
                         """
                         A cron expression must be a string literal so it can be checked at \
                         build time. For a schedule only known at runtime, build a \
@@ -149,8 +151,8 @@ enum JobScanning {
                 guard
                     let literal = value.as(StringLiteralExprSyntax.self)?.representedLiteralValue
                 else {
-                    context.diagnoseError(
-                        "scheduled.tznotliteral",
+                    context.diagnose(
+                        .nonLiteralScheduleArgument,
                         """
                         A time zone must be a string literal so it can be checked at build \
                         time. For a zone only known at runtime, build a \
@@ -160,8 +162,8 @@ enum JobScanning {
                     return nil
                 }
                 guard TimeZone(identifier: literal) != nil else {
-                    context.diagnoseError(
-                        "scheduled.timezone",
+                    context.diagnose(
+                        .invalidSchedule,
                         """
                         "\(literal)" is not an IANA time zone identifier. It would fall back \
                         to GMT at runtime with nothing said. Identifiers look like \
@@ -180,8 +182,8 @@ enum JobScanning {
                 // `.once` — the opposite of what was asked for, and with no
                 // diagnostic, unlike the cron argument beside it.
                 guard let literal = value.as(BooleanLiteralExprSyntax.self) else {
-                    context.diagnoseError(
-                        "scheduled.notliteralscope",
+                    context.diagnose(
+                        .nonLiteralScheduleArgument,
                         """
                         onEveryNode must be true or false written out, so the scope is \
                         settled at build time. For a scope only known at runtime, build \
@@ -201,8 +203,8 @@ enum JobScanning {
         // Exactly one schedule.
         switch (cronText, everyText) {
         case (nil, nil):
-            context.diagnoseError(
-                "scheduled.noschedule",
+            context.diagnose(
+                .missingOrConflictingSchedule,
                 """
                 @Scheduled needs a schedule: a cron expression — @Scheduled("0 0 3 * * *") \
                 — or an interval — @Scheduled(every: .minutes(5)).
@@ -210,8 +212,8 @@ enum JobScanning {
                 at: attribute)
             return nil
         case (.some, .some):
-            context.diagnoseError(
-                "scheduled.twoschedules",
+            context.diagnose(
+                .missingOrConflictingSchedule,
                 """
                 @Scheduled has both a cron expression and an 'every:' interval. Pick one — \
                 they describe the same thing two different ways.
@@ -229,10 +231,10 @@ enum JobScanning {
             do {
                 _ = try CronValidation.validate(cronText)
             } catch let error as CronValidationError {
-                context.diagnoseError("scheduled.cron", error.message, at: attribute)
+                context.diagnose(.invalidSchedule, error.message, at: attribute)
                 return nil
             } catch {
-                context.diagnoseError("scheduled.cron", "\(error)", at: attribute)
+                context.diagnose(.invalidSchedule, "\(error)", at: attribute)
                 return nil
             }
             schedule = .cron(cronText, timeZone: timeZoneText)

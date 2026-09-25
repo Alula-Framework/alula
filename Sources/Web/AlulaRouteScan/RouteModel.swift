@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import SwiftSyntax
 
 /// The route attributes `@Controller` consumes, and what each means.
@@ -114,9 +115,9 @@ public enum RouteScanning {
                 let kind = RouteKind(rawValue: name)
             else { continue }
             guard let path = literalPath(of: attribute) else {
-                diagnostics.error(
-                    "route.nonliteral",
-                    "@\(name) requires a string-literal path — the route table is built at compile time (§4).",
+                diagnostics.diagnose(
+                    .nonLiteralRoutePath,
+                    "@\(name) requires a string-literal path — the route table is built at compile time.",
                     at: attribute
                 )
                 continue
@@ -192,8 +193,8 @@ public enum RouteScanning {
             // expansion the author cannot see, at a line they did not write.
             // Neither belongs in a URL path anyway.
             if mapping.path.contains("\"") || mapping.path.contains("\\") {
-                diagnostics.error(
-                    "route.path",
+                diagnostics.diagnose(
+                    .invalidRoutePath,
                     """
                     @\(mapping.kind.rawValue) path "\(mapping.path)" contains a quote or a \
                     backslash. Neither is legal unescaped in a URL path; percent-encode it \
@@ -211,16 +212,16 @@ public enum RouteScanning {
             $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class)
         }
         if isTypeLevel {
-            diagnostics.error(
-                "route.static",
+            diagnostics.diagnose(
+                .invalidHandlerDeclaration,
                 "Route handler '\(name)' must be an instance method — the route factory constructs a controller instance to call it on.",
                 at: function
             )
             return []
         }
         if function.modifiers.contains(where: { $0.name.tokenKind == .keyword(.mutating) }) {
-            diagnostics.error(
-                "route.mutating",
+            diagnostics.diagnose(
+                .invalidHandlerDeclaration,
                 "Route handler '\(name)' must not be mutating — the controller is built for each request and discarded after it, so a change to its properties would outlive nothing. Keep state in an injected component or the request context.",
                 at: function
             )
@@ -232,8 +233,8 @@ public enum RouteScanning {
             first.firstName.tokenKind == .wildcard,
             typeName(first.type).hasSuffix("RequestContext")
         else {
-            diagnostics.error(
-                "route.signature",
+            diagnostics.diagnose(
+                .invalidHandlerParameter,
                 "Route handler '\(name)' must take '_ context: RequestContext' as its first parameter.",
                 at: function
             )
@@ -264,8 +265,8 @@ public enum RouteScanning {
             // whatever type the segment was meant to be. Both readings are
             // defensible, which is why this refuses rather than picking one.
             if (label == "body" || label == "query"), declaredSegments.contains(label) {
-                diagnostics.error(
-                    "route.reservedsegment",
+                diagnostics.diagnose(
+                    .invalidHandlerParameter,
                     """
                     Route handler '\(name)' takes '\(label):', which is reserved for the \
                     request \(label == "body" ? "body" : "query string") — but this route's \
@@ -278,8 +279,8 @@ public enum RouteScanning {
             }
             if label == "body" {
                 guard bodyTypeText == nil else {
-                    diagnostics.error(
-                        "route.signature",
+                    diagnostics.diagnose(
+                        .invalidHandlerParameter,
                         "Route handler '\(name)' declares 'body:' more than once.",
                         at: function)
                     return []
@@ -290,8 +291,8 @@ public enum RouteScanning {
             }
             if label == "query" {
                 guard queryTypeText == nil else {
-                    diagnostics.error(
-                        "route.signature",
+                    diagnostics.diagnose(
+                        .invalidHandlerParameter,
                         "Route handler '\(name)' declares 'query:' more than once.",
                         at: function)
                     return []
@@ -301,8 +302,8 @@ public enum RouteScanning {
                 continue
             }
             guard parameter.firstName.tokenKind != .wildcard else {
-                diagnostics.error(
-                    "route.signature",
+                diagnostics.diagnose(
+                    .invalidHandlerParameter,
                     """
                     Route handler '\(name)' has an unlabeled parameter after the context. \
                     Label it 'body:' to decode it from the request body, or name it after a \
@@ -318,8 +319,8 @@ public enum RouteScanning {
                     : "declared: "
                         + declaredSegments.sorted().map { ":\($0)" }
                         .joined(separator: ", ")
-                diagnostics.error(
-                    "route.pathparameter",
+                diagnostics.diagnose(
+                    .invalidHandlerParameter,
                     """
                     Route handler '\(name)' takes '\(label):', but no path segment is named \
                     ':\(label)' — \(available). A path parameter's label is the segment it \
@@ -343,8 +344,8 @@ public enum RouteScanning {
         // all until a runtime refusal nobody could explain.
         for mapping in mappings where mapping.kind.isUpgrade {
             if bodyTypeText != nil {
-                diagnostics.error(
-                    "route.upgradebody",
+                diagnostics.diagnose(
+                    .invalidHandlerParameter,
                     """
                     A @\(mapping.kind.rawValue) handler cannot take a 'body:' parameter: an \
                     upgrade request has an empty body by construction (RFC 6455 §4.1), so \
@@ -360,8 +361,8 @@ public enum RouteScanning {
             // rest is the type checker's — it just used to report inside the
             // expansion rather than at the handler.
             guard returnType != nil else {
-                diagnostics.error(
-                    "route.upgradereturn",
+                diagnostics.diagnose(
+                    .invalidHandlerDeclaration,
                     """
                     A @\(mapping.kind.rawValue) handler must return something conforming to \
                     WebSocketUpgradeHandler — that is what the generated route hands the \
@@ -418,9 +419,9 @@ public enum RouteScanning {
         else { return "" }
         if first.expression.trimmedDescription == "nil" { return "" }
         guard let literal = first.expression.as(StringLiteralExprSyntax.self) else {
-            diagnostics.error(
-                "controller.path.nonliteral",
-                "@Controller's path must be a string literal — the route table is built at compile time (§4).",
+            diagnostics.diagnose(
+                .nonLiteralRoutePath,
+                "@Controller's path must be a string literal — the route table is built at compile time.",
                 at: first.expression
             )
             return ""
@@ -428,8 +429,8 @@ public enum RouteScanning {
         var path = ""
         for segment in literal.segments {
             guard let text = segment.as(StringSegmentSyntax.self) else {
-                diagnostics.error(
-                    "controller.path.nonliteral",
+                diagnostics.diagnose(
+                    .nonLiteralRoutePath,
                     "@Controller's path must be a plain string literal, with no interpolation.",
                     at: first.expression
                 )
@@ -439,8 +440,8 @@ public enum RouteScanning {
         }
         guard !path.isEmpty, path != "/" else { return "" }
         guard path.hasPrefix("/") else {
-            diagnostics.error(
-                "controller.path",
+            diagnostics.diagnose(
+                .invalidRoutePath,
                 "@Controller path '\(path)' must start with '/'.",
                 at: node
             )
@@ -516,6 +517,17 @@ public enum RouteScanning {
     /// at `Router.init` (Alula Core's established split: per-literal syntax
     /// is a macro-time diagnostic, conflicts across combination are a
     /// startup error, same as cross-controller route conflicts already are).
+    /// A path's structural identity, as the runtime router compares it:
+    /// parameter *positions* matter, names do not — `/u/:a` and `/u/:b`
+    /// claim the same requests, so they are the same route. Kept in lockstep
+    /// with `RoutePattern.shape`; a build that compared paths as written let
+    /// that pair through, and the application failed at startup instead.
+    public static func shape(of path: String) -> String {
+        "/" + path.split(separator: "/", omittingEmptySubsequences: true).map { segment in
+            segment.hasPrefix(":") ? ":" : String(segment)
+        }.joined(separator: "/")
+    }
+
     public static func combinePaths(_ base: String, _ method: String) -> String {
         guard !base.isEmpty else { return method }
         guard !method.isEmpty, method != "/" else { return base }
@@ -541,8 +553,8 @@ public enum RouteScanning {
         diagnostics: some RouteDiagnostics
     ) {
         guard path.hasPrefix("/") else {
-            diagnostics.error(
-                "route.path",
+            diagnostics.diagnose(
+                .invalidRoutePath,
                 "@\(name) path '\(path)' must start with '/'.",
                 at: node
             )
@@ -553,8 +565,8 @@ public enum RouteScanning {
         for (index, segment) in segments.enumerated() {
             if segment == "**" {
                 if index != segments.count - 1 {
-                    diagnostics.error(
-                        "route.path",
+                    diagnostics.diagnose(
+                        .invalidRoutePath,
                         "@\(name) path '\(path)': '**' is only allowed as the final segment.",
                         at: node
                     )
@@ -562,14 +574,14 @@ public enum RouteScanning {
             } else if segment.hasPrefix(":") {
                 let parameter = String(segment.dropFirst())
                 if parameter.isEmpty {
-                    diagnostics.error(
-                        "route.path",
+                    diagnostics.diagnose(
+                        .invalidRoutePath,
                         "@\(name) path '\(path)' has a ':' segment with no parameter name.",
                         at: node
                     )
                 } else if !seenParameters.insert(parameter).inserted {
-                    diagnostics.error(
-                        "route.path",
+                    diagnostics.diagnose(
+                        .invalidRoutePath,
                         "@\(name) path '\(path)' binds ':\(parameter)' more than once.",
                         at: node
                     )

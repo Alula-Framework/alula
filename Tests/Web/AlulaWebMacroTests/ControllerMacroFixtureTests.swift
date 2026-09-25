@@ -17,6 +17,7 @@
 // The container-era `init(_alula:)`, the two `_alulaRegister` overloads
 // and the `_AlulaRegistrable` conformance are all gone.
 
+import Foundation
 import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import SwiftSyntaxMacros
@@ -221,8 +222,8 @@ struct ControllerMacroFixtureTests {
             diagnostics: [
                 // Once. It used to be twice — @Controller's scan and the peer
                 // marker both validated, at the identical line and column.
-                DiagnosticSpec(
-                    message: "@GetRoute requires a string-literal path — the route table is built at compile time (§4).",
+                DiagnosticSpec.coded(.nonLiteralRoutePath,
+                    message: "@GetRoute requires a string-literal path — the route table is built at compile time.",
                     line: 3, column: 5
                 )
             ],
@@ -251,7 +252,7 @@ struct ControllerMacroFixtureTests {
             diagnostics: [
                 // Once. It used to be twice — the peer marker validated the
                 // same method @Controller's scan already had.
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidHandlerDeclaration,
                     message: "Route handler 'handler' must be an instance method — the route factory constructs a controller instance to call it on.",
                     line: 3, column: 5
                 )
@@ -281,7 +282,7 @@ struct ControllerMacroFixtureTests {
             diagnostics: [
                 // Once. It used to be twice — the peer marker validated the
                 // same method @Controller's scan already had.
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidHandlerParameter,
                     message: "Route handler 'handler' must take '_ context: RequestContext' as its first parameter.",
                     line: 3, column: 5
                 )
@@ -309,7 +310,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.duplicateRoute,
                     message: "Route 'GET /same' is declared by both 'one' and 'two' in this controller.",
                     line: 5, column: 5
                 )
@@ -331,10 +332,78 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.unsupportedControllerDeclaration,
                     message: "@Controller requires a final class (or a struct). Mark 'OpenController' final.",
-                    line: 2, column: 7
+                    line: 2, column: 7,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
                 )
+            ],
+            macroSpecs: testMacros
+        )
+    }
+
+    /// The fix-it is the whole point of an unambiguous diagnostic: applying
+    /// it must produce code the macro accepts, with `final` after any
+    /// existing modifiers.
+    @Test("the non-final fix-it inserts `final` where Swift expects it", arguments: [
+        ("@Controller\nclass OpenController {\n}", "@Controller\nfinal class OpenController {\n}"),
+        ("@Controller\npublic class OpenController {\n}", "@Controller\npublic final class OpenController {\n}"),
+    ])
+    func nonFinalFixItApplies(source: String, fixed: String) {
+        let column = source.contains("public class") ? 14 : 7
+        assertMacroExpansion(
+            source,
+            expandedSource: source.replacingOccurrences(of: "@Controller\n", with: ""),
+            diagnostics: [
+                DiagnosticSpec.coded(.unsupportedControllerDeclaration,
+                    message: "@Controller requires a final class (or a struct). Mark 'OpenController' final.",
+                    line: 2, column: column,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
+                )
+            ],
+            macroSpecs: testMacros,
+            applyFixIts: ["mark the class 'final'"],
+            fixedSource: fixed
+        )
+    }
+
+    /// A role check needs a principal, and `.public` establishes none.
+    @Test("roles on a public route are ALU-SEC-6001")
+    func rolesOnPublicRoute() {
+        assertMacroExpansion(
+            """
+            @Controller("/admin")
+            struct AdminController {
+                @GetRoute("/invoices", pipelines: [.public], roles: [AppRole.billing])
+                func invoices(_ context: RequestContext) -> String { "x" }
+            }
+            """,
+            expandedSource: """
+            struct AdminController {
+                func invoices(_ context: RequestContext) -> String { "x" }
+
+                init() {
+                }
+
+                static func _alulaRoute_invoices_0(_ make: @escaping @Sendable (AlulaWeb.RequestContext) throws -> Self) -> AlulaWeb.RouteRegistration {
+                    AlulaWeb.RouteRegistration(method: "GET", path: "/admin/invoices", kind: .http, source: String(reflecting: Self.self) + ".invoices", pipelines: [.public]) { context in
+                        let controller = try make(context)
+                        let result = controller.invoices(context)
+                        return try AlulaWeb.encodeResponse(result, for: context)
+                    }
+                }
+
+                static func alulaRoutes(_ make: @escaping @Sendable (AlulaWeb.RequestContext) throws -> Self) -> [AlulaWeb.RouteRegistration] {
+                    [
+                        Self._alulaRoute_invoices_0(make)
+                    ]
+                }
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec.coded(.rolesWithoutAuthentication,
+                    message: "'invoices' requires roles but runs on '.public', which establishes no principal — every request would be rejected. Give it a lane that authenticates, or drop the roles.",
+                    line: 3, column: 5)
             ],
             macroSpecs: testMacros
         )
@@ -373,7 +442,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidRoutePath,
                     message: "@GetRoute path 'users' must start with '/'.",
                     line: 3, column: 5
                 )
@@ -546,7 +615,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidRoutePath,
                     message: "@Controller path 'users' must start with '/'.",
                     line: 1, column: 1
                 )
@@ -588,8 +657,8 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
-                    message: "@Controller's path must be a string literal — the route table is built at compile time (§4).",
+                DiagnosticSpec.coded(.nonLiteralRoutePath,
+                    message: "@Controller's path must be a string literal — the route table is built at compile time.",
                     line: 1, column: 13
                 )
             ],
@@ -622,7 +691,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.duplicateRoute,
                     message: "Route 'GET /users/:id' is declared by both 'one' and 'two' in this controller.",
                     line: 5, column: 5
                 )
@@ -652,7 +721,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.routeOutsideController,
                     message: """
                         @GetRoute registers a route only on a method of a type annotated \
                         @Controller, which is what reads these attributes. This method's \
@@ -685,7 +754,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.routeOutsideController,
                     message: """
                         @PostRoute registers a route only on a method of a type annotated \
                         @Controller, which is what reads these attributes. This method's \
@@ -728,7 +797,7 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidHandlerParameter,
                     message: """
                         A @WebSocketRoute handler cannot take a 'body:' parameter: an upgrade \
                         request has an empty body by construction (RFC 6455 §4.1), so decoding \
@@ -763,7 +832,7 @@ struct ControllerMacroFixtureTests {
             }
             """#,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidRoutePath,
                     message: #"""
                         @GetRoute path "/a\b" contains a quote or a backslash. Neither is legal unescaped in a URL path; percent-encode it if it is genuinely part of the path.
                         """#,
@@ -899,11 +968,11 @@ struct ControllerMacroFixtureTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.pipelineNarrowing,
                     message: """
                         'index' replaces its controller's pipelines and drops .authenticated, so this route runs without authentication. A route's 'pipelines:' replaces the controller's rather than adding to it. If that is intended, say 'pipelines: [.public]' — that is how a deliberately public route records the decision.
                         """,
-                    line: 3, column: 5, severity: .warning
+                    line: 3, column: 5
                 )
             ],
             macroSpecs: testMacros
@@ -979,7 +1048,7 @@ struct ControllerMacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidHandlerParameter,
                     message: """
                         Route handler 'search' takes 'query:', which is reserved for the request \
                         query string — but this route's path also declares a ':query' segment, so \

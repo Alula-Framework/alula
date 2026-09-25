@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import SwiftSyntax
 
 /// Where a route-scanning diagnostic goes.
@@ -21,6 +22,6 @@ import SwiftSyntax
 /// conformers hold a `MacroExpansionContext` or a source location converter,
 /// and neither wants the node erased.
 public protocol RouteDiagnostics {
-    func error(_ id: String, _ message: String, at node: some SyntaxProtocol)
-    func warning(_ id: String, _ message: String, at node: some SyntaxProtocol)
+    /// Reports `code` at `node`; the code decides the severity.
+    func diagnose(_ code: DiagnosticCode, _ message: String, at node: some SyntaxProtocol)
 }

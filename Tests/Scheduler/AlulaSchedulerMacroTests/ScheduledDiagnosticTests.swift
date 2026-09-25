@@ -9,6 +9,7 @@ import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosGenericTestSupport
+import AlulaDiagnostics
 import Testing
 
 @testable import AlulaSchedulerMacrosImpl
@@ -23,6 +24,7 @@ struct ScheduledDiagnosticTests {
 
     private func expectDiagnostic(
         _ source: String,
+        _ code: DiagnosticCode,
         _ expectedMessageFragment: String,
         sourceLocation: Testing.SourceLocation = #_sourceLocation
     ) {
@@ -32,8 +34,8 @@ struct ScheduledDiagnosticTests {
             failureHandler: { failure in messages.append(failure.message) },
             fileID: #fileID, filePath: #filePath, line: UInt(sourceLocation.line), column: 1)
         #expect(
-            messages.contains { $0.contains(expectedMessageFragment) },
-            "no diagnostic mentioning \"\(expectedMessageFragment)\"; got: \(messages)",
+            messages.contains { $0.contains("[\(code.id)]") && $0.contains(expectedMessageFragment) },
+            "no \(code.id) diagnostic mentioning \"\(expectedMessageFragment)\"; got: \(messages)",
             sourceLocation: sourceLocation)
     }
 
@@ -48,7 +50,7 @@ struct ScheduledDiagnosticTests {
                 func run() {}
             }
             """,
-            "hour")
+            .invalidSchedule, "hour")
     }
 
     @Test("the wrong number of fields says how many it found")
@@ -61,7 +63,7 @@ struct ScheduledDiagnosticTests {
                 func run() {}
             }
             """,
-            "found 2")
+            .invalidSchedule, "found 2")
     }
 
     @Test("a non-literal expression explains the runtime alternative")
@@ -74,7 +76,7 @@ struct ScheduledDiagnosticTests {
                 func run() {}
             }
             """,
-            "ScheduledJobRegistration")
+            .nonLiteralScheduleArgument, "ScheduledJobRegistration")
     }
 
     @Test("a job taking parameters is refused, naming the alternative")
@@ -87,7 +89,7 @@ struct ScheduledDiagnosticTests {
                 func run(now: Date) {}
             }
             """,
-            "@Inject")
+            .invalidScheduledMethod, "@Inject")
     }
 
     @Test("a job returning a value is refused, because nothing reads it")
@@ -100,7 +102,7 @@ struct ScheduledDiagnosticTests {
                 func run() -> Int { 0 }
             }
             """,
-            "nothing reads")
+            .invalidScheduledMethod, "nothing reads")
     }
 
     @Test("both a cron expression and an interval is refused")
@@ -113,7 +115,7 @@ struct ScheduledDiagnosticTests {
                 func run() {}
             }
             """,
-            "Pick one")
+            .missingOrConflictingSchedule, "Pick one")
     }
 
     @Test("@Scheduler with no jobs says so rather than silently doing nothing")
@@ -125,7 +127,7 @@ struct ScheduledDiagnosticTests {
                 func run() {}
             }
             """,
-            "schedules nothing")
+            .invalidScheduler, "schedules nothing")
     }
 
     @Test("@Scheduled on something that is not a method is refused")
@@ -138,6 +140,6 @@ struct ScheduledDiagnosticTests {
                 var value: Int = 0
             }
             """,
-            "can only be attached to a method")
+            .invalidScheduledMethod, "can only be attached to a method")
     }
 }

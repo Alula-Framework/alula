@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -24,8 +25,8 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard declaration.is(ClassDeclSyntax.self) || declaration.is(StructDeclSyntax.self) else {
-            context.diagnoseError(
-                "scheduler.notatype",
+            context.diagnose(
+                .invalidScheduler,
                 "@Scheduler can only be attached to a class or struct.",
                 at: node)
             return []
@@ -33,8 +34,8 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
 
         let jobs = JobScanning.scanJobs(of: declaration.memberBlock.members, in: context)
         guard !jobs.isEmpty else {
-            context.diagnoseError(
-                "scheduler.nojobs",
+            context.diagnose(
+                .invalidScheduler,
                 """
                 @Scheduler type has no @Scheduled methods, so it schedules nothing. Add \
                 one, or drop @Scheduler and use @Component if this is an ordinary \

@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import AlulaRouteScan
 import SwiftSyntax
 import SwiftSyntaxMacros
@@ -8,11 +10,7 @@ import SwiftSyntaxMacros
 struct MacroRouteDiagnostics<Context: MacroExpansionContext>: RouteDiagnostics {
     let context: Context
 
-    func error(_ id: String, _ message: String, at node: some SyntaxProtocol) {
-        context.diagnoseError(id, message, at: node)
-    }
-
-    func warning(_ id: String, _ message: String, at node: some SyntaxProtocol) {
-        context.diagnoseWarning(id, message, at: node)
+    func diagnose(_ code: DiagnosticCode, _ message: String, at node: some SyntaxProtocol) {
+        context.diagnose(code, message, at: node)
     }
 }

@@ -18,6 +18,10 @@
 /// | `ALU-SEC-6xxx` | Security and authentication composition |
 /// | `ALU-CMD-7xxx` | Commands |
 /// | `ALU-LIFE-8xxx` | Lifecycle and module composition |
+/// | `ALU-SCHED-9xxx` | Scheduled jobs |
+///
+/// A code's first digit is its family's, so a code read out of context
+/// still says where it belongs.
 public struct DiagnosticCode: Sendable, Hashable, CustomStringConvertible {
     public let id: String
     /// The page's title, e.g. "No module provides a required type".
@@ -74,6 +78,44 @@ extension DiagnosticCode {
     public static let removedScopeArgument = DiagnosticCode("ALU-DI-1013", "The removed `scope:` argument")
     public static let removedQualifierArgument = DiagnosticCode(
         "ALU-DI-1014", "The removed type-level `qualifier:` argument")
+    public static let indistinguishableInjections = DiagnosticCode(
+        "ALU-DI-1015", "Two @Inject properties of one type")
+    public static let untypedInjection = DiagnosticCode(
+        "ALU-DI-1016", "An @Inject or @ConfigValue property has no written type")
+    public static let uninitializedStoredProperty = DiagnosticCode(
+        "ALU-DI-1017", "A stored property the generated initializer does not assign")
+    public static let unsupportedComponentDeclaration = DiagnosticCode(
+        "ALU-DI-1018", "@Component on something other than a struct or final class")
+    public static let invalidInjectionTarget = DiagnosticCode(
+        "ALU-DI-1019", "@Inject or @ConfigValue on something other than a stored instance property")
+
+    // Controllers, routes, middleware, request binding.
+    public static let duplicateRoute = DiagnosticCode("ALU-WEB-2001", "Two handlers for one method and path")
+    public static let invalidHandlerParameter = DiagnosticCode(
+        "ALU-WEB-2002", "A route handler parameter Alula cannot bind")
+    public static let unsupportedControllerDeclaration = DiagnosticCode(
+        "ALU-WEB-2003", "@Controller or @Middleware on something other than a struct or final class")
+    public static let invalidRoutePath = DiagnosticCode("ALU-WEB-2004", "A malformed route path")
+    public static let nonLiteralRoutePath = DiagnosticCode(
+        "ALU-WEB-2005", "A route path that is not a string literal")
+    public static let invalidHandlerDeclaration = DiagnosticCode(
+        "ALU-WEB-2006", "A route handler declared in a way Alula cannot call")
+    public static let routeOutsideController = DiagnosticCode(
+        "ALU-WEB-2007", "A route attribute outside a @Controller")
+    public static let pipelineNarrowing = DiagnosticCode(
+        "ALU-WEB-2008", "A route's pipelines drop its controller's authentication", .warning)
+
+    // Configuration.
+    public static let configValueWithoutKey = DiagnosticCode(
+        "ALU-CONFIG-5001", "@ConfigValue without a literal key")
+    public static let invalidSettingsDeclaration = DiagnosticCode(
+        "ALU-CONFIG-5002", "@Settings declared in a way Alula cannot bind")
+    public static let invalidSettingsProperty = DiagnosticCode(
+        "ALU-CONFIG-5003", "A @Settings property Alula cannot bind")
+
+    // Security and authentication composition.
+    public static let rolesWithoutAuthentication = DiagnosticCode(
+        "ALU-SEC-6001", "A route requires roles but authenticates no one")
 
     // Lifecycle and module composition.
     public static let moduleCycle = DiagnosticCode("ALU-LIFE-8001", "Modules need each other in a cycle")
@@ -82,12 +124,33 @@ extension DiagnosticCode {
     public static let uncollectedContribution = DiagnosticCode(
         "ALU-LIFE-8003", "A module contributes something nothing collects")
 
+    // Scheduled jobs.
+    public static let invalidSchedule = DiagnosticCode(
+        "ALU-SCHED-9001", "A cron expression or time zone that does not parse")
+    public static let missingOrConflictingSchedule = DiagnosticCode(
+        "ALU-SCHED-9002", "@Scheduled with no schedule, or with two")
+    public static let nonLiteralScheduleArgument = DiagnosticCode(
+        "ALU-SCHED-9003", "A @Scheduled argument that is not a literal")
+    public static let invalidScheduledMethod = DiagnosticCode(
+        "ALU-SCHED-9004", "@Scheduled on a method Alula cannot run as a job")
+    public static let invalidScheduler = DiagnosticCode(
+        "ALU-SCHED-9005", "@Scheduler on something that schedules nothing")
+
     /// Every code Alula defines, in order.
     public static let all: [DiagnosticCode] = [
         .missingProvider, .ambiguousProvider, .componentCycle, .namedProviderLacksType,
         .namedProviderNotIncluded, .namedProviderAmbiguous, .optionalInjection,
         .unscannedInjection, .ambiguousExistential, .untypedProvidedProperty,
         .nonPublicCrossModuleComponent, .removedScopeArgument, .removedQualifierArgument,
+        .indistinguishableInjections, .untypedInjection, .uninitializedStoredProperty,
+        .unsupportedComponentDeclaration, .invalidInjectionTarget,
+        .duplicateRoute, .invalidHandlerParameter, .unsupportedControllerDeclaration,
+        .invalidRoutePath, .nonLiteralRoutePath, .invalidHandlerDeclaration,
+        .routeOutsideController, .pipelineNarrowing,
+        .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
+        .rolesWithoutAuthentication,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution,
+        .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,
+        .invalidScheduledMethod, .invalidScheduler,
     ]
 }

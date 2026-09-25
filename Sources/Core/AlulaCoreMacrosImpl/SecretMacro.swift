@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxMacros
 
@@ -22,8 +24,8 @@ public struct SecretMacro: PeerMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard declaration.is(VariableDeclSyntax.self) else {
-            context.diagnoseError(
-                "secret.notproperty",
+            context.diagnose(
+                .invalidSettingsProperty,
                 "@Secret can only be attached to a stored property.",
                 at: node
             )

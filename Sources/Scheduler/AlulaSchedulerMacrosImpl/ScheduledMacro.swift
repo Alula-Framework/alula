@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxMacros
 
@@ -15,8 +17,8 @@ public struct ScheduledMacro: PeerMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard let function = declaration.as(FunctionDeclSyntax.self) else {
-            context.diagnoseError(
-                "scheduled.notfunction",
+            context.diagnose(
+                .invalidScheduledMethod,
                 "@Scheduled can only be attached to a method.",
                 at: node)
             return []

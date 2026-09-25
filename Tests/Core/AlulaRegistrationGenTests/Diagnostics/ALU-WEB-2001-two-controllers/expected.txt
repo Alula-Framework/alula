@@ -1,0 +1,7 @@
+Main.swift:11:5: error: [ALU-WEB-2001] duplicate route `GET /users/:userID`
+    declared by: AdminUsersController.detail
+    and by:      UsersController.show as `/users/:id`
+    Parameter names do not tell routes apart: both match the same requests.
+    help: change one handler's method or path, or remove one of them.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-WEB-2001.md
+Main.swift:5:5: note: `UsersController.show` declares it first

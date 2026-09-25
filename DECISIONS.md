@@ -7,6 +7,35 @@ wrong, say so and it changes.
 
 ---
 
+## D57 — Macro diagnostics share the codes; routes collide by shape
+
+**Context.** Phase two of the diagnostics design (D56). The macros had
+string IDs (`route.path`, `controller.nonfinal`) that no reader saw, spread
+over three plugins with a copy of the same message type each.
+
+**Chosen.**
+- **One adapter in `AlulaMacroSupport`**, `context.diagnose(code, message,
+  at:, fixIts:)`. The code decides the severity, so a call site cannot
+  disagree with its page, and every diagnostic gets the page link as a note.
+  `RouteDiagnostics` (the scanner's sink, shared with the build tool) takes a
+  code for the same reason.
+- **Codes group causes that share a fix**, not one code per message: the four
+  "a handler parameter Alula cannot bind" messages are ALU-WEB-2002. A page
+  per message would be 45 pages saying the same thing.
+- **A new family, `ALU-SCHED-9xxx`.** Scheduled jobs are none of the design's
+  eight areas. A code's first digit is its family's, and a test holds that.
+- **Duplicates by shape, everywhere.** The router has always refused `/u/:a`
+  next to `/u/:b`; the macro compared text. `RouteScanning.shape(of:)` is now
+  the one rule, used by the macro within a controller and by the build tool
+  across controllers.
+- **Coverage counts macro tests.** A code is proven by a golden case or by a
+  macro test asserting it through `DiagnosticSpec.coded`. 38/38.
+
+**Rejected.** Replacing `class` with `struct` as the fix-it, as the design
+sketched: a final class is legal, and turning a class into a struct changes
+semantics the macro cannot see. Adding `final` is the change that is always
+right.
+
 ## D56 — Framework diagnostics have codes, pages, and user-source locations
 
 **Context.** The diagnostics design (Alula-Diagnostics-Design). Composition

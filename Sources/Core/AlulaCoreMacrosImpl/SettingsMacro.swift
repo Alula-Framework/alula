@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import AlulaConfigCore
 import SwiftDiagnostics
 import SwiftSyntax
@@ -164,8 +166,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 else { continue }
 
                 if hasAttribute(variable, named: "Inject") {
-                    context.diagnoseError(
-                        "settings.inject",
+                    context.diagnose(
+                        .invalidSettingsProperty,
                         "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service or @Component instead.",
                         at: variable
                     )
@@ -173,8 +175,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 }
 
                 guard let typeAnnotation = binding.typeAnnotation else {
-                    context.diagnoseError(
-                        "settings.untyped",
+                    context.diagnose(
+                        .invalidSettingsProperty,
                         "@Settings properties need an explicit type annotation — binding resolves by static type.",
                         at: variable
                     )
@@ -184,8 +186,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 if type.is(OptionalTypeSyntax.self)
                     || type.as(IdentifierTypeSyntax.self)?.name.text == "Optional"
                 {
-                    context.diagnoseError(
-                        "settings.optional",
+                    context.diagnose(
+                        .invalidSettingsProperty,
                         "'\(pattern.identifier.text)' may not be Optional. Give it a concrete default instead of allowing absence — @Settings binds a value once, at bootstrap, and a key that may or may not exist has no single answer for 'what did we configure'.",
                         at: variable
                     )
@@ -195,8 +197,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 let isLet = variable.bindingSpecifier.tokenKind == .keyword(.let)
                 let ownInitializer = binding.initializer?.value.trimmedDescription
                 if isLet, ownInitializer != nil {
-                    context.diagnoseError(
-                        "settings.letdefault",
+                    context.diagnose(
+                        .invalidSettingsProperty,
                         "'\(pattern.identifier.text)' has a default value, so it must be 'var' — the generated initializer assigns it when configuration supplies a value, overriding the default.",
                         at: variable
                     )
@@ -212,8 +214,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 var defaultValue = ownInitializer
                 if let attribute = attribute(on: variable, named: "ConfigValue") {
                     guard let explicitKey = firstArgumentSource(of: attribute) else {
-                        context.diagnoseError(
-                            "settings.dynamickey",
+                        context.diagnose(
+                            .configValueWithoutKey,
                             "@ConfigValue inside @Settings needs a string-literal key, e.g. @ConfigValue(\"legacy.key\").",
                             at: attribute
                         )
@@ -345,8 +347,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
             literal.segments.count == 1,
             case .stringSegment(let segment)? = literal.segments.first
         else {
-            context.diagnoseError(
-                "settings.nonamespace",
+            context.diagnose(
+                .invalidSettingsDeclaration,
                 "@Settings requires a namespace, as a string literal, e.g. @Settings(\"auth\").",
                 at: node
             )
@@ -370,10 +372,11 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         if let classDecl = declaration.as(ClassDeclSyntax.self) {
             let isFinal = classDecl.modifiers.contains { $0.name.tokenKind == .keyword(.final) }
             if !isFinal {
-                context.diagnoseError(
-                    "settings.nonfinal",
+                context.diagnose(
+                    .invalidSettingsDeclaration,
                     "@Settings requires a final class (or a struct). Mark '\(classDecl.name.text)' final.",
-                    at: classDecl.name
+                    at: classDecl.name,
+                    fixIts: [.insertFinal(into: classDecl)]
                 )
                 return false
             }
@@ -392,8 +395,8 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         case .extensionDecl: kind = "an extension"
         default: kind = "this declaration"
         }
-        context.diagnoseError(
-            "settings.unsupported",
+        context.diagnose(
+            .invalidSettingsDeclaration,
             """
             @Settings can only be attached to a struct or a final class; \(kind) has no \
             memberwise initializer for it to generate against.

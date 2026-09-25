@@ -4,6 +4,44 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.0] - 2026-09-25
+
+The second phase of the diagnostics design: the macros' diagnostics get
+codes too, and duplicate routes are caught at build time across controllers.
+
+### Added
+
+- **Every macro diagnostic has a code.** `@Component`, `@Controller`,
+  `@Middleware`, `@Settings`, `@Scheduled` and the route attributes report
+  `[ALU-…]` codes with a note linking the code's page, like the build tool's.
+  22 new codes and pages: `ALU-DI-1015…1019`, `ALU-WEB-2001…2008`,
+  `ALU-CONFIG-5001…5003`, `ALU-SEC-6001`, and a new family for scheduled jobs,
+  `ALU-SCHED-9001…9005`.
+- **Fix-it: mark the class `final`.** A non-final class under `@Component`,
+  `@Controller`, `@Middleware` or `@Settings` offers the one-click fix, placed
+  after any existing modifiers (`public final class`).
+- **Duplicate routes across controllers fail the build (ALU-WEB-2001).**
+  `@Controller` sees one type at a time, so two controllers answering the same
+  route got through the build and failed at startup. The build tool now
+  reports it at the second route, with a note at the first.
+
+### Fixed
+
+- **Routes are compared by shape.** `/users/:id` and `/users/:userID` match
+  the same requests, and the router has always refused the pair — at startup.
+  The build compared paths as written and let it through. Both now use the
+  router's rule.
+- **One error for an invalid `@Inject` or `@ConfigValue`.** A `@ConfigValue`
+  with no key, or an `@Inject` with no type, was also reported as a stored
+  property with no default value — a second error on the same line that
+  pointed at the wrong fix.
+
+### Changed
+
+- Macro diagnostic messages now begin with their code, and each carries one
+  note (the page link). Tests that match macro diagnostics by exact text need
+  the prefix and the note.
+
 ## [0.49.0] - 2026-09-25
 
 The first phase of the diagnostics design: every failure the registration

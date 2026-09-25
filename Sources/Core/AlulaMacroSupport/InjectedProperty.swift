@@ -139,3 +139,19 @@ public func parameterizedInitializer(
         \(raw: access)init(\(raw: parameters.joined(separator: ", ")))\(raw: throwsClause) {\(raw: body)}
         """
 }
+
+extension VariableDeclSyntax {
+    /// Whether the property is marked `@Inject` or `@ConfigValue`, valid or
+    /// not. One that is marked but was not collected has already been
+    /// diagnosed for why; reporting it again as an ordinary stored property
+    /// without a default would add a second error about the same line that
+    /// sends the reader the wrong way.
+    public var carriesInjectionAttribute: Bool {
+        attributes.contains { attribute in
+            guard let name = attribute.as(AttributeSyntax.self)?
+                .attributeName.as(IdentifierTypeSyntax.self)?.name.text
+            else { return false }
+            return name == "Inject" || name == "ConfigValue"
+        }
+    }
+}

@@ -2,6 +2,116 @@
 //   ALULA_REGENERATE_DIAGNOSTICS=1 swift test --filter DiagnosticCatalogTests
 enum DiagnosticCatalog {
     static let pages: [String: String] = [
+        "ALU-CONFIG-5001": ##"""
+            # ALU-CONFIG-5001: @ConfigValue without a literal key
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@ConfigValue` has no key, or its key is not a string literal.
+
+            ## Why Alula rejects it
+
+            The key is what the value is read from, and the build checks keys against
+            your configuration files. A missing or computed key cannot be checked.
+
+            ## Fixes
+
+            1. Give the key as a string literal: `@ConfigValue("server.port")`.
+            2. For many related values, use a `@Settings` type with a namespace.
+
+            ## Example
+
+            ```swift
+            @ConfigValue("mail.from") var from: String
+            ```
+
+            ## Related
+
+            ALU-CONFIG-5002.
+
+            """##,
+        "ALU-CONFIG-5002": ##"""
+            # ALU-CONFIG-5002: @Settings declared in a way Alula cannot bind
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Settings` type has no literal namespace, or is not a struct or a final
+            class.
+
+            ## Why Alula rejects it
+
+            `@Settings("auth")` binds every property under the `auth.` prefix. The
+            namespace has to be known at build time to check the keys, and the macro
+            needs a struct or final class to generate the initializer that binds them.
+
+            ## Fixes
+
+            1. Give a namespace literal: `@Settings("auth")`.
+            2. Mark the class `final` (the build offers this as a fix-it), or make it a struct.
+
+            ## Example
+
+            ```swift
+            @Settings("auth")
+            struct AuthSettings {
+                var sessionLifetime: Int = 3600
+            }
+            ```
+
+            ## Related
+
+            ALU-CONFIG-5001, ALU-CONFIG-5003.
+
+            """##,
+        "ALU-CONFIG-5003": ##"""
+            # ALU-CONFIG-5003: A @Settings property Alula cannot bind
+
+            **Severity:** error
+
+            ## Meaning
+
+            A property of a `@Settings` type (or a `@Secret`) is declared in a way
+            binding cannot handle:
+
+            - `@Inject` inside settings;
+            - no written type;
+            - an optional type;
+            - a `let` with a default value;
+            - `@Secret` on something that is not a stored property.
+
+            ## Why Alula rejects it
+
+            Settings bind configuration once, at bootstrap, by static type. A
+            dependency does not belong there; an untyped property has nothing to bind
+            to; an optional would leave "what did we configure" with no single answer;
+            and a `let` default could never be overridden by configuration.
+
+            ## Fixes
+
+            1. Move dependencies to a `@Service` or `@Component`.
+            2. Write the type.
+            3. Replace the optional with a concrete default.
+            4. Use `var` for a property with a default.
+
+            ## Example
+
+            ```swift
+            @Settings("mail")
+            struct MailSettings {
+                var host: String = "localhost"
+                @Secret var password: String
+            }
+            ```
+
+            ## Related
+
+            ALU-CONFIG-5002.
+
+            """##,
         "ALU-DI-1001": ##"""
             # ALU-DI-1001: No module provides a required type
 
@@ -378,6 +488,192 @@ enum DiagnosticCatalog {
             `defaultProviders` and `@Inject(from:)` (ALU-DI-1002).
 
             """##,
+        "ALU-DI-1015": ##"""
+            # ALU-DI-1015: Two @Inject properties of one type
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Component`, `@Controller` or `@Middleware` type has two `@Inject`
+            properties of the same type, and nothing tells them apart.
+
+            ## Why Alula rejects it
+
+            Composition wires by type. Two properties of one type would both receive
+            the same value — or, if you meant two different providers, one of them
+            would silently get the wrong one.
+
+            ## Common causes
+
+            - Two data sources of one type, one meant for a replica.
+            - A copied property that was meant to be renamed or retyped.
+
+            ## Fixes
+
+            1. If you meant two providers, name one of them: `@Inject(from: ReplicaModule.self)`.
+            2. Give the values distinct types — a small wrapper struct is enough.
+            3. If both name the same provider, delete one; they would hold the same value.
+
+            ## Example
+
+            ```swift
+            @Inject var primary: PostgresDataSource
+            @Inject(from: ReplicaDataModule.self) var replica: PostgresDataSource
+            ```
+
+            ## Related
+
+            ALU-DI-1002, ALU-DI-1007.
+
+            """##,
+        "ALU-DI-1016": ##"""
+            # ALU-DI-1016: An @Inject or @ConfigValue property has no written type
+
+            **Severity:** error
+
+            ## Meaning
+
+            An `@Inject` or `@ConfigValue` property is declared without a type
+            annotation, e.g. `@Inject var mailer = SMTPMailer()`.
+
+            ## Why Alula rejects it
+
+            Injection resolves by the static type as written. Without an annotation
+            there is nothing for the generated initializer to ask for.
+
+            ## Fixes
+
+            1. Write the type: `@Inject var mailer: Mailer`.
+            2. If the property is not meant to be injected, remove the attribute.
+
+            ## Example
+
+            ```swift
+            @Inject var mailer: Mailer
+            @ConfigValue("server.port") var port: Int
+            ```
+
+            ## Related
+
+            ALU-DI-1011, ALU-DI-1019.
+
+            """##,
+        "ALU-DI-1017": ##"""
+            # ALU-DI-1017: A stored property the generated initializer does not assign
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Component`, `@Controller` or `@Middleware` type has a stored property
+            that is neither `@Inject` nor `@ConfigValue` and has no default value.
+
+            ## Why Alula rejects it
+
+            The macro generates the type's initializer, and that initializer assigns
+            only injected and configured properties. Any other stored property needs a
+            value of its own, or the type cannot be initialized.
+
+            ## Common causes
+
+            - A dependency that was meant to be `@Inject`.
+            - Per-instance state added without a starting value.
+
+            ## Fixes
+
+            1. Mark it `@Inject` if composition should supply it.
+            2. Give it a default value: `var retries = 3`.
+            3. Make it computed if it derives from other properties.
+
+            ## Example
+
+            ```swift
+            @Service
+            struct Reports {
+                @Inject var store: ReportStore
+                let pageSize = 50
+            }
+            ```
+
+            ## Related
+
+            ALU-DI-1016.
+
+            """##,
+        "ALU-DI-1018": ##"""
+            # ALU-DI-1018: @Component on something other than a struct or final class
+
+            **Severity:** error
+
+            ## Meaning
+
+            `@Component`, `@Service` or `@Repository` is attached to a non-final class,
+            an enum, an actor, a protocol or an extension.
+
+            ## Why Alula rejects it
+
+            The macro generates an initializer and a registration for the type. A
+            subclass could override what the registration relies on, and the other
+            declarations have no initializer for the macro to generate. A struct or a
+            `final class` is the shape composition can build.
+
+            ## Common causes
+
+            - A class written without `final`.
+
+            ## Fixes
+
+            1. Mark the class `final` (the build offers this as a fix-it).
+            2. Make it a struct.
+
+            ## Example
+
+            ```swift
+            @Service
+            final class Billing { … }
+            ```
+
+            ## Related
+
+            ALU-WEB-2003.
+
+            """##,
+        "ALU-DI-1019": ##"""
+            # ALU-DI-1019: @Inject or @ConfigValue on something other than a stored instance property
+
+            **Severity:** error
+
+            ## Meaning
+
+            `@Inject` or `@ConfigValue` is attached to a static property, a computed
+            property, a property with an initial value, or something that is not a
+            property at all.
+
+            ## Why Alula rejects it
+
+            The generated initializer assigns these properties when the instance is
+            built. A static property has no instance; a computed one has no storage;
+            an initial value would be overwritten, so it would only mislead.
+
+            ## Fixes
+
+            1. Make it a stored instance property with a written type and no initial value.
+            2. For a static or computed value, drop the attribute and set it where it is used.
+
+            ## Example
+
+            ```swift
+            @Inject var clock: Clock                 // right
+            @Inject static var clock: Clock          // ALU-DI-1019
+            @Inject var clock: Clock = SystemClock() // ALU-DI-1019
+            ```
+
+            ## Related
+
+            ALU-DI-1016.
+
+            """##,
         "ALU-LIFE-8001": ##"""
             # ALU-LIFE-8001: Modules need each other in a cycle
 
@@ -439,6 +735,509 @@ enum DiagnosticCatalog {
             ## Fixes
 
             Add the module that collects it to `modules:` (the diagnostic names it).
+
+            """##,
+        "ALU-SCHED-9001": ##"""
+            # ALU-SCHED-9001: A cron expression or time zone that does not parse
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Scheduled` cron expression is malformed, or its time zone is not an
+            IANA identifier.
+
+            ## Why Alula rejects it
+
+            Cron expressions are checked at build time so that a schedule that would
+            never fire, or would fire at the wrong moment, is caught before deploy. An
+            unknown time zone would fall back to GMT at runtime without a word.
+
+            ## Common causes
+
+            - A field out of range, such as hour `24` or month `13`.
+            - A time zone written with spaces: "America/New York" instead of "America/New_York".
+
+            ## Fixes
+
+            1. Fix the expression as the message says. Six fields (seconds first) or the classic five.
+            2. Use an IANA identifier such as "America/New_York", "Europe/London" or "UTC".
+
+            ## Example
+
+            ```swift
+            @Scheduled("0 0 3 * * *", timeZone: "America/New_York")
+            func nightly() async throws { … }
+            ```
+
+            ## Related
+
+            ALU-SCHED-9003.
+
+            """##,
+        "ALU-SCHED-9002": ##"""
+            # ALU-SCHED-9002: @Scheduled with no schedule, or with two
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Scheduled` attribute gives neither a cron expression nor an `every:`
+            interval, or gives both.
+
+            ## Why Alula rejects it
+
+            A job needs exactly one description of when it runs. With none it would
+            never run; with two, one would be ignored.
+
+            ## Fixes
+
+            1. Give a cron expression: `@Scheduled("0 0 3 * * *")`.
+            2. Or an interval: `@Scheduled(every: .minutes(5))`.
+            3. Not both.
+
+            ## Example
+
+            ```swift
+            @Scheduled(every: .minutes(5))
+            func sweep() async throws { … }
+            ```
+
+            ## Related
+
+            ALU-SCHED-9001.
+
+            """##,
+        "ALU-SCHED-9003": ##"""
+            # ALU-SCHED-9003: A @Scheduled argument that is not a literal
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Scheduled` cron expression, time zone or `onEveryNode:` value is a
+            variable or an expression.
+
+            ## Why Alula rejects it
+
+            Schedules are checked at build time, from the source. A value known only at
+            runtime cannot be checked.
+
+            ## Fixes
+
+            1. Write the value as a literal.
+            2. For a schedule only known at runtime, build a `ScheduledJobRegistration` value instead.
+
+            ## Example
+
+            ```swift
+            @Scheduled("0 */15 * * * *", onEveryNode: false)
+            ```
+
+            ## Related
+
+            ALU-SCHED-9001.
+
+            """##,
+        "ALU-SCHED-9004": ##"""
+            # ALU-SCHED-9004: @Scheduled on a method Alula cannot run as a job
+
+            **Severity:** error
+
+            ## Meaning
+
+            `@Scheduled` is on something that is not a method, on a method that takes
+            parameters or returns a value, or appears twice on one method.
+
+            ## Why Alula rejects it
+
+            The scheduler calls the job with nothing and reads nothing back: there is
+            no caller to supply arguments or to use a result. A job is named after its
+            method, so two schedules on one method would collide rather than both run.
+
+            ## Fixes
+
+            1. Take no parameters; inject what the job needs into the enclosing type.
+            2. Return `Void`, and record results where they are needed.
+            3. Split two schedules across two methods, or declare the extra one as a `ScheduledJobRegistration` value.
+
+            ## Example
+
+            ```swift
+            @Scheduler
+            struct Maintenance {
+                @Inject var store: SessionStore
+                @Scheduled(every: .hours(1)) func purge() async throws { try await store.purgeExpired() }
+            }
+            ```
+
+            ## Related
+
+            ALU-SCHED-9005.
+
+            """##,
+        "ALU-SCHED-9005": ##"""
+            # ALU-SCHED-9005: @Scheduler on something that schedules nothing
+
+            **Severity:** error
+
+            ## Meaning
+
+            `@Scheduler` is attached to something that is not a class or struct, or to
+            a type with no `@Scheduled` methods.
+
+            ## Why Alula rejects it
+
+            `@Scheduler` exists to register the type's scheduled jobs. With none, it
+            registers nothing — usually a sign the jobs were removed or never marked.
+
+            ## Fixes
+
+            1. Add a `@Scheduled` method.
+            2. If this is an ordinary component, use `@Component` instead.
+
+            ## Related
+
+            ALU-SCHED-9004.
+
+            """##,
+        "ALU-SEC-6001": ##"""
+            # ALU-SEC-6001: A route requires roles but authenticates no one
+
+            **Severity:** error
+
+            ## Meaning
+
+            A route requires roles but runs on the `.public` lane, which establishes no
+            principal.
+
+            ## Why Alula rejects it
+
+            A role check needs someone to check. On a public lane every request is
+            anonymous, so every request would be rejected — the route could never
+            succeed.
+
+            ## Common causes
+
+            - A route marked `pipelines: [.public]` that kept its `roles:`.
+
+            ## Fixes
+
+            1. Put the route on a lane that authenticates.
+            2. Drop the roles if the route is meant to be public.
+
+            ## Example
+
+            ```swift
+            @GetRoute("/invoices", pipelines: [.authenticated], roles: [AppRole.billing])
+            ```
+
+            ## Related
+
+            ALU-WEB-2008.
+
+            """##,
+        "ALU-WEB-2001": ##"""
+            # ALU-WEB-2001: Two handlers for one method and path
+
+            **Severity:** error
+
+            ## Meaning
+
+            Two route handlers answer the same HTTP method and path.
+
+            ## Why Alula rejects it
+
+            A router can dispatch a request to only one handler. Keeping whichever was
+            registered last would make routing depend on declaration order, and the
+            other handler would be dead code no one is told about.
+
+            ## Common causes
+
+            - A handler copied to start a new one, with the path left unchanged.
+
+            ## Fixes
+
+            1. Change one handler's method or path.
+            2. Delete the handler you no longer need.
+
+            ## Example
+
+            ```swift
+            @GetRoute("/users/:id") func show(_ context: RequestContext, id: UUID) …
+            @GetRoute("/users/:id") func detail(_ context: RequestContext, id: UUID) … // ALU-WEB-2001
+            ```
+
+            ## Related
+
+            ALU-WEB-2004.
+
+            """##,
+        "ALU-WEB-2002": ##"""
+            # ALU-WEB-2002: A route handler parameter Alula cannot bind
+
+            **Severity:** error
+
+            ## Meaning
+
+            A route handler has a parameter Alula has no way to fill. Alula binds:
+
+            - `_ context: RequestContext`, always the first parameter;
+            - a path parameter, labelled after its `:segment`;
+            - `body:`, decoded from the request body (once);
+            - `query:`, decoded from the query string (once).
+
+            ## Why Alula rejects it
+
+            The generated route calls your handler with values it read from the
+            request. A parameter matching none of those sources would have nothing to
+            be called with.
+
+            ## Common causes
+
+            - An unlabelled parameter meant as the body.
+            - A path parameter label that does not match its segment (`id:` for `:userID`).
+            - A `body:` on a WebSocket upgrade — an upgrade request has no body.
+            - A path segment named `:body` or `:query`, which collides with those labels.
+
+            ## Fixes
+
+            1. Label the body `body:`.
+            2. Name the parameter after its segment, or rename the segment.
+            3. Load domain objects from the id yourself: take `id: UUID`, not `user: User`.
+            4. Read a colliding segment explicitly: `context.pathParam("body", as: String.self)`.
+
+            ## Example
+
+            ```swift
+            @GetRoute("/users/:id")
+            func show(_ context: RequestContext, id: UUID) async throws -> User
+            ```
+
+            ## Related
+
+            ALU-WEB-2006.
+
+            """##,
+        "ALU-WEB-2003": ##"""
+            # ALU-WEB-2003: @Controller or @Middleware on something other than a struct or final class
+
+            **Severity:** error
+
+            ## Meaning
+
+            `@Controller` or `@Middleware` is attached to a non-final class, an enum,
+            an actor, a protocol or an extension.
+
+            ## Why Alula rejects it
+
+            The macro generates an initializer and a route (or middleware) factory for
+            the type. A subclass could override the handlers the route table points at,
+            and the other declarations have no initializer to generate.
+
+            ## Common causes
+
+            - A class written without `final`.
+
+            ## Fixes
+
+            1. Mark the class `final` (the build offers this as a fix-it).
+            2. Make it a struct — the usual choice for a controller, which is built per request.
+
+            ## Example
+
+            ```swift
+            @Controller("/users")
+            struct UsersController { … }
+            ```
+
+            ## Related
+
+            ALU-DI-1018.
+
+            """##,
+        "ALU-WEB-2004": ##"""
+            # ALU-WEB-2004: A malformed route path
+
+            **Severity:** error
+
+            ## Meaning
+
+            A route or controller path is not a valid Alula path. A path must:
+
+            - start with `/`;
+            - name every `:parameter` segment, and each only once;
+            - use `**` only as the last segment;
+            - contain no quote or backslash.
+
+            ## Why Alula rejects it
+
+            The route table is built at compile time. A malformed path would either
+            never match or match something other than what it says.
+
+            ## Fixes
+
+            1. Fix the path as the message says.
+            2. Percent-encode a quote or backslash that is genuinely part of the path.
+
+            ## Example
+
+            ```swift
+            @Controller("/users")          // not "users"
+            @GetRoute("/:id/files/**")     // ** last
+            ```
+
+            ## Related
+
+            ALU-WEB-2001, ALU-WEB-2005.
+
+            """##,
+        "ALU-WEB-2005": ##"""
+            # ALU-WEB-2005: A route path that is not a string literal
+
+            **Severity:** error
+
+            ## Meaning
+
+            A `@Controller` or route attribute's path is a variable, an expression, or
+            an interpolated string.
+
+            ## Why Alula rejects it
+
+            The route table is built at compile time, from the source. A path known
+            only at runtime cannot be checked for conflicts, cannot appear in
+            `alula routes` or the OpenAPI document, and cannot be validated.
+
+            ## Fixes
+
+            1. Write the path as a plain string literal.
+            2. For a route that really is only known at runtime, declare a `RouteRegistration` value from a module.
+
+            ## Example
+
+            ```swift
+            @GetRoute("/health")           // not @GetRoute(healthPath)
+            ```
+
+            ## Related
+
+            ALU-WEB-2004.
+
+            """##,
+        "ALU-WEB-2006": ##"""
+            # ALU-WEB-2006: A route handler declared in a way Alula cannot call
+
+            **Severity:** error
+
+            ## Meaning
+
+            A route handler is `static`, `mutating`, or is a WebSocket upgrade that
+            does not return a `WebSocketUpgradeHandler`.
+
+            ## Why Alula rejects it
+
+            The generated route builds a controller for each request and calls the
+            handler on that instance. A static method has no instance; a mutating one
+            would change a controller discarded right after; an upgrade route needs a
+            handler to hand the connection to.
+
+            ## Fixes
+
+            1. Make the handler an instance method.
+            2. Drop `mutating`, and keep state in an injected component or on the `RequestContext`.
+            3. Return a `WebSocketUpgradeHandler` from an upgrade route.
+
+            ## Example
+
+            ```swift
+            @GetRoute("/stats")
+            func stats(_ context: RequestContext) async throws -> Stats
+            ```
+
+            ## Related
+
+            ALU-WEB-2002.
+
+            """##,
+        "ALU-WEB-2007": ##"""
+            # ALU-WEB-2007: A route attribute outside a @Controller
+
+            **Severity:** error
+
+            ## Meaning
+
+            A route attribute such as `@GetRoute` is on something that is not a
+            method, or on a method whose type is not a `@Controller`.
+
+            ## Why Alula rejects it
+
+            `@Controller` reads the route attributes of its methods; nothing else
+            does. A route anywhere else would silently never exist.
+
+            ## Common causes
+
+            - `@Controller` forgotten on the type.
+            - The handler moved into an extension, which the controller does not scan.
+
+            ## Fixes
+
+            1. Add `@Controller` to the type that declares the method.
+            2. Move the handler into the controller's main declaration.
+            3. Declare the route as a `RouteRegistration` value from a module.
+
+            ## Example
+
+            ```swift
+            @Controller("/users")
+            struct UsersController {
+                @GetRoute("/") func list(_ context: RequestContext) async throws -> [User] { … }
+            }
+            ```
+
+            ## Related
+
+            ALU-WEB-2003.
+
+            """##,
+        "ALU-WEB-2008": ##"""
+            # ALU-WEB-2008: A route's pipelines drop its controller's authentication
+
+            **Severity:** warning
+
+            ## Meaning
+
+            A route's `pipelines:` argument leaves out a lane its controller uses to
+            authenticate, so the route runs without authentication.
+
+            ## Why Alula rejects it
+
+            A route's `pipelines:` replaces the controller's rather than adding to it —
+            so a route that meant to add a lane can quietly lose authentication. It is
+            a warning because a public route inside an authenticated controller is
+            legitimate; the build asks you to say so.
+
+            ## Common causes
+
+            - Adding a lane to one route, expecting the controller's lanes to remain.
+
+            ## Fixes
+
+            1. List the controller's authenticating lane too.
+            2. If the route is meant to be public, write `pipelines: [.public]` — that records the decision and silences the warning.
+
+            ## Example
+
+            ```swift
+            @Controller("/account", pipelines: [.authenticated])
+            struct AccountController {
+                @GetRoute("/export", pipelines: [.authenticated, "audited"]) …
+                @GetRoute("/terms", pipelines: [.public]) …
+            }
+            ```
+
+            ## Related
+
+            ALU-SEC-6001.
 
             """##,
     ]

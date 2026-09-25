@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -103,18 +104,19 @@ extension RegistrationMacro {
         if let classDecl = declaration.as(ClassDeclSyntax.self) {
             let isFinal = classDecl.modifiers.contains { $0.name.tokenKind == .keyword(.final) }
             if !isFinal {
-                context.diagnoseError(
-                    "component.nonfinal",
+                context.diagnose(
+                    .unsupportedComponentDeclaration,
                     "\(displayName) requires a final class (or a struct). Mark '\(classDecl.name.text)' final.",
-                    at: classDecl.name
+                    at: classDecl.name,
+                    fixIts: [.insertFinal(into: classDecl)]
                 )
                 return false
             }
             return true
         }
         if declaration.is(StructDeclSyntax.self) { return true }
-        context.diagnoseError(
-            "component.unsupported",
+        context.diagnose(
+            .unsupportedComponentDeclaration,
             "\(displayName) can only be attached to a final class or a struct.",
             at: declaration
         )
@@ -152,8 +154,8 @@ extension RegistrationMacro {
             let key = "\(property.typeText)|\(property.providerText ?? "")"
             if !seen.insert(key).inserted {
                 let sameProvider = property.providerText != nil
-                context.diagnoseError(
-                    "inject.ambiguous",
+                context.diagnose(
+                    .indistinguishableInjections,
                     sameProvider
                         ? "Two @Inject properties of type '\(property.typeText)' naming the same provider. Composition wires by type, so nothing distinguishes them."
                         : "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
@@ -189,7 +191,8 @@ extension RegistrationMacro {
                 guard binding.accessorBlock == nil,
                     binding.initializer == nil,
                     let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                    !injectedNames.contains(pattern.identifier.text)
+                    !injectedNames.contains(pattern.identifier.text),
+                    !variable.carriesInjectionAttribute
                 else { continue }
                 // An optional `var` is implicitly nil-initialized.
                 if isVar, let type = binding.typeAnnotation?.type,
@@ -198,8 +201,8 @@ extension RegistrationMacro {
                 {
                     continue
                 }
-                context.diagnoseError(
-                    "component.uninitialized",
+                context.diagnose(
+                    .uninitializedStoredProperty,
                     "Stored property '\(pattern.identifier.text)' of a \(displayName) type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     at: variable
                 )
@@ -226,8 +229,8 @@ extension RegistrationMacro {
             if variable.modifiers.contains(where: {
                 $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class)
             }) {
-                context.diagnoseError(
-                    "injected.static",
+                context.diagnose(
+                    .invalidInjectionTarget,
                     """
                     Injection is per-instance: the generated initializer assigns the \
                     properties, and a static property has no instance to belong to. Make \
@@ -241,8 +244,8 @@ extension RegistrationMacro {
                 let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
             else { continue }
             guard let typeAnnotation = binding.typeAnnotation else {
-                context.diagnoseError(
-                    "injected.untyped",
+                context.diagnose(
+                    .untypedInjection,
                     "@Inject/@ConfigValue properties need an explicit type annotation — injection resolves by static type.",
                     at: variable
                 )
@@ -273,8 +276,8 @@ extension RegistrationMacro {
                 return .inject
             case "ConfigValue":
                 guard let key = firstArgumentSource(of: attr) else {
-                    context.diagnoseError(
-                        "configvalue.nokey",
+                    context.diagnose(
+                        .configValueWithoutKey,
                         "@ConfigValue requires a key, e.g. @ConfigValue(\"server.port\").",
                         at: attr
                     )

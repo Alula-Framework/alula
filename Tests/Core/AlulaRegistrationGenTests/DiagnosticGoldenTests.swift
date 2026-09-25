@@ -60,15 +60,37 @@ extension GeneratorTests {
         #expect((result.exitCode != 0) == (severity == .error), "\(name): exit status matches severity")
     }
 
-    /// Framework-owned diagnostic coverage: the share of codes with a golden
-    /// case proving the build actually produces them. The target is all of
-    /// them; a code without a case is a promise nothing checks.
-    @Test("every diagnostic code has a golden case")
-    func coverage() {
-        let proven = Set(caseNames().map { $0.split(separator: "-").prefix(3).joined(separator: "-") })
+    /// Framework-owned diagnostic coverage: the share of codes some test
+    /// proves the build actually produces. A generator code is proven by a
+    /// golden case here; a macro code by a macro test asserting it —
+    /// `DiagnosticSpec.coded(.code, …)`, or the scheduler suite's
+    /// `expectDiagnostic(…, .code, …)`. The target is all of them; a code
+    /// without a test is a promise nothing checks.
+    @Test("every diagnostic code has a test that produces it")
+    func coverage() throws {
+        let root = casesDirectory.deletingLastPathComponent()  // Tests/Core/AlulaRegistrationGenTests
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        // Static member name → id, read from the codes' declarations.
+        let declarations = try String(
+            contentsOf: root.appendingPathComponent("Sources/Core/AlulaDiagnostics/DiagnosticCode.swift"),
+            encoding: .utf8)
+        var ids: [String: String] = [:]
+        for match in declarations.matches(of: /static let (\w+) = DiagnosticCode\(\s*"([A-Z0-9-]+)"/) {
+            ids[String(match.1)] = String(match.2)
+        }
+        var proven = Set(caseNames().map { $0.split(separator: "-").prefix(3).joined(separator: "-") })
+        for directory in ["Tests/Core/AlulaCoreMacroTests", "Tests/Web/AlulaWebMacroTests", "Tests/Scheduler/AlulaSchedulerMacroTests"] {
+            let url = root.appendingPathComponent(directory)
+            for file in try FileManager.default.contentsOfDirectory(atPath: url.path) where file.hasSuffix(".swift") {
+                let source = try String(contentsOf: url.appendingPathComponent(file), encoding: .utf8)
+                for match in source.matches(of: /(?:coded\(|""",\s*)\.(\w+),/) {
+                    if let id = ids[String(match.1)] { proven.insert(id) }
+                }
+            }
+        }
         let codes = DiagnosticCode.all.map(\.id)
         let covered = codes.filter(proven.contains)
         print("framework-owned diagnostic coverage: \(covered.count)/\(codes.count)")
-        #expect(covered.count == codes.count, "no golden case for \(codes.filter { !proven.contains($0) })")
+        #expect(covered.count == codes.count, "no test produces \(codes.filter { !proven.contains($0) })")
     }
 }

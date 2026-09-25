@@ -131,9 +131,11 @@ struct MiddlewareMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.unsupportedControllerDeclaration,
                     message: "@Middleware requires a final class (or a struct). Mark 'RequestTiming' final.",
-                    line: 2, column: 7)
+                    line: 2, column: 7,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
+                )
             ],
             macroSpecs: testMacros
         )
@@ -159,7 +161,7 @@ struct MiddlewareMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.uninitializedStoredProperty,
                     message: "Stored property 'label' of a @Middleware type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     line: 3, column: 5)
             ],
@@ -189,7 +191,7 @@ struct MiddlewareMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.indistinguishableInjections,
                     message: "Two @Inject properties of type 'Backend'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     line: 4, column: 5)
             ],

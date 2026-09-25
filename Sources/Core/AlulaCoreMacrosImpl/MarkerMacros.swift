@@ -1,3 +1,5 @@
+import AlulaDiagnostics
+import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxMacros
 
@@ -40,8 +42,8 @@ private func validateInjectedProperty(
     in context: some MacroExpansionContext
 ) {
     guard let variable = declaration.as(VariableDeclSyntax.self) else {
-        context.diagnoseError(
-            "injected.notproperty",
+        context.diagnose(
+            .invalidInjectionTarget,
             "\(name) can only be attached to a stored property.",
             at: node
         )
@@ -49,22 +51,22 @@ private func validateInjectedProperty(
     }
     guard let binding = variable.bindings.first else { return }
     if binding.typeAnnotation == nil {
-        context.diagnoseError(
-            "injected.untyped",
+        context.diagnose(
+            .untypedInjection,
             "\(name) properties need an explicit type annotation — injection resolves by static type.",
             at: variable
         )
     }
     if binding.initializer != nil {
-        context.diagnoseError(
-            "injected.initialized",
+        context.diagnose(
+            .invalidInjectionTarget,
             "\(name) properties must not have an initial value; the generated initializer supplies the value at construction.",
             at: variable
         )
     }
     if binding.accessorBlock != nil {
-        context.diagnoseError(
-            "injected.computed",
+        context.diagnose(
+            .invalidInjectionTarget,
             "\(name) requires a stored property, not a computed one.",
             at: variable
         )

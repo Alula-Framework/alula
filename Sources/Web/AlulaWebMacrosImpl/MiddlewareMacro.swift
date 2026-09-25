@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import SwiftDiagnostics
 import AlulaMacroSupport
 import SwiftSyntax
@@ -84,8 +85,8 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
                 let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
             else { continue }
             guard let typeAnnotation = binding.typeAnnotation else {
-                context.diagnoseError(
-                    "middleware.untyped",
+                context.diagnose(
+                    .untypedInjection,
                     "@Inject/@ConfigValue properties need an explicit type annotation — injection resolves by static type.",
                     at: variable
                 )
@@ -116,8 +117,8 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
                 return .inject
             case "ConfigValue":
                 guard let key = firstArgumentSource(of: attr) else {
-                    context.diagnoseError(
-                        "configvalue.nokey",
+                    context.diagnose(
+                        .configValueWithoutKey,
                         "@ConfigValue requires a key, e.g. @ConfigValue(\"server.port\").",
                         at: attr
                     )
@@ -161,18 +162,19 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
         if let classDecl = declaration.as(ClassDeclSyntax.self) {
             let isFinal = classDecl.modifiers.contains { $0.name.tokenKind == .keyword(.final) }
             if !isFinal {
-                context.diagnoseError(
-                    "middleware.nonfinal",
+                context.diagnose(
+                    .unsupportedControllerDeclaration,
                     "@Middleware requires a final class (or a struct). Mark '\(classDecl.name.text)' final.",
-                    at: classDecl.name
+                    at: classDecl.name,
+                    fixIts: [.insertFinal(into: classDecl)]
                 )
                 return false
             }
             return true
         }
         if declaration.is(StructDeclSyntax.self) { return true }
-        context.diagnoseError(
-            "middleware.unsupported",
+        context.diagnose(
+            .unsupportedControllerDeclaration,
             "@Middleware can only be attached to a final class or a struct.",
             at: declaration
         )
@@ -197,8 +199,8 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
             let key = "\(property.typeText)|\(property.providerText ?? "")"
             if !seen.insert(key).inserted {
                 let sameProvider = property.providerText != nil
-                context.diagnoseError(
-                    "inject.ambiguous",
+                context.diagnose(
+                    .indistinguishableInjections,
                     sameProvider
                         ? "Two @Inject properties of type '\(property.typeText)' naming the same provider. Composition wires by type, so nothing distinguishes them."
                         : "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
@@ -228,7 +230,8 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
                 guard binding.accessorBlock == nil,
                     binding.initializer == nil,
                     let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                    !injectedNames.contains(pattern.identifier.text)
+                    !injectedNames.contains(pattern.identifier.text),
+                    !variable.carriesInjectionAttribute
                 else { continue }
                 if isVar, let type = binding.typeAnnotation?.type,
                     type.is(OptionalTypeSyntax.self)
@@ -236,8 +239,8 @@ public struct MiddlewareMacro: MemberMacro, ExtensionMacro {
                 {
                     continue
                 }
-                context.diagnoseError(
-                    "middleware.uninitialized",
+                context.diagnose(
+                    .uninitializedStoredProperty,
                     "Stored property '\(pattern.identifier.text)' of a @Middleware type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     at: variable
                 )

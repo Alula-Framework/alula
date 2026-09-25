@@ -183,11 +183,12 @@ struct MacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.unsupportedComponentDeclaration,
                     message:
                         "@Repository requires a final class (or a struct). Mark 'OpenRepository' final.",
                     line: 2,
-                    column: 7
+                    column: 7,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
                 )
             ],
             macroSpecs: testMacros
@@ -233,7 +234,7 @@ struct MacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.indistinguishableInjections,
                     message:
                         "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     line: 4,
@@ -283,7 +284,7 @@ struct MacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.indistinguishableInjections,
                     message:
                         "Two @Inject properties of type 'DataSource'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
                     line: 4,
@@ -400,11 +401,12 @@ struct MacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.unsupportedComponentDeclaration,
                     message:
                         "@Component requires a final class (or a struct). Mark 'OpenService' final.",
                     line: 2,
-                    column: 7
+                    column: 7,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
                 )
             ],
             macroSpecs: testMacros
@@ -429,7 +431,7 @@ struct MacroFixtureTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.uninitializedStoredProperty,
                     message:
                         "Stored property 'id' of a @Component type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     line: 3,

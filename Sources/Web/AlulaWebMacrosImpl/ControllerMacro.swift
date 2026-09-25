@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import AlulaMacroSupport
 import AlulaRouteScan
 import SwiftDiagnostics
@@ -86,8 +87,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             var route = route
             route.roleChecks = isPublic ? [] : declaredRoles
             if isPublic, !declaredRoles.isEmpty {
-                context.diagnoseError(
-                    "route.roles.public",
+                context.diagnose(
+                    .rolesWithoutAuthentication,
                     """
                     '\(route.methodName)' requires roles but runs on '.public', which \
                     establishes no principal — every request would be rejected. Give it a \
@@ -290,19 +291,25 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         _ routes: [(route: ScannedRoute, path: String)],
         in context: some MacroExpansionContext
     ) -> Bool {
-        var seen: [String: String] = [:]  // "METHOD path" → method name
+        // "METHOD shape" → (method name, path as written). Compared by shape,
+        // as the router does: `/u/:a` and `/u/:b` are one route.
+        var seen: [String: (method: String, path: String)] = [:]
         var valid = true
         for (route, path) in routes {
-            let key = "\(route.kind.httpMethod) \(path)"
+            let key = "\(route.kind.httpMethod) \(RouteScanning.shape(of: path))"
             if let existing = seen[key] {
-                context.diagnoseError(
-                    "route.duplicate",
-                    "Route '\(key)' is declared by both '\(existing)' and '\(route.methodName)' in this controller.",
+                let spelled =
+                    existing.path == path
+                    ? ""
+                    : " (as '\(existing.path)' — parameter names do not tell routes apart)"
+                context.diagnose(
+                    .duplicateRoute,
+                    "Route '\(route.kind.httpMethod) \(path)' is declared by both '\(existing.method)'\(spelled) and '\(route.methodName)' in this controller.",
                     at: route.node
                 )
                 valid = false
             }
-            seen[key] = route.methodName
+            seen[key] = (route.methodName, path)
         }
         return valid
     }
@@ -358,8 +365,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         // Still running some other security lane is a swap, not a drop.
         guard routeLanes.isDisjoint(with: securityLaneSpellings) else { return }
 
-        context.diagnoseWarning(
-            "route.pipelines.narrowing",
+        context.diagnose(
+            .pipelineNarrowing,
             """
             '\(method)' replaces its controller's pipelines and drops \
             \(dropped.sorted().joined(separator: ", ")), so this route runs without \
@@ -407,10 +414,11 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         if let classDecl = declaration.as(ClassDeclSyntax.self) {
             let isFinal = classDecl.modifiers.contains { $0.name.tokenKind == .keyword(.final) }
             if !isFinal {
-                context.diagnoseError(
-                    "controller.nonfinal",
+                context.diagnose(
+                    .unsupportedControllerDeclaration,
                     "@Controller requires a final class (or a struct). Mark '\(classDecl.name.text)' final.",
-                    at: classDecl.name
+                    at: classDecl.name,
+                    fixIts: [.insertFinal(into: classDecl)]
                 )
                 return nil
             }
@@ -419,8 +427,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         if let structDecl = declaration.as(StructDeclSyntax.self) {
             return structDecl.name.text
         }
-        context.diagnoseError(
-            "controller.unsupported",
+        context.diagnose(
+            .unsupportedControllerDeclaration,
             "@Controller can only be attached to a final class or a struct.",
             at: declaration
         )
@@ -445,8 +453,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             let key = "\(property.typeText)|\(property.providerText ?? "")"
             if !seen.insert(key).inserted {
                 let sameProvider = property.providerText != nil
-                context.diagnoseError(
-                    "inject.ambiguous",
+                context.diagnose(
+                    .indistinguishableInjections,
                     sameProvider
                         ? "Two @Inject properties of type '\(property.typeText)' naming the same provider. Composition wires by type, so nothing distinguishes them."
                         : "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
@@ -476,7 +484,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 guard binding.accessorBlock == nil,
                     binding.initializer == nil,
                     let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                    !injectedNames.contains(pattern.identifier.text)
+                    !injectedNames.contains(pattern.identifier.text),
+                    !variable.carriesInjectionAttribute
                 else { continue }
                 if isVar, let type = binding.typeAnnotation?.type,
                     type.is(OptionalTypeSyntax.self)
@@ -484,8 +493,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 {
                     continue
                 }
-                context.diagnoseError(
-                    "controller.uninitialized",
+                context.diagnose(
+                    .uninitializedStoredProperty,
                     "Stored property '\(pattern.identifier.text)' of a @Controller type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     at: variable
                 )
@@ -509,8 +518,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
             else { continue }
             guard let typeAnnotation = binding.typeAnnotation else {
-                context.diagnoseError(
-                    "injected.untyped",
+                context.diagnose(
+                    .untypedInjection,
                     "@Inject/@ConfigValue properties need an explicit type annotation — injection resolves by static type.",
                     at: variable
                 )
@@ -541,8 +550,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 return .inject
             case "ConfigValue":
                 guard let key = firstArgumentSource(of: attr) else {
-                    context.diagnoseError(
-                        "configvalue.nokey",
+                    context.diagnose(
+                        .configValueWithoutKey,
                         "@ConfigValue requires a key, e.g. @ConfigValue(\"server.port\").",
                         at: attr
                     )

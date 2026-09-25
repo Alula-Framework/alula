@@ -166,6 +166,7 @@ struct ScannedControllerRoute {
     let isUpgrade: Bool
     let file: String
     let line: Int
+    var column: Int = 1
     /// The handler's inputs and output, as written — for the OpenAPI document.
     var bodyTypeText: String? = nil
     var queryTypeText: String? = nil
@@ -186,8 +187,7 @@ struct ScannedControllerRoute {
 /// the macro rejects simply does not reach the manifest — which is correct,
 /// because the macro did not register it either.
 struct SilentRouteDiagnostics: RouteDiagnostics {
-    func error(_ id: String, _ message: String, at node: some SyntaxProtocol) {}
-    func warning(_ id: String, _ message: String, at node: some SyntaxProtocol) {}
+    func diagnose(_ code: DiagnosticCode, _ message: String, at node: some SyntaxProtocol) {}
 }
 
 /// One `MiddlewareRegistration.lane(_:_:)` declaration.
@@ -734,7 +734,8 @@ final class ComponentVisitor: SyntaxVisitor {
             for route in RouteScanning.scanRoutes(
                 of: function, basePath: base, diagnostics: silent)
             {
-                let location = converter.location(for: route.node.position)
+                let location = converter.location(
+                    for: route.node.positionAfterSkippingLeadingTrivia)
                 defer { index += 1 }
                 routes.append(
                     ScannedControllerRoute(
@@ -749,6 +750,7 @@ final class ComponentVisitor: SyntaxVisitor {
                         isUpgrade: route.kind.isUpgrade,
                         file: file,
                         line: location.line,
+                        column: location.column,
                         bodyTypeText: route.bodyTypeText,
                         queryTypeText: route.queryTypeText,
                         pathParameters: route.pathParameters.map { ($0.name, $0.typeText) },
@@ -1767,6 +1769,46 @@ func warnUnscannedInjections() {
     }
 }
 warnUnscannedInjections()
+
+/// Two controllers in this target answering one method and shape.
+///
+/// `@Controller` sees one type at a time, so it catches a duplicate within a
+/// controller and nothing across them; until now the router caught those at
+/// startup. The generator sees every controller in the target, which makes
+/// this the first place the whole route table exists. Compared by shape, as
+/// the router does, and only across controllers — the macro has already
+/// reported the ones within.
+@MainActor
+func reportDuplicateRoutes() {
+    var first: [String: ScannedControllerRoute] = [:]
+    for route in routes where route.source.hasPrefix(manifest.targetModuleName + ".") {
+        let key = "\(route.httpMethod) \(RouteScanning.shape(of: route.path))"
+        guard let earlier = first[key] else {
+            first[key] = route
+            continue
+        }
+        guard earlier.controllerTypeName != route.controllerTypeName else { continue }
+        report(Diagnostic(
+            .duplicateRoute,
+            "duplicate route `\(route.httpMethod) \(route.path)`",
+            at: DiagnosticLocation(file: route.file, line: route.line, column: route.column),
+            context: [
+                "declared by: \(route.controllerTypeName).\(route.methodName)",
+                "and by:      \(earlier.controllerTypeName).\(earlier.methodName)"
+                    + (earlier.path == route.path ? "" : " as `\(earlier.path)`"),
+            ],
+            explanation: earlier.path == route.path
+                ? ["A request can be dispatched to only one handler."]
+                : ["Parameter names do not tell routes apart: both match the same requests."],
+            help: ["change one handler's method or path, or remove one of them."],
+            notes: [
+                .init(
+                    "`\(earlier.controllerTypeName).\(earlier.methodName)` declares it first",
+                    at: DiagnosticLocation(file: earlier.file, line: earlier.line, column: earlier.column))
+            ]))
+    }
+}
+reportDuplicateRoutes()
 
 /// Every module nominated by some `defaultProviders` in this application.
 ///

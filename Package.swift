@@ -230,7 +230,10 @@ let package = Package(
         .target(
             name: "AlulaMacroSupport",
             dependencies: [
+                "AlulaDiagnostics",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
             ],
             path: "Sources/Core/AlulaMacroSupport"
@@ -298,6 +301,7 @@ let package = Package(
         .target(
             name: "AlulaRouteScan",
             dependencies: [
+                "AlulaDiagnostics",
                 .product(name: "SwiftSyntax", package: "swift-syntax")
             ],
             path: "Sources/Web/AlulaRouteScan"
@@ -860,6 +864,7 @@ let package = Package(
         .testTarget(
             name: "AlulaCoreMacroTests",
             dependencies: [
+                "AlulaDiagnostics",
                 "AlulaCoreMacrosImpl",
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 // MacroSpec — carries declared conformances into assertMacroExpansion.
@@ -930,6 +935,7 @@ let package = Package(
         .testTarget(
             name: "AlulaWebMacroTests",
             dependencies: [
+                "AlulaDiagnostics",
                 .target(name: "AlulaWebMacrosImpl", condition: .when(traits: ["Web"])),
                 "AlulaCoreMacrosImpl",
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -1010,6 +1016,7 @@ let package = Package(
         .testTarget(
             name: "AlulaSchedulerMacroTests",
             dependencies: [
+                "AlulaDiagnostics",
                 "AlulaSchedulerMacrosImpl",
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),

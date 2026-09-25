@@ -271,7 +271,7 @@ struct SettingsMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(message: "@Settings requires a namespace, as a string literal, e.g. @Settings(\"auth\").", line: 1, column: 1)
+                DiagnosticSpec.coded(.invalidSettingsDeclaration, message: "@Settings requires a namespace, as a string literal, e.g. @Settings(\"auth\").", line: 1, column: 1)
             ],
             macroSpecs: settingsMacros
         )
@@ -295,7 +295,7 @@ struct SettingsMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidSettingsProperty,
                     message: "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service or @Component instead.",
                     line: 3, column: 5)
             ],
@@ -321,7 +321,7 @@ struct SettingsMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidSettingsProperty,
                     message: "'nickname' may not be Optional. Give it a concrete default instead of allowing absence — @Settings binds a value once, at bootstrap, and a key that may or may not exist has no single answer for 'what did we configure'.",
                     line: 3, column: 5)
             ],
@@ -347,7 +347,7 @@ struct SettingsMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidSettingsProperty,
                     message: "'issuer' has a default value, so it must be 'var' — the generated initializer assigns it when configuration supplies a value, overriding the default.",
                     line: 3, column: 5)
             ],
@@ -370,9 +370,11 @@ struct SettingsMacroDiagnosticTests {
                 }
                 """,
             diagnostics: [
-                DiagnosticSpec(
+                DiagnosticSpec.coded(.invalidSettingsDeclaration,
                     message: "@Settings requires a final class (or a struct). Mark 'AuthSettings' final.",
-                    line: 2, column: 7)
+                    line: 2, column: 7,
+                    fixIts: [FixItSpec(message: "mark the class 'final'")]
+                )
             ],
             macroSpecs: settingsMacros
         )

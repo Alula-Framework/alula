@@ -110,7 +110,7 @@ func standardClaims(
 // MARK: - In-memory JWKS source
 
 /// A `JWKSSource` with a settable key set, injectable failures, and an
-/// optional artificial fetch delay (for single-alula tests).
+/// optional artificial fetch delay (for single-flight tests).
 final class InMemoryJWKSSource: JWKSSource, Sendable {
     private struct State {
         var jwks: JWKS

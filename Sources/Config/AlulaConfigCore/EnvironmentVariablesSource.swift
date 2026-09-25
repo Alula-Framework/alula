@@ -28,7 +28,7 @@ import Foundation
 /// The process environment is snapshotted at `init` — the source never
 /// re-reads `ProcessInfo` afterwards, preserving `Configuration`'s
 /// immutability guarantee even if something else mutates the
-/// environment mid-alula.
+/// environment mid-flight.
 public struct EnvironmentVariablesSource: ConfigSource {
     private let environment: [String: String]
     private let prefix: ConfigPrefix

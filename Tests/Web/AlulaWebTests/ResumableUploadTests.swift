@@ -370,7 +370,7 @@ struct UploadDurabilityTests {
     func concurrentAppendsRefused() async throws {
         try await withStore { store, _ in
             try await store.create(UploadInfo(id: "cccc-3333", length: 4_000))
-            // A slow stream, so the second append arrives mid-alula.
+            // A slow stream, so the second append arrives mid-flight.
             let (slow, slowContinuation) = AsyncThrowingStream<Data, any Error>.makeStream()
             async let first = store.append("cccc-3333", expectedOffset: 0, chunks: slow)
             try await Task.sleep(for: .milliseconds(50))

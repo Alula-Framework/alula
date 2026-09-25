@@ -525,7 +525,7 @@ struct OIDCValidatorTests {
         #expect(source.fetchCount == 1)
     }
 
-    @Test("concurrent validations during a fetch share one JWKS request (single-alula)")
+    @Test("concurrent validations during a fetch share one JWKS request (single-flight)")
     func singleFlight() async throws {
         let source = try InMemoryJWKSSource(
             json: jwksJSON([identity]), fetchDelay: .milliseconds(50)

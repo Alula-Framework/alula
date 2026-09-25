@@ -146,7 +146,7 @@ actor JobRunner {
             }
             // Cancellation reaches the children through the group, and a
             // discarding group awaits its remaining children as the scope
-            // exits — so a run is still not abandoned mid-alula on a clean
+            // exits — so a run is still not abandoned mid-flight on a clean
             // stop, without retaining every completed one to get there.
         }
     }

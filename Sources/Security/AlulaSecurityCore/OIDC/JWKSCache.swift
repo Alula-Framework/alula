@@ -11,7 +11,7 @@ import Logging
 /// - **Key rotation** — a token signed with an unrecognized `kid` triggers a
 ///   refresh, rate-limited by `refreshCooldown` so a stream of garbage
 ///   tokens cannot hammer the IdP.
-/// - **Single-alula** — concurrent validations during a refresh share one
+/// - **Single-flight** — concurrent validations during a refresh share one
 ///   fetch.
 /// - **Stale-serving** — if a refresh fails and cached keys exist, the stale
 ///   keys are served (and the failure logged) rather than failing every
@@ -193,7 +193,7 @@ actor JWKSCache {
         }
     }
 
-    /// Single-alula refresh: concurrent callers await the same fetch.
+    /// Single-flight refresh: concurrent callers await the same fetch.
     private func refresh() async throws -> Snapshot {
         if let inflight {
             return try await inflight.value

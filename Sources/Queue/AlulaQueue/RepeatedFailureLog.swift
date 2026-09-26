@@ -46,9 +46,15 @@ final class RepeatedFailureLog: Sendable {
         self.logger = logger
     }
 
-    func failed(_ error: any Error, metadata: Logger.Metadata = [:], at now: ContinuousClock.Instant = .now) {
+    func failed(
+        _ error: any Error, metadata: Logger.Metadata = [:], at now: ContinuousClock.Instant = .now
+    ) {
         let description = String(describing: error)
-        enum Action { case first, changed, remind(count: Int, since: ContinuousClock.Instant), quiet }
+        enum Action {
+            case first, changed
+            case remind(count: Int, since: ContinuousClock.Instant)
+            case quiet
+        }
         let action = state.withLock { failing -> Action in
             guard var current = failing else {
                 failing = Failing(since: now, lastLogged: now, count: 1, error: description)
@@ -82,13 +88,17 @@ final class RepeatedFailureLog: Sendable {
     }
 
     func succeeded(at now: ContinuousClock.Instant = .now) {
-        guard let ended = state.withLock({ failing -> Failing? in
-            defer { failing = nil }
-            return failing
-        }) else { return }
+        guard
+            let ended = state.withLock({ failing -> Failing? in
+                defer { failing = nil }
+                return failing
+            })
+        else { return }
         logger.info(
             "\(recovered)",
-            metadata: ["failures": "\(ended.count)", "failed-for": "\(Self.seconds(now - ended.since))"])
+            metadata: [
+                "failures": "\(ended.count)", "failed-for": "\(Self.seconds(now - ended.since))",
+            ])
     }
 
     /// "42.0 seconds", not "42.028647206 seconds".

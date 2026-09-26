@@ -22,7 +22,9 @@ struct ListenFailureTests {
                 Issue.record("a second server bound a port already in use")
             } catch let failure as any StartupDiagnostic {
                 let text = failure.startupDiagnostic
-                #expect(text.hasPrefix("could not listen on 127.0.0.1:\(port): the address is already in use"))
+                #expect(
+                    text.hasPrefix(
+                        "could not listen on 127.0.0.1:\(port): the address is already in use"))
                 #expect(text.contains("server.port"))
             }
         }

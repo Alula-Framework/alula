@@ -68,10 +68,14 @@ struct BeforeStartAndShutdownDeadlineTests {
         await #expect(throws: Unreachable.self) {
             try await _alulaBootstrap(
                 configuration: Configuration(),
-                moduleInstances: [PoolModule(journal: journal, refuse: true), WorkerModule(journal: journal)])
+                moduleInstances: [
+                    PoolModule(journal: journal, refuse: true), WorkerModule(journal: journal),
+                ])
         }
         #expect(journal.all == ["pool dial"], "no service started after the pool refused")
-        #expect(failureReport(for: Unreachable(), detail: nil).contains("password authentication failed"))
+        #expect(
+            failureReport(for: Unreachable(), detail: nil).contains(
+                "password authentication failed"))
     }
 
     @Test("a module with only a before-start hook has no stand-in service")
@@ -133,7 +137,9 @@ struct BeforeStartAndShutdownDeadlineTests {
     struct PeekModule: AlulaModule {
         struct Peek: Service {
             let seen: Seen
-            func run() async throws { seen.value.withLock { $0 = ShutdownDeadline.current?.timeout } }
+            func run() async throws {
+                seen.value.withLock { $0 = ShutdownDeadline.current?.timeout }
+            }
         }
         let seen: Seen
         var service: (any Service)? { Peek(seen: seen) }

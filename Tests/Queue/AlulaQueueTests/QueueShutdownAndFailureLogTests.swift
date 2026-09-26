@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaQueueTesting
 import Foundation
 import Logging
 import ServiceLifecycle
@@ -6,7 +7,6 @@ import Synchronization
 import Testing
 
 @testable import AlulaQueue
-import AlulaQueueTesting
 
 @Suite("Queue worker: failures logged as state, jobs handed back before the deadline", .serialized)
 struct QueueShutdownAndFailureLogTests {
@@ -32,10 +32,14 @@ struct QueueShutdownAndFailureLogTests {
         }
     }
 
-    struct Down: Error, CustomStringConvertible { var description: String { "postgres unreachable" } }
+    struct Down: Error, CustomStringConvertible {
+        var description: String { "postgres unreachable" }
+    }
     struct Other: Error, CustomStringConvertible { var description: String { "something else" } }
 
-    @Test("a repeating failure is logged when it starts, changes and ends, and reminded once a minute")
+    @Test(
+        "a repeating failure is logged when it starts, changes and ends, and reminded once a minute"
+    )
     func repeatedFailureLog() {
         // Relay #42: 68 identical error lines in 45 seconds from one node.
         let capture = Capture()

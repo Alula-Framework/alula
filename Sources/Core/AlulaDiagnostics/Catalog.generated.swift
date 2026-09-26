@@ -1141,6 +1141,79 @@ enum DiagnosticCatalog {
             ALU-LIFE-8002.
 
             """##,
+        "ALU-LIFE-8005": ##"""
+            # ALU-LIFE-8005: A module failed after the application started
+
+            **Severity:** error
+
+            ## Meaning
+
+            Every service had started and the application had been running for a while
+            when one module's service threw. Services in an Alula application stop
+            together, so the whole application stopped. The report names the module,
+            how long the application had been running, and the error it threw.
+
+            ## Why Alula rejects it
+
+            This is not a failed start, and reporting it as "could not start" sent
+            readers to check configuration that had worked for hours. The error says
+            what actually happened: the application served, then this module failed.
+
+            ## Common causes
+
+            - A connection the module depends on closed or refused, such as a database, a
+              broker, or an upstream feed, and the module's service let the error escape.
+            - A bug in the module's service loop, reached only by live traffic.
+
+            ## Fixes
+
+            1. Read the error under the diagnostic: it is the module's own error, unchanged.
+            2. If the failure is one the service should survive, such as a dropped connection,
+               catch it inside the service's loop and retry, instead of letting it end the application.
+
+            ## Related
+
+            ALU-LIFE-8006, ALU-LIFE-8004.
+
+            """##,
+        "ALU-LIFE-8006": ##"""
+            # ALU-LIFE-8006: A module's service returned while the application ran
+
+            **Severity:** error
+
+            ## Meaning
+
+            A module's service returned without throwing. A module's service is meant
+            to run until the application shuts down, so returning early stops the
+            application. The report names the module, and says whether the application
+            had started or not.
+
+            ## Why Alula rejects it
+
+            A service that returns has not failed, so there is no error to show, and
+            the application stopped with nothing saying why. A service ending on its
+            own is almost always a mistake, so Alula names the module.
+
+            ## Common causes
+
+            - A `for await` loop over a stream that finished, for example because its
+              producer ended or its connection closed cleanly.
+            - A `run()` that starts work in the background and returns, instead of
+              waiting for it or for graceful shutdown.
+            - A service that really is a bounded job, such as a one-off import, that
+              was not declared as one.
+
+            ## Fixes
+
+            1. Keep `run()` running until shutdown: await the work, or end with `try await gracefulShutdown()`.
+            2. For a bounded job whose completion should end the application, declare
+               `serviceCompletion: .endsApp` on the module.
+
+            ## Related
+
+            ALU-LIFE-8005.
+
+            """##,
         "ALU-OAPI-3001": ##"""
             # ALU-OAPI-3001: A type the API uses has no schema
 

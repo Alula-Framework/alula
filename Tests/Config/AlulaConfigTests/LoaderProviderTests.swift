@@ -68,6 +68,21 @@ struct LoaderProviderTests {
         }
     }
 
+    /// The name an error tells an operator to set must be the one the
+    /// runtime reads. For a kebab-case key it was `ALULA_PUBSUB_NODE-ID`,
+    /// which the runtime never reads — its encoder maps a dash to `_`.
+    @Test("a kebab-case key's variable name is the one the runtime reads", arguments: [
+        "pubsub.node-id", "queue.lease-seconds", "datasource.primary.pool-size",
+    ])
+    func kebabKeyVariableName(key: String) throws {
+        let name = EnvironmentVariablesSource.variableName(for: key)
+        #expect(!name.contains("-"), "\(name)")
+        try withConfigDirectory(files: ["alula.yaml": baseYAML]) { directory in
+            let config = try Configuration.load(from: directory, processEnvironment: [name: "42"])
+            #expect(try config.getIfPresent(key, as: String.self) == "42", "\(name) did not reach \(key)")
+        }
+    }
+
     @Test("secret-marked values resolve normally but redact in descriptions")
     func secretsRedact() throws {
         try withConfigDirectory(files: ["alula.yaml": baseYAML]) { directory in

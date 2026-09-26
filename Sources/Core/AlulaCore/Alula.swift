@@ -297,9 +297,22 @@ func failureReport(
     case let stopped as StoppedWhileRunning:
         // It started and served; the reader needs to know which module
         // stopped it and after how long, not to re-check configuration.
-        return "alula: \(stopped.headline)\n\(startupReport(for: stopped.underlying, detail: detail))\n"
+        let underlying = startupReport(for: stopped.underlying, detail: detail)
+        return "alula: \(stopped.headline)\n"
+            + AlulaDiagnostics.Diagnostic(
+                .moduleFailedWhileRunning,
+                "\(stopped.module ?? "a service") failed after running \(formatUptime(stopped.uptime))",
+                at: nil,
+                context: underlying.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            ).rendered + "\n"
     case let ended as ServiceEndedOnItsOwn:
-        return "alula: \(ended.description)\n"
+        return "alula: \(ended.headline)\n"
+            + AlulaDiagnostics.Diagnostic(
+                .serviceEndedOnItsOwn,
+                "\(ended.module)'s service returned without throwing", at: nil,
+                explanation: ServiceEndedOnItsOwn.explanation,
+                help: ["look for a loop that ended or a stream that finished, or declare `serviceCompletion: .endsApp` if the service is a bounded job."]
+            ).rendered + "\n"
     case let timedOut as ShutdownTimedOut:
         // It started and served; saying "could not start" about it would be
         // the Relay #20 mistake again.

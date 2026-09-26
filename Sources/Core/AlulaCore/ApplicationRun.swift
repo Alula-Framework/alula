@@ -100,13 +100,13 @@ struct ServiceEndedOnItsOwn: Error, CustomStringConvertible {
             + "\(module)'s service ended on its own."
     }
 
-    var description: String {
-        headline + "\n"
-            + "A module's service runs until the application shuts down, unless the module "
-            + "declares `serviceCompletion: .endsApp` for a bounded job. Returning early "
-            + "stops the application, so the service returned without throwing — look for a "
-            + "loop that ended or a stream that finished."
-    }
+    static let explanation = [
+        "A module's service runs until the application shuts down, unless the module",
+        "declares `serviceCompletion: .endsApp` for a bounded job. Returning early",
+        "stops the application.",
+    ]
+
+    var description: String { ([headline] + Self.explanation).joined(separator: "\n") }
 }
 
 /// "3d 4h 12m", "4m 07s", "850 ms": the largest units that matter.

@@ -53,7 +53,8 @@ struct ExitReportTests {
             ServerModule(), FeedModule(after: .milliseconds(1300), then: .fail),
         ])
         #expect(text.hasPrefix("alula: stopped after running 1s: FeedModule failed.\n"), "\(text)")
-        #expect(text.contains("the provider feed closed"))
+        #expect(text.contains("error: [ALU-LIFE-8005] FeedModule failed after running 1s"))
+        #expect(text.contains("    the provider feed closed"))
         #expect(!text.contains("could not start"))
     }
 
@@ -72,6 +73,7 @@ struct ExitReportTests {
             text.hasPrefix(
                 "alula: stopped after running 1s: FeedModule's service ended on its own."),
             "\(text)")
+        #expect(text.contains("error: [ALU-LIFE-8006] FeedModule's service returned without throwing"))
         #expect(text.contains("serviceCompletion: .endsApp"))
     }
 
@@ -81,6 +83,7 @@ struct ExitReportTests {
         #expect(
             text.hasPrefix("alula: could not start: FeedModule's service ended on its own."),
             "\(text)")
+        #expect(text.contains("[ALU-LIFE-8006]"))
     }
 
     @Test("uptime reads in the units that matter")

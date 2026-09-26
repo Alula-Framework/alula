@@ -99,10 +99,19 @@ public struct ConfigPrefix: Sendable, Equatable, Hashable {
     /// The variable naming the active environment: `ALULA_ENV`.
     public var environmentVariable: String { "\(rawValue.uppercased())_ENV" }
 
-    /// The key → variable-name transform: uppercase, `.` → `_`, prefixed.
-    /// `datasource.url` under the default prefix reads `ALULA_DATASOURCE_URL`.
+    /// The key → variable-name transform: uppercase, every character that is
+    /// not a letter or digit → `_`, prefixed. `datasource.url` reads
+    /// `ALULA_DATASOURCE_URL`, and `pubsub.node-id` reads
+    /// `ALULA_PUBSUB_NODE_ID`.
+    ///
+    /// It has to agree with how the runtime reads the environment —
+    /// swift-configuration's key encoder, which maps a dash to `_` as it
+    /// does a dot. Mapping only the dot named `ALULA_PUBSUB_NODE-ID` in a
+    /// missing-key error: a variable most shells cannot set, and one nothing
+    /// reads.
     public func variableName(for key: String) -> String {
-        "\(rawValue.uppercased())_" + key.uppercased().replacingOccurrences(of: ".", with: "_")
+        "\(rawValue.uppercased())_"
+            + key.uppercased().map { $0.isLetter || $0.isNumber ? String($0) : "_" }.joined()
     }
 }
 

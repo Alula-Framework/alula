@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0] - 2026-09-26
+
+### Added
+
+- **ALU-LIFE-8005 and ALU-LIFE-8006: the 0.54.0 exit reports carry codes.**
+  A module failing after the application started, and a module's service
+  returning while it ran, now render as coded diagnostics under the
+  `alula: stopped after running …` line, the way a shutdown timeout
+  (ALU-LIFE-8004) does. Each has a page, so `alula explain ALU-LIFE-8006`
+  says what to look for.
+
+### Fixed
+
+- **Missing-key errors named an environment variable nothing reads, for
+  keys with a dash.** `ConfigPrefix.variableName(for:)` mapped only `.` to
+  `_`, so a missing `pubsub.node-id` told you to set `ALULA_PUBSUB_NODE-ID`.
+  Most shells cannot set that name, and the runtime reads
+  `ALULA_PUBSUB_NODE_ID`: swift-configuration's encoder maps a dash to `_`
+  as it maps a dot. The name in errors and build hints now matches what the
+  runtime reads.
+
 ## [0.54.0] - 2026-09-26
 
 Guarantees about what a running application says when something goes wrong,

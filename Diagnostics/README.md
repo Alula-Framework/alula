@@ -96,6 +96,8 @@ and alula-data's cache and migration codes, `ALD-…`, in
 | [ALU-LIFE-8002](ALU-LIFE-8002.md) | error | No initializer of a module can be satisfied |
 | [ALU-LIFE-8003](ALU-LIFE-8003.md) | error | A module contributes something nothing collects |
 | [ALU-LIFE-8004](ALU-LIFE-8004.md) | error | Shutdown did not finish within its timeout |
+| [ALU-LIFE-8005](ALU-LIFE-8005.md) | error | A module failed after the application started |
+| [ALU-LIFE-8006](ALU-LIFE-8006.md) | error | A module's service returned while the application ran |
 
 ## Scheduled jobs
 

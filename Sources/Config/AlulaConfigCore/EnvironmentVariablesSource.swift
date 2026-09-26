@@ -11,19 +11,15 @@ import Foundation
 /// which `ConfigError.missingKey` uses to tell an operator which variable to
 /// set, and which the build plugin uses for the same reason.
 ///
-/// Keys map to variable names via a fixed transform: uppercase, `.` → `_`,
-/// prefixed `ALULA_`. So `datasource.url` reads `ALULA_DATASOURCE_URL`,
-/// and `datasource.pool_size` reads `ALULA_DATASOURCE_POOL_SIZE`.
+/// Keys map to variable names via a fixed transform: uppercase, every
+/// character that is not a letter or digit → `_`, prefixed `ALULA_`. So
+/// `datasource.url` reads `ALULA_DATASOURCE_URL`, and
+/// `datasource.primary.pool-size` reads `ALULA_DATASOURCE_PRIMARY_POOL_SIZE` —
+/// the same transform the runtime's environment provider applies.
 ///
-/// Two consequences of the transform being fixed and one-way:
-///
-/// - Config keys should stick to lowercase letters, digits, underscores, and
-///   dots — anything else (dashes, say) produces a variable name most shells
-///   cannot set.
-/// - The transform is not injective: `datasource.pool_size` and
-///   `datasource.pool.size` both read `ALULA_DATASOURCE_POOL_SIZE`. Spring's
-///   relaxed binding has the same property; don't define config keys that
-///   collide under it.
+/// The transform is not injective: `pool-size`, `pool_size` and `pool.size`
+/// all read `…_POOL_SIZE`. Spring's relaxed binding has the same property;
+/// don't define config keys that collide under it.
 ///
 /// The process environment is snapshotted at `init` — the source never
 /// re-reads `ProcessInfo` afterwards, preserving `Configuration`'s

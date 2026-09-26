@@ -180,6 +180,10 @@ extension DiagnosticCode {
         "ALU-LIFE-8003", "A module contributes something nothing collects")
     public static let shutdownTimedOut = DiagnosticCode(
         "ALU-LIFE-8004", "Shutdown did not finish within its timeout")
+    public static let moduleFailedWhileRunning = DiagnosticCode(
+        "ALU-LIFE-8005", "A module failed after the application started")
+    public static let serviceEndedOnItsOwn = DiagnosticCode(
+        "ALU-LIFE-8006", "A module's service returned while the application ran")
 
     // Scheduled jobs.
     public static let invalidSchedule = DiagnosticCode(
@@ -212,6 +216,7 @@ extension DiagnosticCode {
         .rolesWithoutAuthentication, .competingTokenValidators,
         .duplicateCommand, .unknownCommand,
         .moduleCycle, .unconstructibleModule, .uncollectedContribution, .shutdownTimedOut,
+        .moduleFailedWhileRunning, .serviceEndedOnItsOwn,
         .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,
         .invalidScheduledMethod, .invalidScheduler,
     ]

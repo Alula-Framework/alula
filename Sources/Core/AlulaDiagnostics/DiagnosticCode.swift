@@ -125,6 +125,8 @@ extension DiagnosticCode {
         "ALU-WEB-2008", "A route's pipelines drop its controller's authentication", .warning)
     public static let undeclaredLane = DiagnosticCode(
         "ALU-WEB-2009", "A route runs through a lane nothing declares", .warning)
+    public static let listenFailed = DiagnosticCode(
+        "ALU-WEB-2010", "The server could not listen on its address")
 
     // OpenAPI generation.
     public static let undocumentedType = DiagnosticCode(
@@ -176,6 +178,8 @@ extension DiagnosticCode {
         "ALU-LIFE-8002", "No initializer of a module can be satisfied")
     public static let uncollectedContribution = DiagnosticCode(
         "ALU-LIFE-8003", "A module contributes something nothing collects")
+    public static let shutdownTimedOut = DiagnosticCode(
+        "ALU-LIFE-8004", "Shutdown did not finish within its timeout")
 
     // Scheduled jobs.
     public static let invalidSchedule = DiagnosticCode(
@@ -199,7 +203,7 @@ extension DiagnosticCode {
         .unsupportedComponentDeclaration, .invalidInjectionTarget,
         .duplicateRoute, .invalidHandlerParameter, .unsupportedControllerDeclaration,
         .invalidRoutePath, .nonLiteralRoutePath, .invalidHandlerDeclaration,
-        .routeOutsideController, .pipelineNarrowing, .undeclaredLane,
+        .routeOutsideController, .pipelineNarrowing, .undeclaredLane, .listenFailed,
         .undocumentedType, .undocumentedResponse,
         .configValueWithoutKey, .invalidSettingsDeclaration, .invalidSettingsProperty,
         .missingConfigKey, .invalidConfigPrefix, .configKeysUnchecked, .unreadableConfigFile,
@@ -207,7 +211,7 @@ extension DiagnosticCode {
         .preRenameConfiguration, .invalidModuleSettings,
         .rolesWithoutAuthentication, .competingTokenValidators,
         .duplicateCommand, .unknownCommand,
-        .moduleCycle, .unconstructibleModule, .uncollectedContribution,
+        .moduleCycle, .unconstructibleModule, .uncollectedContribution, .shutdownTimedOut,
         .invalidSchedule, .missingOrConflictingSchedule, .nonLiteralScheduleArgument,
         .invalidScheduledMethod, .invalidScheduler,
     ]

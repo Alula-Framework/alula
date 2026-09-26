@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaDiagnostics
 import AlulaWebTesting
 import Foundation
 import Testing
@@ -26,6 +27,8 @@ struct ListenFailureTests {
                     text.hasPrefix(
                         "could not listen on 127.0.0.1:\(port): the address is already in use"))
                 #expect(text.contains("server.port"))
+                #expect(failure.diagnosticCode == .listenFailed)
+                #expect(AlulaDiagnostics.Diagnostic(.listenFailed, text, at: nil).rendered.contains("[ALU-WEB-2010]"))
             }
         }
     }

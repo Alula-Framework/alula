@@ -363,6 +363,7 @@ let package = Package(
         .target(
             name: "AlulaTransport",
             dependencies: [
+                "AlulaDiagnostics",
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .product(
                     name: "HummingbirdCore", package: "hummingbird",
@@ -911,6 +912,7 @@ let package = Package(
         .testTarget(
             name: "AlulaTransportTests",
             dependencies: [
+                "AlulaDiagnostics",
                 .target(name: "AlulaTransport", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),

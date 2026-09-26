@@ -1108,6 +1108,39 @@ enum DiagnosticCatalog {
             Add the module that collects it to `modules:` (the diagnostic names it).
 
             """##,
+        "ALU-LIFE-8004": ##"""
+            # ALU-LIFE-8004: Shutdown did not finish within its timeout
+
+            **Severity:** error
+
+            ## Meaning
+
+            The application was asked to stop, and some of its services were still
+            running when `lifecycle.shutdown-timeout-seconds` ran out. They were
+            cancelled, and the report names them.
+
+            ## Why Alula rejects it
+
+            A shutdown that runs out of time cancels work in the middle — a job half
+            done, a request cut off — and that used to be said only at debug level, with
+            the process exiting 0 as though it had stopped cleanly (Relay #36). It exits
+            non-zero now, saying which services were cut off.
+
+            ## Common causes
+
+            - A job or request that runs longer than the timeout.
+            - A service that does not watch for cancellation or graceful shutdown.
+
+            ## Fixes
+
+            1. Raise `lifecycle.shutdown-timeout-seconds` above the longest job or request you expect to finish.
+            2. Make that work stop sooner: check `Task.isCancelled` or the graceful-shutdown signal, and hand unfinished jobs back.
+
+            ## Related
+
+            ALU-LIFE-8002.
+
+            """##,
         "ALU-OAPI-3001": ##"""
             # ALU-OAPI-3001: A type the API uses has no schema
 
@@ -1781,6 +1814,38 @@ enum DiagnosticCatalog {
             ## Related
 
             ALU-WEB-2008.
+
+            """##,
+        "ALU-WEB-2010": ##"""
+            # ALU-WEB-2010: The server could not listen on its address
+
+            **Severity:** error
+
+            ## Meaning
+
+            The HTTP server could not bind the host and port it was configured with:
+            another process is listening there, the port needs privileges, or the address
+            is not on this machine. The report names the address and the reason.
+
+            ## Why Alula rejects it
+
+            Nothing can be served without it, so the start fails — with the address,
+            where it used to print the socket call's errno and no address at all.
+
+            ## Common causes
+
+            - Another instance of the application, or another service, already on the port.
+            - A port below 1024 without the privilege to bind it.
+            - `server.host` set to an address this machine does not have.
+
+            ## Fixes
+
+            1. Stop whatever holds the port, or choose another with `server.port`.
+            2. Set `server.host` to an address this machine has, or `0.0.0.0` for all of them.
+
+            ## Related
+
+            ALU-LIFE-8004.
 
             """##,
     ]

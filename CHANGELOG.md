@@ -4,6 +4,19 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.1] - 2026-09-26
+
+### Added
+
+- **A timed-out shutdown and a failed listen carry codes.** 0.53.0's
+  "alula: shutdown timed out." report is now `ALU-LIFE-8004`, and
+  "could not listen on 127.0.0.1:8080: the address is already in use" is
+  `ALU-WEB-2010`, each with a page.
+- **`DiagnosticCode(_:_:_:documentationURL:)`**, public, for a code another
+  package defines: its errors render through `Alula.run` with the code and a
+  link to that package's page. alula-data's data-source startup failure is
+  the first to use it.
+
 ## [0.53.0] - 2026-09-26
 
 From the Relay diagnostics rerun: the paths an operator meets when the

@@ -297,7 +297,8 @@ func failureReport(
     case let timedOut as ShutdownTimedOut:
         // It started and served; saying "could not start" about it would be
         // the Relay #20 mistake again.
-        return "alula: shutdown timed out.\n\(timedOut.description)\n"
+        return "alula: shutdown timed out.\n"
+            + AlulaDiagnostics.Diagnostic(.shutdownTimedOut, timedOut.description, at: nil).rendered + "\n"
     case let failed as CommandFailed:
         return "alula: command '\(failed.name)' failed.\n\(startupReport(for: failed.underlying, detail: detail))\n"
     case let notFound as CommandNotFound:

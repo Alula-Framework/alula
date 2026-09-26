@@ -47,6 +47,7 @@ and alula-data's cache and migration codes, `ALD-…`, in
 | [ALU-WEB-2007](ALU-WEB-2007.md) | error | A route attribute outside a @Controller |
 | [ALU-WEB-2008](ALU-WEB-2008.md) | warning | A route's pipelines drop its controller's authentication |
 | [ALU-WEB-2009](ALU-WEB-2009.md) | warning | A route runs through a lane nothing declares |
+| [ALU-WEB-2010](ALU-WEB-2010.md) | error | The server could not listen on its address |
 
 ## OpenAPI generation
 
@@ -94,6 +95,7 @@ and alula-data's cache and migration codes, `ALD-…`, in
 | [ALU-LIFE-8001](ALU-LIFE-8001.md) | error | Modules need each other in a cycle |
 | [ALU-LIFE-8002](ALU-LIFE-8002.md) | error | No initializer of a module can be satisfied |
 | [ALU-LIFE-8003](ALU-LIFE-8003.md) | error | A module contributes something nothing collects |
+| [ALU-LIFE-8004](ALU-LIFE-8004.md) | error | Shutdown did not finish within its timeout |
 
 ## Scheduled jobs
 

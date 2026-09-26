@@ -125,6 +125,7 @@ struct BeforeStartAndShutdownDeadlineTests {
         }
         let report = failureReport(for: try #require(error), detail: nil)
         #expect(report.hasPrefix("alula: shutdown timed out."))
+        #expect(report.contains("error: [ALU-LIFE-8004] shutdown did not finish"))
         #expect(!report.contains("could not start"))
         #expect(report.contains("lifecycle.shutdown-timeout-seconds"))
         #expect(report.contains("StubbornModule"), "names what was still running")

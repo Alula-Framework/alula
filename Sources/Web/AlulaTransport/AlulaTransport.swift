@@ -1,3 +1,4 @@
+import AlulaDiagnostics
 import AlulaCore
 import AlulaWeb
 import Foundation
@@ -599,6 +600,8 @@ struct ListenFailure: Error, StartupDiagnostic, CustomStringConvertible {
         default: String(cString: strerror(error.errnoCode)).lowercased()
         }
     }
+
+    var diagnosticCode: DiagnosticCode? { .listenFailed }
 
     var description: String {
         "could not listen on \(host):\(port): \(reason). Stop what holds it, or set server.host and server.port."

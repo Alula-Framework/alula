@@ -139,6 +139,13 @@ struct DiagnosticCatalogTests {
             #expect(id.split(separator: "-").last?.first == digit[family], "\(id) is numbered outside its family")
         }
         #expect(DiagnosticCode.named("alu-di-1001") == .missingProvider)
+        // Another package's code links its own page, and is not Alula's.
+        let external = DiagnosticCode(
+            "ALD-DATA-1001", "A data source could not connect at startup",
+            documentationURL: "https://github.com/Alula-Framework/alula-data/blob/main/Diagnostics/ALD-DATA-1001.md")
+        #expect(external.documentationURL.contains("/alula-data/"))
+        #expect(DiagnosticCode.named("ALD-DATA-1001") == nil)
+        #expect(Diagnostic(external, "x", at: nil).rendered.contains("docs: https://github.com/Alula-Framework/alula-data/"))
     }
 }
 

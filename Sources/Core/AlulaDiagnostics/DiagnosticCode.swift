@@ -32,12 +32,31 @@ public struct DiagnosticCode: Sendable, Hashable, CustomStringConvertible {
         self.id = id
         self.title = title
         self.severity = severity
+        self.externalDocumentationURL = nil
     }
+
+    /// A code another package defines — alula-data's `ALD-…`, Hangar's
+    /// `HGR-…` — so an error it throws renders through `Alula.run` with the
+    /// code and a link to *its* page. Alula's own codes are listed in ``all``
+    /// and have their pages here; these do not.
+    public init(
+        _ id: String, _ title: String, _ severity: Diagnostic.Severity = .error,
+        documentationURL: String
+    ) {
+        self.id = id
+        self.title = title
+        self.severity = severity
+        self.externalDocumentationURL = documentationURL
+    }
+
+    private let externalDocumentationURL: String?
 
     /// Where the full explanation lives online. Until Alula has a site of
     /// its own, the page in the repository — the same text `alula explain`
     /// prints.
-    public var documentationURL: String { Self.documentationBase + id + ".md" }
+    public var documentationURL: String {
+        externalDocumentationURL ?? Self.documentationBase + id + ".md"
+    }
 
     public static let documentationBase = "https://github.com/Alula-Framework/alula/blob/main/Diagnostics/"
 

@@ -168,7 +168,7 @@ at startup**:
 | --- | --- | --- |
 | No `DistributedPubSubAdapter` | `single-node` | No gossip at all; node failure is not a distributed concern. |
 | Adapter + `PresenceMembershipMonitor` | `membership-aware` | The intended multi-node mode. The monitor (the SWIM adapter, PubSub) declares a node down ⇒ its entries leave promptly, in one operation. Gossip from a down-declared node is ignored until the monitor says up — the monitor is authoritative. Anti-entropy still broadcasts each node's full own state every `heartbeat-interval`, so traffic scales with state size here exactly as it does in degraded mode; what membership mode buys is prompt, decisive removal, not less traffic. |
-| Adapter only (Valkey-style fan-out) | `heartbeat-expiry` (**degraded**) | Each node re-announces its own state every `heartbeat-interval`; a replica silent past `down-after` is hidden (leaves pushed). Removal is delayed up to the timeout; a slow node may flap; heartbeat traffic scales with state size. Logged at **warning** level so nobody discovers this from a bug report. |
+| Adapter only (Valkey-style fan-out) | `heartbeat-expiry` (**degraded**) | Each node re-announces its own state every `heartbeat-interval`; a replica silent past `down-after` is hidden (leaves pushed). Removal is delayed up to the timeout; a slow node may flap; heartbeat traffic scales with state size. Announced at startup at **warning** until `presence.down-after-seconds` is set — naming that setting, the one bound you control — and at info once it is: the delay is then a decision, not a surprise. |
 
 In both clustered modes, a down replica's state is kept (hidden) until
 `permdown-after`, so a wrongly-evicted node that resumes gossiping comes

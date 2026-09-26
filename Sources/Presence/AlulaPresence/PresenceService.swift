@@ -150,15 +150,20 @@ public struct PresenceService: Service, Sendable {
                 metadata: ["replica": "\(replica)", "anti-entropy-interval": "\(configuration.heartbeatInterval)"]
             )
         case .heartbeatExpiry:
-            // Warning level, deliberately: this is the degraded mode the
-            // design insists nobody discovers from a bug report.
-            logger.warning(
+            // Relay #40: this used to warn on every start of every node and
+            // recommend "the membership-aware adapter", which no adapter that
+            // ships provides — advice nobody could follow, repeated until it
+            // was ignored. It now says what can be done: choose down-after,
+            // which bounds how long a crashed node's users stay visible. It
+            // stays a warning until that is chosen, and is info after.
+            let message: Logger.Message = """
+                presence is using heartbeat expiry: the PubSub adapter reports no cluster membership, \
+                so a crashed node's users stay visible for up to down-after (\(configuration.downAfter)). \
+                Set presence.down-after-seconds to choose that bound; an adapter providing \
+                PresenceMembershipMonitor would make leaves prompt
                 """
-                presence running in DEGRADED heartbeat-expiry mode: the PubSub adapter provides no \
-                membership signal, so a crashed node's users stay visible for up to down-after, and a \
-                slow node may flap. Acceptable for deployments tolerating delayed leaves; use the \
-                membership-aware adapter for prompt, correct presence
-                """,
+            logger.log(
+                level: configuration.downAfterIsExplicit ? .info : .warning, message,
                 metadata: [
                     "replica": "\(replica)",
                     "heartbeat-interval": "\(configuration.heartbeatInterval)",

@@ -100,6 +100,17 @@ struct PresenceConfigurationTests {
         #expect(former.heartbeatInterval == .seconds(3))
     }
 
+    @Test("down-after is explicit only when a configuration names it")
+    func downAfterExplicitness() throws {
+        #expect(try PresenceConfiguration(configuration: Configuration(values: [:])).downAfterIsExplicit == false)
+        #expect(try PresenceConfiguration(configuration: Configuration(values: [
+            "presence.down-after-seconds": "30",
+        ])).downAfterIsExplicit)
+        #expect(try PresenceConfiguration(configuration: Configuration(values: [
+            "alula.presence.down-after-seconds": "30",
+        ])).downAfterIsExplicit)
+    }
+
     @Test("non-positive intervals are refused")
     func positivityValidation() {
         #expect(throws: PresenceConfigurationError.nonPositiveInterval) {

@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   — while every other path under the mount worked, which is what made it hard
   to see. Assembling dispatch now warns when a GET route claims exactly a
   mount's prefix and the mount has an index file, naming the route.
+- **Heartbeat-expiry presence names what you can do about it** (Relay #40).
+  Every node on the Valkey PubSub adapter warned at every start that presence
+  was DEGRADED and to "use the membership-aware adapter", which no adapter that
+  ships provides. It now says what the mode means — a crashed node's users stay
+  visible for up to `down-after` — and names `presence.down-after-seconds`,
+  which bounds it; it is a warning until that is set, and info after.
+  `PresenceConfiguration.downAfterIsExplicit` records the choice.
 
 ## [0.52.0] - 2026-09-25
 

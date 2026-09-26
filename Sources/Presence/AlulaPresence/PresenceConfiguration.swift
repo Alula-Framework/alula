@@ -65,6 +65,13 @@ public struct PresenceConfiguration: Sendable, Equatable {
     /// count and far below anything that hurts.
     public var maxEntriesPerFrame: Int?
 
+    /// Whether `down-after` was chosen rather than defaulted. Heartbeat
+    /// expiry is announced at warning until it is: once an operator has set
+    /// how long a crashed node's users may stay visible, the degraded mode is
+    /// a decision rather than a surprise, and repeating it on every start
+    /// teaches people to skip the line.
+    public var downAfterIsExplicit = false
+
     public init(
         nodeName: String? = nil,
         heartbeatInterval: Duration = .seconds(5),
@@ -106,8 +113,9 @@ public struct PresenceConfiguration: Sendable, Equatable {
         // of failing it with the key named.
         let heartbeat = try configuration.getIfPresent(
             "presence.heartbeat-interval-seconds", formerly: ["alula.presence.heartbeat-interval-seconds"], as: Double.self) ?? 5.0
-        let downAfter = try configuration.getIfPresent(
-            "presence.down-after-seconds", formerly: ["alula.presence.down-after-seconds"], as: Double.self) ?? 15.0
+        let explicitDownAfter = try configuration.getIfPresent(
+            "presence.down-after-seconds", formerly: ["alula.presence.down-after-seconds"], as: Double.self)
+        let downAfter = explicitDownAfter ?? 15.0
         let permdown = try configuration.getIfPresent(
             "presence.permdown-after-seconds", formerly: ["alula.presence.permdown-after-seconds"], as: Double.self) ?? 300.0
         let sweep = try configuration.getIfPresent("presence.sweep-interval-seconds", formerly: ["alula.presence.sweep-interval-seconds"], as: Double.self)
@@ -137,6 +145,7 @@ public struct PresenceConfiguration: Sendable, Equatable {
                 "presence.max-entries-per-frame", formerly: ["alula.presence.max-entries-per-frame"], as: Int.self)
                 .map { $0 > 0 ? $0 : nil } ?? 10_000
         )
+        downAfterIsExplicit = explicitDownAfter != nil
     }
 }
 

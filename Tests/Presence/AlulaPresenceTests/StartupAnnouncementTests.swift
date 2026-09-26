@@ -39,10 +39,11 @@ private final class Capture: Sendable {
 @Suite("Failure-detection mode is announced at startup", .timeLimit(.minutes(1)))
 struct StartupAnnouncementTests {
 
-    private func announce(mode: PresenceMode) async -> Capture {
+    private func announce(mode: PresenceMode, downAfterIsExplicit: Bool = false) async -> Capture {
         let capture = Capture()
-        let configuration = PresenceConfiguration(
+        var configuration = PresenceConfiguration(
             heartbeatInterval: .milliseconds(50), downAfter: .milliseconds(200))
+        configuration.downAfterIsExplicit = downAfterIsExplicit
         let local = LocalPubSub()
         let tracker = PresenceTracker(
             replica: PresenceReplicaID(name: "n1", boot: "b1"),
@@ -61,16 +62,26 @@ struct StartupAnnouncementTests {
         return capture
     }
 
-    @Test("degraded heartbeat-expiry is a warning, and says why it is degraded")
+    @Test("heartbeat expiry with a defaulted down-after is a warning that names the setting")
     func degradedIsAWarning() async {
         let capture = await announce(mode: .heartbeatExpiry)
         let warnings = capture.all.filter { $0.level == .warning }
         #expect(warnings.count == 1)
         let text = warnings.first?.message ?? ""
-        #expect(text.contains("DEGRADED"))
-        // The operator needs the consequence and the fix, not just the label.
-        #expect(text.contains("down-after"))
-        #expect(text.contains("membership-aware"))
+        // The consequence, and the one thing an operator can do about it
+        // with what ships (Relay #40: it recommended an adapter nobody has).
+        #expect(text.contains("heartbeat expiry"))
+        #expect(text.contains("presence.down-after-seconds"))
+        #expect(!text.contains("use the membership-aware adapter"))
+    }
+
+    /// Once down-after is chosen, the delayed leave is a decision, and a
+    /// warning on every start of every node only teaches people to skip it.
+    @Test("heartbeat expiry with down-after chosen is info")
+    func chosenDownAfterIsInfo() async {
+        let capture = await announce(mode: .heartbeatExpiry, downAfterIsExplicit: true)
+        #expect(capture.all.filter { $0.level == .warning }.isEmpty)
+        #expect(capture.all.contains { $0.level == .info && $0.message.contains("heartbeat expiry") })
     }
 
     @Test("the intended multi-node mode is ordinary news")

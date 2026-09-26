@@ -283,6 +283,18 @@ struct ErrorResponseTests {
             "no Retry-After unless the error knows one")
     }
 
+    @Test("rejected input is a 400 with its own client message, never the error's description")
+    func rejectedInputIs400() {
+        struct BadFilter: RejectedInput, CustomStringConvertible {
+            var description: String { "\"x\" is not a filterable field of \"internal_table\"" }
+            var rejectionMessage: String { "\"x\" is not a filterable field" }
+        }
+        let response = errorResponse(for: BadFilter(), context: .mock(path: "/"))
+        #expect(response.status == .badRequest)
+        #expect(response.bodyText.contains("is not a filterable field"))
+        #expect(!response.bodyText.contains("internal_table"))
+    }
+
     @Test func unknownErrorsAreOpaque500s() {
         struct Leaky: Error { let secret = "db password" }
         let response = errorResponse(for: Leaky(), context: .mock(path: "/"))

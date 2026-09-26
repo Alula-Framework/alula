@@ -13,6 +13,8 @@ final class RawSocketClient {
         private var inboundIterator: NIOAsyncChannelInboundStream<ByteBuffer>.AsyncIterator
         private let outbound: NIOAsyncChannelOutboundWriter<ByteBuffer>
         private var received = ""
+        /// The same bytes, unconverted: a WebSocket frame header is not UTF-8.
+        private(set) var receivedBytes: [UInt8] = []
 
         init(
             inbound: NIOAsyncChannelInboundStream<ByteBuffer>,
@@ -38,6 +40,7 @@ final class RawSocketClient {
             while !received.contains(marker) {
                 guard let buffer = try await inboundIterator.next() else { break }
                 received += String(buffer: buffer)
+                receivedBytes += buffer.readableBytesView
             }
             return received
         }
@@ -46,6 +49,7 @@ final class RawSocketClient {
         func readToEnd() async throws -> String {
             while let buffer = try await inboundIterator.next() {
                 received += String(buffer: buffer)
+                receivedBytes += buffer.readableBytesView
             }
             return received
         }

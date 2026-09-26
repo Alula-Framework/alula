@@ -128,6 +128,10 @@ public func errorResponse(for error: any Error, context: RequestContext) -> Resp
             response = response.settingHeader(field.name, field.value)
         }
         return response
+    case let rejected as any RejectedInput where rejected.isRejectedInput:
+        // The request's fault, not the server's: not worth an error line.
+        context.logger.debug("request rejected: \(String(describing: error))")
+        return render(.badRequest, rejected.rejectionMessage)
     case let unavailable as any TemporarilyUnavailable where unavailable.isTemporarilyUnavailable:
         // A dependency that is down is not a bug in this request, and the
         // dependency's own loop (a pool reconnecting) already reports it:

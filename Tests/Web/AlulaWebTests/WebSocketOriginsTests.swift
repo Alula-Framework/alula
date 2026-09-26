@@ -42,6 +42,21 @@ struct WebSocketOriginsTests {
         }
     }
 
+    @Test("a ws or wss origin is not a browser's, and passes; null and extension origins do not")
+    func nonBrowserOrigins() {
+        // Relay #30: swift-websocket always sends `Origin: ws://<host>`, so
+        // Alula's own Swift client failed Alula's own default.
+        let policy = WebSocketOrigins.sameOrigin
+        #expect(policy.permits(handshake(authority: "api.example:8080", origin: "ws://127.0.0.1"), trustedProxies: .none))
+        #expect(policy.permits(handshake(authority: "api.example", origin: "wss://client.internal"), trustedProxies: .none))
+        #expect(!policy.permits(handshake(authority: "api.example", origin: "null"), trustedProxies: .none))
+        #expect(
+            !policy.permits(
+                handshake(authority: "api.example", origin: "chrome-extension://abcdefghijklmnop"),
+                trustedProxies: .none))
+        #expect(!policy.permits(handshake(authority: "api.example", origin: "https://evil.example"), trustedProxies: .none))
+    }
+
     @Test("X-Forwarded-Host counts only from a trusted proxy")
     func forwardedHostNeedsTrust() throws {
         let proxies = try TrustedProxies(cidrs: ["10.0.0.0/8"])

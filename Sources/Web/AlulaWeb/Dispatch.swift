@@ -418,7 +418,7 @@ public enum DispatchBuilder {
                     // the session or authentication layers it is trying to
                     // borrow. See `WebSocketOrigins`.
                     requestLogger.info(
-                        "cross-origin WebSocket handshake refused",
+                        "cross-origin WebSocket handshake refused; list the origin in web.websocket.allowed-origins to admit it",
                         metadata: ["origin": "\(request.headers[.origin] ?? "")"])
                     response = .problem(
                         status: .forbidden, message: "Cross-origin WebSocket handshake refused")

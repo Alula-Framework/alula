@@ -4,6 +4,72 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.0] - 2026-09-26
+
+### Changed
+
+- **A `ws://` or `wss://` Origin passes the WebSocket origin check** (Relay
+  #30). A browser's Origin is its page's — http or https, `null`, or an
+  extension's scheme — never ws or wss, so only a non-browser client sends
+  one, and it carries no ambient cookies to ride, which is what the check
+  protects. swift-websocket always sends `ws://<host>`, so Alula's own Swift
+  client failed Alula's own default. `null` and extension origins are still
+  refused, and the refusal's log line now names
+  `web.websocket.allowed-origins`.
+
+### Fixed
+
+- **Two WebSocket wire tests no longer flake under load.** NIO's typed client
+  upgrader drops a frame that arrives in the same read as the `101`; with the
+  suite's CPU contention, 12 runs in 25 lost the server's first message. A
+  raw socket received it every time — the server was right — so the tests
+  where the server speaks first now read the frames themselves.
+
+### Added
+
+- **Client credentials** (Relay #31). `ClientCredentialsTokenSource` gets a
+  service account's access tokens by the OAuth 2.0 client credentials grant
+  from a token URL or an OpenID Connect issuer (discovered), caches each
+  until 30 s before it expires, and shares one request among callers asking
+  at once. `AuthorizedHTTPClient` sends it as a bearer token and, on a 401,
+  renews it and tries once more. `AlulaClientCredentialsModule` builds both
+  from `http-client.client-credentials.*` over the application's HTTP client.
+  A service calling another used to hand-write all of this — Relay's gateway
+  did. A refusal names the endpoint, the client and the server's reason
+  (`invalid_client: Invalid client credentials`), never the secret; an
+  authorization server that is down is `TemporarilyUnavailable`.
+- **`AlulaChannelsTransport`: a WebSocket for `ChannelClient`** (Relay #30).
+  `WebSocketChannelTransport(headers:)` is swift-websocket's client bridged
+  to the channels client, with the headers a server needs — a session
+  cookie, a bearer token. Every Swift client of a channel used to copy the
+  adapter from Alula's own end-to-end tests and add the headers it lacked. A
+  handshake that fails says so with the URL, rather than a bare error type.
+- **`RejectedInput`** (AlulaCore): an error that means the request asked
+  wrongly. `AlulaWeb` renders it as `400` with its `rejectionMessage` —
+  chosen for the wire, so a description that names a table stays in the log.
+  Alula Data conforms Hangar's dynamic-filter errors, which were 500s.
+- **Pooled SMTP** (Relay #39). `AlulaMailSMTPModule` keeps a few long-lived
+  connections (`mail.smtp.pool-size`, default 4) and every send shares them,
+  with `RSET` between messages. Opening a connection costs a TCP handshake,
+  TLS, `EHLO` and `AUTH`; one per message capped Relay's notification fan-out
+  at about 58 a second. Against the same Mailpit: 55 messages a second one
+  connection per message, 875 pooled.
+  - A pooled connection closes with `QUIT` after `mail.smtp.idle-seconds`
+    (30) with nothing to send, and is reopened after
+    `mail.smtp.messages-per-connection` (100) messages.
+  - A connection the server has already dropped is discovered at `RSET`;
+    it costs a reconnect, and the message is sent on the new connection.
+  - A refused recipient or message fails that message only; the connection
+    carries on. A broken connection or a timeout fails the message it was
+    carrying, transiently, and the queue retries it.
+  - Every exchange — opening included — is bounded by
+    `mail.smtp.timeout-seconds`. Opening had no bound past the TCP connect,
+    so a server that accepted and never greeted held the send indefinitely.
+  - `pool-size: 0`, a transport built by hand, and commands (which do not
+    start the pool) keep one connection per message.
+  - The pool is an infrastructure service: it stops after the queue worker
+    whose jobs send mail, and sends what is still queued.
+
 ## [0.55.0] - 2026-09-26
 
 ### Added

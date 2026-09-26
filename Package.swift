@@ -46,6 +46,8 @@ let package = Package(
         .library(name: "AlulaChannels", targets: ["AlulaChannels"]),
         .library(name: "AlulaChannelsProtocol", targets: ["AlulaChannelsProtocol"]),
         .library(name: "AlulaChannelsClient", targets: ["AlulaChannelsClient"]),
+        // A WebSocket for ChannelClient, with headers (Relay #30).
+        .library(name: "AlulaChannelsTransport", targets: ["AlulaChannelsTransport"]),
         .library(name: "AlulaChannelsTesting", targets: ["AlulaChannelsTesting"]),
 
         // Presence: CRDT-merged "who is here", on top of PubSub and Channels.
@@ -438,6 +440,22 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/Channels/AlulaChannelsClient",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AlulaChannelsTransport",
+            dependencies: [
+                "AlulaChannelsClient",
+                .product(name: "Logging", package: "swift-log"),
+                // Gated like the client: an ungated product makes a
+                // consumer with no traits resolve swift-http-types.
+                .product(
+                    name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["Web"])),
+                .product(
+                    name: "HummingbirdWSClient", package: "hummingbird-websocket",
+                    condition: .when(traits: ["Web"])),
+            ],
+            path: "Sources/Channels/AlulaChannelsTransport",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(
@@ -984,6 +1002,7 @@ let package = Package(
             dependencies: [
                 .target(name: "AlulaChannels", condition: .when(traits: ["Web"])),
                 "AlulaChannelsClient", "AlulaCore", "AlulaPubSub",
+                .target(name: "AlulaChannelsTransport", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaTransport", condition: .when(traits: ["Web"])),

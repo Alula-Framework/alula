@@ -74,6 +74,13 @@ public struct WebSocketOrigins: Sendable {
         guard !allowsAnyOrigin, let origin = request.headers[.origin] else { return true }
         if additional?.allows(origin) == true { return true }
         guard let originAuthority = Self.authority(ofOrigin: origin) else { return false }
+        // A browser's Origin is the page's: http or https, `null`, or an
+        // extension's own scheme — never ws or wss. Only a non-browser client
+        // sends those (swift-websocket always sends `ws://<host>`), and it
+        // carries no ambient cookies to ride, which is what this check
+        // protects. Refusing it made Alula's own Swift client fail Alula's
+        // own default (Relay #30). `null` and extension origins stay refused.
+        if originAuthority.scheme == "ws" || originAuthority.scheme == "wss" { return true }
         return addressedAuthorities(of: request, trustedProxies: trustedProxies)
             .contains { Self.normalized($0, scheme: originAuthority.scheme) == originAuthority.value }
     }

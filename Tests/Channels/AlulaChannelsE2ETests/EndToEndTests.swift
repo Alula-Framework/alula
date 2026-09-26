@@ -1,11 +1,13 @@
 import AlulaChannels
 import AlulaChannelsClient
+import AlulaChannelsTransport
 import AlulaCore
 import AlulaPubSub
 import AlulaTransport
 import AlulaWeb
 import AlulaWebTesting
 import Foundation
+import HTTPTypes
 import HummingbirdWSClient
 import Logging
 import Testing
@@ -108,6 +110,7 @@ struct E2EModule {
 /// Boots a real `AlulaTransport` on an ephemeral port with the channels
 /// stack, hands the bound port to `body`, tears the server down after.
 func withRunningChannelServer(
+    origins: WebSocketOrigins = .anyOrigin,
     _ body: @escaping @Sendable (_ port: Int) async throws -> Void
 ) async throws {
     let configuration = Configuration()
@@ -115,7 +118,9 @@ func withRunningChannelServer(
     let app = E2EModule()
     let channels = try AlulaChannelsModule(
         bus: pubsub.bus, configuration: configuration, channels: app.channels)
-    let dispatch = try TestClient(routes: [channels.socketRoute("/socket")]).dispatch
+    let dispatch = try TestClient(
+        routes: [channels.socketRoute("/socket")], web: WebRuntime(webSocketOrigins: origins)
+    ).dispatch
 
     let (ports, portContinuation) = AsyncStream<Int>.makeStream()
     let transport = AlulaTransport(
@@ -154,6 +159,37 @@ struct EndToEndTests {
             transport: NIOWebSocketTransport(),
             configuration: ChannelClientConfiguration(heartbeatInterval: heartbeat)
         )
+    }
+
+    @Test("the shipped transport connects against Alula's default origin check")
+    func shippedTransport() async throws {
+        // Relay #30: every Swift client copied an adapter from these tests,
+        // and it failed the same-origin default that production uses.
+        try await withRunningChannelServer(origins: .sameOrigin) { port in
+            var headers = HTTPFields()
+            headers[.cookie] = "session=abc"
+            let client = ChannelClient(
+                url: URL(string: "ws://127.0.0.1:\(port)/socket")!,
+                transport: WebSocketChannelTransport(headers: headers))
+            try await client.connect()
+            let room = client.channel("wire:7")
+            #expect(try await room.join() == ["joined": "wire:7"])
+            #expect(try await room.push("echo", payload: ["n": 1]) == ["n": 1])
+            await client.disconnect()
+        }
+    }
+
+    @Test("a handshake the server refuses says so, with the URL")
+    func refusedHandshake() async throws {
+        try await withRunningChannelServer { port in
+            do {
+                _ = try await WebSocketChannelTransport().connect(
+                    to: URL(string: "ws://127.0.0.1:\(port)/no-such-socket")!)
+                Issue.record("connected to a route that does not exist")
+            } catch let error as WebSocketChannelTransportError {
+                #expect(error.description.hasPrefix("could not open a WebSocket to ws://127.0.0.1:\(port)/no-such-socket"))
+            }
+        }
     }
 
     @Test("two real clients share a room through the full stack")

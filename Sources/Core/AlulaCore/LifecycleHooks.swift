@@ -27,11 +27,20 @@ import ServiceLifecycle
 ///   the database. One that throws is logged and the rest still run.
 /// - Hooks are bounded by `lifecycle.shutdown-timeout-seconds` like the rest
 ///   of shutdown.
+/// - **Before-start hooks run before any service of the application
+///   starts**, one at a time in dependency order. They are for proving a
+///   dependency is there — a database pool dialling its connections — so that
+///   a start that cannot work fails with that reason alone, before a listener
+///   announces itself and before workers log their own failures to reach
+///   what is missing (Relay #44). One that throws stops the application with
+///   its error, unwrapped. Nothing else is running yet, so such a hook can use
+///   only what its own module holds.
 ///
 /// A module whose start or stop is really an ongoing job (a poller, a
 /// consumer) still wants a `service`; hooks are for one-shot work.
 public struct LifecycleHook: Sendable {
     public enum Moment: Sendable, Equatable {
+        case beforeStart
         case startup
         case shutdown
     }
@@ -50,6 +59,13 @@ public struct LifecycleHook: Sendable {
         self.name = name
         self.moment = moment
         self.run = run
+    }
+
+    /// A hook run before any service of the application starts.
+    public static func beforeStart(
+        _ name: String, run: @escaping @Sendable (Logger) async throws -> Void
+    ) -> LifecycleHook {
+        LifecycleHook(name, on: .beforeStart, run: run)
     }
 
     /// A hook run as the application starts.

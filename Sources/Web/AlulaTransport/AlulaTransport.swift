@@ -1,3 +1,4 @@
+import AlulaCore
 import AlulaWeb
 import Foundation
 import HTTPTypes
@@ -9,6 +10,7 @@ import NIOCore
 import NIOPosix
 import NIOWebSocket
 import ServiceLifecycle
+import Synchronization
 import WSCore
 
 /// The default `ServerTransport` (§5.2): wraps HummingbirdCore — a mature,
@@ -47,6 +49,7 @@ public struct AlulaTransport: ServerTransport {
         let dispatch = self.dispatch
         let configuration = self.configuration
         let logger = self.logger
+        let bound = Atomic(false)
 
         let idleTimeout: TimeAmount? = configuration.idleTimeout.map {
             .nanoseconds(
@@ -169,6 +172,7 @@ public struct AlulaTransport: ServerTransport {
                     try await respond(to: request, writer: responseWriter, channel: channel)
                 },
                 onServerRunning: { channel in
+                    bound.store(true, ordering: .relaxed)
                     let port = channel.localAddress?.port ?? configuration.port
                     logger.info(
                         "alula transport listening",
@@ -180,7 +184,13 @@ public struct AlulaTransport: ServerTransport {
                 }
             )
 
-        try await server.run()
+        do {
+            try await server.run()
+        } catch let error as IOError where !bound.load(ordering: .relaxed) {
+            // The report was `bind(descriptor:ptr:bytes:): Address already in
+            // use) (errno: 98)`: which address, and whose setting, left out.
+            throw ListenFailure(host: configuration.host, port: configuration.port, error: error)
+        }
         logger.info("alula transport stopped")
     }
 
@@ -573,3 +583,27 @@ final class BodyPuller: @unchecked Sendable {
         return data
     }
 }
+
+/// The server could not start listening: the address is taken, not ours to
+/// bind, or not on this machine.
+struct ListenFailure: Error, StartupDiagnostic, CustomStringConvertible {
+    let host: String
+    let port: Int
+    let error: IOError
+
+    var reason: String {
+        switch error.errnoCode {
+        case EADDRINUSE: "the address is already in use — another process is listening there"
+        case EACCES: "permission denied — ports below 1024 need privileges"
+        case EADDRNOTAVAIL: "that address is not on this machine"
+        default: String(cString: strerror(error.errnoCode)).lowercased()
+        }
+    }
+
+    var description: String {
+        "could not listen on \(host):\(port): \(reason). Stop what holds it, or set server.host and server.port."
+    }
+
+    var startupDiagnostic: String { description }
+}
+

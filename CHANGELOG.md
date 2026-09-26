@@ -4,6 +4,69 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0] - 2026-09-26
+
+From the Relay diagnostics rerun: the paths an operator meets when the
+database goes away, when a start fails, and when a shutdown runs out of time.
+Each said something misleading, buried the cause, or said nothing.
+
+### Added
+
+- **`TemporarilyUnavailable`** (AlulaCore): an error that means "a dependency
+  cannot serve this right now; try again". It says nothing about HTTP, so
+  packages below the web layer can conform — Alula Data's `DataSourceError`
+  does from 0.21.0. `AlulaWeb` renders it as `503 Service Unavailable` with
+  `Retry-After`, where it was an opaque 500 that told a client not to retry
+  (Relay #42). It is logged at `debug`: the dependency's own loop reports the
+  outage, and a line per refused request buried that report. An
+  `ErrorMapper` still answers first.
+- **`LifecycleHook.beforeStart`**: runs before any service of the application
+  starts, one at a time in dependency order, and a failure stops the start
+  with its own error. For proving a dependency is there. A database that
+  refused the connection used to fail the start from inside the running
+  group: the listener had announced itself and every queue and scheduled job
+  had logged that the pool was closed before the one line saying why came
+  last (Relay #44). Commands run the before-start hooks of the infrastructure
+  they start.
+- **`ShutdownDeadline`**: when graceful shutdown must be finished by
+  (`lifecycle.shutdown-timeout-seconds`), readable by any service as
+  `ShutdownDeadline.current`, so work that can be handed back is handed back
+  while what it needs is still up.
+
+### Changed
+
+- **The queue worker hands running jobs back before the shutdown deadline.**
+  Past the deadline ServiceLifecycle cancels every service at once, the
+  database pool included, so a cancelled job could not even be put back: it
+  logged "could not record job result … Datasource 'primary' is closed" and
+  waited out its lease (Relay #36). Two seconds before the deadline (or a
+  fifth of the timeout, if less), the worker now logs how many jobs of which
+  kinds it is handing back, cancels their handlers, and returns them to the
+  queue to run at once. A job handed back is not a failure: no backoff, and
+  never discarded for it.
+- **A shutdown that runs past its timeout is reported and exits 1.**
+  ServiceLifecycle said so only at `debug`, and the process exited 0, like a
+  clean stop. It now prints `alula: shutdown timed out.`, the timeout, and
+  the modules that were still running and were cancelled.
+- **The queue worker logs a failure that repeats as a change of state.**
+  During a database outage it logged "could not claim jobs" at `error` for
+  every queue on every poll — 68 lines in 45 seconds from one node, burying
+  the pool's reconnect warnings, which said what was wrong (Relay #42). It
+  now logs the first failure, a failure with a different error, a reminder
+  once a minute while it lasts ("still cannot claim jobs", with the count),
+  and the recovery ("claiming jobs again", with how many attempts failed and
+  for how long). Lease renewal does the same.
+- **A server that cannot listen says where and why.** A port already in use
+  read `alula: could not start.` over `bind(descriptor:ptr:bytes:): Address
+  already in use) (errno: 98)`. It is now `could not listen on
+  127.0.0.1:8080: the address is already in use — another process is listening
+  there. Stop what holds it, or set server.host and server.port.` Permission
+  denied and an address not on this machine are named too.
+- **Work cut short because the application is stopping is not reported as a
+  failure.** When a start failed, the queue logged "could not claim jobs:
+  CancellationError()" and scheduled jobs logged "scheduled job failed" at
+  `error`, above the one line that said why the start had failed.
+
 ## [0.52.2] - 2026-09-26
 
 From the Relay diagnostics rerun, where three build errors were better but

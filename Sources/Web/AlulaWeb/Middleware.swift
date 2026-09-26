@@ -1,3 +1,4 @@
+import AlulaCore
 import HTTPTypes
 
 /// The rest of the pipeline, as seen from inside a middleware: call it to
@@ -125,6 +126,18 @@ public func errorResponse(for error: any Error, context: RequestContext) -> Resp
         var response = render(http.httpStatus, http.httpMessage)
         for field in http.httpHeaders where response.headers[field.name] == nil {
             response = response.settingHeader(field.name, field.value)
+        }
+        return response
+    case let unavailable as any TemporarilyUnavailable where unavailable.isTemporarilyUnavailable:
+        // A dependency that is down is not a bug in this request, and the
+        // dependency's own loop (a pool reconnecting) already reports it:
+        // one line per refused request would bury that report.
+        context.logger.debug("request refused: \(String(describing: error))")
+        var response = render(.serviceUnavailable, "Service Unavailable")
+        if let retryAfter = unavailable.retryAfter {
+            let seconds = max(1, Int((Double(retryAfter.components.seconds)
+                + Double(retryAfter.components.attoseconds) / 1e18).rounded(.up)))
+            response = response.settingHeader(.retryAfter, "\(seconds)")
         }
         return response
     default:

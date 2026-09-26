@@ -191,6 +191,10 @@ extension Alula {
         let app = try _alulaAssemble(
             configuration: configuration, moduleInstances: instances, health: health)
         let infrastructure = app.services.filter { $0.shutdownPhase == .infrastructure }
+        // Only what the command starts: a pool proves itself here, and a
+        // command fails with that reason rather than as "infrastructure failed".
+        let started = Set(infrastructure.map(\.moduleName))
+        try await runBeforeStartHooks(app.beforeStart.filter { started.contains($0.module) })
         var services = infrastructure.map {
             ServiceGroupConfiguration.ServiceConfiguration(service: $0.service)
         }

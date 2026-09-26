@@ -245,9 +245,14 @@ actor JobRunner {
             status.lastOutcome = .failed("\(error)")
             status.runCount += 1
             status.failureCount += 1
-            logger.error(
-                "scheduled job failed",
-                metadata: ["job": .string(job.name), "error": .string("\(error)")])
+            // Cut short because the application is stopping — often because
+            // something else failed to start. That something is the report;
+            // this job's side of it only buried the cause.
+            if !Task.isCancelled, !(error is CancellationError) {
+                logger.error(
+                    "scheduled job failed",
+                    metadata: ["job": .string(job.name), "error": .string("\(error)")])
+            }
         }
         // Not truncated to whole seconds: a sub-second job reporting 0s is
         // the one number `/actuator/scheduled` exists to show.

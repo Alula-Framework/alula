@@ -9,6 +9,9 @@ public struct AssembledApplication: Sendable {
     public let moduleOrder: [String]
     /// Per-module health. Actuator reads it.
     public let health: ModuleHealthRegistry
+    /// Every module's ``LifecycleHook/Moment/beforeStart`` hooks, in
+    /// dependency order.
+    public var beforeStart: [(module: String, hook: LifecycleHook)] = []
 }
 
 /// One module's service, health-wrapped, with the module's declared
@@ -65,8 +68,11 @@ func _alulaAssemble(
             moduleName: String, service: any Service, completion: ServiceCompletionPolicy,
             phase: ServiceShutdownPhase, hooks: [LifecycleHook]
         )] = []
+    var beforeStart: [(module: String, hook: LifecycleHook)] = []
     for (name, module) in zip(names, instances) {
-        let hooks = module.lifecycleHooks
+        let all = module.lifecycleHooks
+        beforeStart += all.filter { $0.moment == .beforeStart }.map { (name, $0) }
+        let hooks = all.filter { $0.moment != .beforeStart }
         if module.service == nil, !hooks.isEmpty {
             // Hooks without a service: a stand-in holds the module's place so
             // its startup hooks gate readiness and its shutdown hooks run in
@@ -115,7 +121,8 @@ func _alulaAssemble(
     return AssembledApplication(
         services: wrapped,
         moduleOrder: names,
-        health: health
+        health: health,
+        beforeStart: beforeStart
     )
 }
 
@@ -159,6 +166,8 @@ private func _alulaBootstrap(
     }
 
     let lifecycle = try LifecycleSettings(configuration: configuration)
+    try await runBeforeStartHooks(app.beforeStart)
+    let shutdown = ShutdownDeadline(timeout: lifecycle.shutdownTimeout)
     var serviceConfigurations = app.services.map { entry in
         ServiceGroupConfiguration.ServiceConfiguration(
             service: entry.service,
@@ -175,7 +184,8 @@ private func _alulaBootstrap(
     // waits out `lifecycle.drain-seconds`.
     serviceConfigurations.append(
         .init(
-            service: DrainService(health: app.health, delay: lifecycle.drainDelay, logger: logger),
+            service: DrainService(
+                health: app.health, delay: lifecycle.drainDelay, shutdown: shutdown, logger: logger),
             successTerminationBehavior: .ignore))
 
     var groupConfiguration = ServiceGroupConfiguration(
@@ -183,7 +193,26 @@ private func _alulaBootstrap(
         gracefulShutdownSignals: [.sigterm, .sigint],
         logger: logger)
     groupConfiguration.maximumGracefulShutdownDuration = lifecycle.shutdownTimeout
-    try await ServiceGroup(configuration: groupConfiguration).run()  // step 9
+    try await ShutdownDeadline.$current.withValue(shutdown) {
+        try await ServiceGroup(configuration: groupConfiguration).run()  // step 9
+    }
+    // ServiceLifecycle cancels what is left at the timeout and says so only at
+    // debug level; the process then exited 0, like a clean stop (Relay #36).
+    let cancelled = shutdown.cancelledModules
+    if !cancelled.isEmpty, let timeout = shutdown.timeout {
+        throw ShutdownTimedOut(timeout: timeout, modules: cancelled)
+    }
+}
+
+/// Runs every module's before-start hooks, in dependency order, before any
+/// service exists to log about what they are checking.
+func runBeforeStartHooks(_ hooks: [(module: String, hook: LifecycleHook)]) async throws {
+    for (module, hook) in hooks {
+        var logger = Logger(label: "alula.lifecycle")
+        logger[metadataKey: "hook"] = "\(hook.name)"
+        logger[metadataKey: "module"] = "\(module)"
+        try await hook.run(logger)
+    }
 }
 
 /// `lifecycle.*`: how the process leaves.
@@ -242,6 +271,7 @@ struct LifecycleSettingsError: Error, CustomStringConvertible {
 struct DrainService: Service {
     let health: ModuleHealthRegistry
     let delay: Duration
+    var shutdown: ShutdownDeadline? = nil
     let logger: Logger
 
     func run() async throws {
@@ -250,6 +280,9 @@ struct DrainService: Service {
         } catch {
             return  // cancelled rather than shut down: nothing to drain for
         }
+        // Last to start, so the first service told: this is when the
+        // shutdown clock started.
+        shutdown?.begin()
         health.beginDraining()
         guard delay > .zero else { return }
         logger.info("draining before shutdown", metadata: ["delay": "\(delay)"])
@@ -285,11 +318,20 @@ struct HealthTrackingService: Service {
         do {
             try await inner.run()
         } catch {
+            noteIfCutOff()
             health.set(moduleName, .failed(error))
             await runShutdownHooks()
             throw error
         }
+        noteIfCutOff()
         await runShutdownHooks()
+    }
+
+    /// A service that ends cancelled after graceful shutdown began was cut
+    /// off at the timeout, not finished: ServiceLifecycle cancels only then.
+    private func noteIfCutOff() {
+        guard Task.isCancelled, let shutdown = ShutdownDeadline.current, shutdown.hasBegun else { return }
+        shutdown.noteCancelled(moduleName)
     }
 
     private func runShutdownHooks() async {

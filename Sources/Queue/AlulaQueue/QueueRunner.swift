@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import Synchronization
 
 /// What one attempt came to.
 public enum QueueAttemptOutcome: Sendable, Equatable {
@@ -20,6 +21,9 @@ public struct QueueRunner: Sendable {
     let store: any QueueStore
     let now: @Sendable () -> Date
     let logger: Logger
+    /// Fired by the worker shortly before the shutdown deadline: running
+    /// handlers stop and their jobs go back to the queue.
+    var cutoff: QueueShutdownCutoff? = nil
 
     public init(
         store: any QueueStore, now: @escaping @Sendable () -> Date = { Date() },
@@ -64,8 +68,16 @@ public struct QueueRunner: Sendable {
             id: job.id, attempt: job.attempt, maxAttempts: job.maxAttempts,
             enqueuedAt: job.enqueuedAt, logger: logger)
         do {
-            try await Self.perform(handler, payload: job.payload, context: context)
+            try await Self.perform(handler, payload: job.payload, context: context, cutoff: cutoff)
             return await record(.completed, job, logger)
+        } catch is QueueShutdownCutoff.Reached {
+            // Not a failure of the job, so not a retry with backoff, and not
+            // a discard even on its last attempt: it goes back as it was, to
+            // run as soon as a worker is there to claim it.
+            logger.info("job handed back at shutdown; it runs again")
+            return await record(
+                .retrying(at: now(), error: "handed back at shutdown before it finished"), job, logger,
+                quietly: true)
         } catch let discard as DiscardJob {
             return await record(.discarded(reason: discard.reason), job, logger)
         } catch {
@@ -83,17 +95,25 @@ public struct QueueRunner: Sendable {
     }
 
     private static func perform(
-        _ handler: QueueHandler, payload: Data, context: QueueJobContext
+        _ handler: QueueHandler, payload: Data, context: QueueJobContext, cutoff: QueueShutdownCutoff?
     ) async throws {
-        guard let timeout = handler.timeout else {
+        guard handler.timeout != nil || cutoff != nil else {
             try await handler.perform(payload, context)
             return
         }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { try await handler.perform(payload, context) }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw QueueJobTimedOut(timeout: timeout)
+            if let timeout = handler.timeout {
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    throw QueueJobTimedOut(timeout: timeout)
+                }
+            }
+            if let cutoff {
+                group.addTask {
+                    try await cutoff.wait()
+                    throw QueueShutdownCutoff.Reached()
+                }
             }
             // The first to finish decides; a handler that ignores cancellation
             // still has to return before this does.
@@ -102,9 +122,9 @@ public struct QueueRunner: Sendable {
         }
     }
 
-    private func record(_ outcome: QueueAttemptOutcome, _ job: ClaimedJob, _ logger: Logger) async
-        -> QueueAttemptOutcome
-    {
+    private func record(
+        _ outcome: QueueAttemptOutcome, _ job: ClaimedJob, _ logger: Logger, quietly: Bool = false
+    ) async -> QueueAttemptOutcome {
         do {
             let recorded: Bool
             switch outcome {
@@ -114,9 +134,11 @@ public struct QueueRunner: Sendable {
             case .retrying(let at, let error):
                 recorded = try await store.retry(
                     job.id, attempt: job.attempt, runAt: at, error: error)
-                logger.warning(
-                    "job failed; will retry",
-                    metadata: ["error": "\(error)", "retry-at": "\(at)"])
+                if !quietly {
+                    logger.warning(
+                        "job failed; will retry",
+                        metadata: ["error": "\(error)", "retry-at": "\(at)"])
+                }
             case .discarded(let reason):
                 recorded = try await store.discard(
                     job.id, attempt: job.attempt, at: now(), error: reason)
@@ -137,5 +159,23 @@ public struct QueueRunner: Sendable {
                 metadata: ["error": "\(error)"])
         }
         return outcome
+    }
+}
+
+/// The worker's "stop now" for running handlers, fired once shortly before
+/// the shutdown deadline.
+final class QueueShutdownCutoff: Sendable {
+    struct Reached: Error {}
+
+    private let fired = Atomic(false)
+
+    func fire() { fired.store(true, ordering: .relaxed) }
+
+    /// Returns once fired; throws `CancellationError` if the job finishes
+    /// first and the race is called off.
+    func wait() async throws {
+        while !fired.load(ordering: .relaxed) {
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 }

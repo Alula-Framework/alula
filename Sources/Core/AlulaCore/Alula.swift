@@ -294,6 +294,10 @@ func failureReport(
     detail: String? = getenv("ALULA_STARTUP_ERROR_DETAIL").map { String(cString: $0) }
 ) -> String {
     switch error {
+    case let timedOut as ShutdownTimedOut:
+        // It started and served; saying "could not start" about it would be
+        // the Relay #20 mistake again.
+        return "alula: shutdown timed out.\n\(timedOut.description)\n"
     case let failed as CommandFailed:
         return "alula: command '\(failed.name)' failed.\n\(startupReport(for: failed.underlying, detail: detail))\n"
     case let notFound as CommandNotFound:

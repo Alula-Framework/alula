@@ -1,3 +1,4 @@
+import AlulaCore
 import AlulaWeb
 import AlulaWebTesting
 import Foundation
@@ -253,6 +254,33 @@ struct ErrorResponseTests {
             with: Data(response.bodyText.utf8)) as? [String: Any]
         #expect(body?["title"] as? String == "Not Found")
         #expect(body?["detail"] == nil, "a detail identical to the title is noise")
+    }
+
+    @Test("a temporarily unavailable dependency is a 503 with Retry-After, not a 500")
+    func temporarilyUnavailableIs503() {
+        // Relay #42: a database outage read as 500s, which tell a client not
+        // to bother retrying.
+        struct DatabaseDown: TemporarilyUnavailable {
+            var retryAfter: Duration? { .milliseconds(1500) }
+        }
+        let response = errorResponse(for: DatabaseDown(), context: .mock(path: "/"))
+        #expect(response.status == .serviceUnavailable)
+        #expect(response.headers[.retryAfter] == "2", "rounded up to whole seconds")
+    }
+
+    @Test("an error that is only sometimes temporary says so per instance")
+    func temporarilyUnavailableCanDecline() {
+        enum PoolError: TemporarilyUnavailable {
+            case down, misconfigured
+            var isTemporarilyUnavailable: Bool { self == .down }
+        }
+        #expect(errorResponse(for: PoolError.down, context: .mock(path: "/")).status == .serviceUnavailable)
+        #expect(
+            errorResponse(for: PoolError.misconfigured, context: .mock(path: "/")).status
+                == .internalServerError)
+        #expect(
+            errorResponse(for: PoolError.down, context: .mock(path: "/")).headers[.retryAfter] == nil,
+            "no Retry-After unless the error knows one")
     }
 
     @Test func unknownErrorsAreOpaque500s() {

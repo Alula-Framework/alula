@@ -2,6 +2,7 @@ import AlulaCore
 import Synchronization
 import struct Foundation.UUID
 import Logging
+import ServiceLifecycle
 
 /// The clustered composition: wraps the local `PubSub` and a
 /// `DistributedPubSubAdapter`. On `publish` it does both local fan-out *and*
@@ -141,8 +142,12 @@ public final class ClusteredPubSub: PubSub, Sendable {
             )
         } catch {
             // A failed broadcast is a dropped remote delivery, not a
-            // publisher error. Log loudly and move on.
-            logger.warning(
+            // publisher error. Loud while serving; debug while stopping,
+            // where the adapter's client may already have shut down — a
+            // module's last message on the way out (presence announcing its
+            // leave) warned on every clean stop (Relay #46).
+            logger.log(
+                level: Task.isShuttingDownGracefully ? .debug : .warning,
                 "distributed broadcast failed; local delivery unaffected",
                 metadata: ["topic": "\(message.topic)", "error": "\(error)"]
             )

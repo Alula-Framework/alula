@@ -951,6 +951,7 @@ let package = Package(
         .testTarget(
             name: "AlulaPubSubTests",
             dependencies: [
+                .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
                 "AlulaPubSub", "AlulaPubSubTesting", "AlulaCore",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),

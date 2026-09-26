@@ -4,6 +4,16 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.2] - 2026-09-26
+
+### Fixed
+
+- **A clean stop does not warn about a broadcast.** Presence announces its
+  leave on the way out, and against a PubSub adapter whose client had
+  already stopped that logged "distributed broadcast failed" at warning on
+  every stop (Relay #46). A broadcast that fails during a graceful shutdown is
+  now debug; while serving it is still a warning.
+
 ## [0.53.1] - 2026-09-26
 
 ### Added

@@ -4,6 +4,33 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.2] - 2026-09-26
+
+From the Relay diagnostics rerun, where three build errors were better but
+still short of naming the fix.
+
+### Changed
+
+- **A module cycle names the value on each edge, and only the cycle.**
+  `ALU-LIFE-8001` listed every module that could not be built — eight in
+  Relay, six of them bystanders that merely take the graph — and said "needs a
+  value from" without saying which. It now prints the shortest cycle with the
+  value each edge carries (`AlulaGraph needs RelayModule.faults (FaultPlan)`),
+  lists the bystanders on one line, is anchored on the property that closes
+  the cycle, and never points a note into `.build/`.
+- **`ALU-DI-1001` names the module you forgot to list.** When a module in the
+  target provides the value and is not in `modules:` — `AccountsModule` after
+  `alula generate auth` — the error says so, at its declaration, and several
+  values behind that one module are one error rather than three.
+- **`ALU-DI-1002` names the module that asks.** A module's initializer asking
+  for the type read "the composition root", with no location; it now names
+  the module and points at it, and offers removing a provider from `modules:`
+  first.
+- **`ALU-LIFE-8002` defers to a reported ambiguity.** It called a parameter
+  two modules provide one that "nothing provides", contradicting the
+  `ALU-DI-1002` above it; it now says "several modules provide it", and is not
+  added when ambiguity is the only obstacle.
+
 ## [0.52.1] - 2026-09-25
 
 ### Fixed

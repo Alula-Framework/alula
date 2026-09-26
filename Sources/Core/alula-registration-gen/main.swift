@@ -3265,30 +3265,96 @@ func emitComposer(into out: inout String) {
             // Emit the rest in declared order so the failure is Swift's
             // "used before initialized" at a named line, not a silent
             // reordering that happens to compile.
-            let cyclic = remaining.map(\.name).sorted()
-            let cyclicModules = cyclic.map { name in
+            let names = remaining.map(\.name)
+            let byIdentity = Dictionary(names.map { (moduleIdentity($0), $0) }, uniquingKeysWith: { a, _ in a })
+            // What each unplaced module needs, among the unplaced.
+            var needsOf: [String: [String]] = [:]
+            for construction in remaining {
+                needsOf[construction.name] = construction.needs.compactMap { byIdentity[$0] }.sorted()
+            }
+            // The shortest cycle, not everything unplaced: a module that
+            // merely takes a value from the cycle cannot be placed either,
+            // and listing all eight hid the two that mattered (Relay rerun).
+            var cycle: [String] = []
+            for start in names.sorted() {
+                var previous: [String: String] = [:]
+                var frontier = [start]
+                var seen: Set<String> = [start]
+                var found = false
+                while !frontier.isEmpty, !found {
+                    var next: [String] = []
+                    for node in frontier {
+                        for need in needsOf[node] ?? [] {
+                            if need == start {
+                                var path = [node]
+                                while let back = previous[path[0]] { path.insert(back, at: 0) }
+                                if cycle.isEmpty || path.count < cycle.count { cycle = path }
+                                found = true
+                            } else if seen.insert(need).inserted {
+                                previous[need] = node
+                                next.append(need)
+                            }
+                        }
+                    }
+                    frontier = next
+                }
+            }
+            if cycle.isEmpty { cycle = names.sorted() }
+            // What flows along one edge: the property, and its type.
+            func carried(_ consumer: String, from provider: String)
+                -> (text: String, location: DiagnosticLocation?)
+            {
+                let prefix = binding(provider)
+                let construction = remaining.first { $0.name == consumer }
+                for argument in construction?.arguments ?? [] {
+                    let expression = argument.split(separator: ":", maxSplits: 1).last
+                        .map { $0.trimmingCharacters(in: .whitespaces) } ?? argument
+                    if expression == prefix {
+                        return (provider == "AlulaGraph" ? "the component graph (it takes AlulaGraph)" : "\(provider) itself", nil)
+                    }
+                    guard expression.hasPrefix(prefix + ".") else { continue }
+                    let property = String(expression.dropFirst(prefix.count + 1)
+                        .prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+                    let module = scannedModule(provider, in: byName)
+                    let type = module?.provides.first { $0.name == property }?.type
+                    return (
+                        "\(provider).\(property)" + (type.map { " (\($0))" } ?? ""),
+                        module?.provideLocations[property])
+                }
+                return ("a value from \(provider)", nil)
+            }
+            let steps = cycle.indices.map { index -> (consumer: String, text: String, location: DiagnosticLocation?) in
+                let consumer = cycle[index]
+                let provider = cycle[(index + 1) % cycle.count]
+                let value = carried(consumer, from: provider)
+                return (consumer, "  \(consumer) needs \(value.text)", value.location)
+            }
+            // Anchored on the property that closes the cycle, in code the
+            // reader wrote — never a file under `.build/`.
+            func isUsers(_ location: DiagnosticLocation?) -> Bool {
+                guard let location else { return false }
+                return !location.file.contains("/.build/")
+            }
+            let modulesInCycle = cycle.map { name in
                 (name, moduleGraph.first { moduleKey($0.typeName) == moduleKey(name) })
             }
-            // The application's own module first: the location should be
-            // code the reader wrote, not a framework checkout.
-            let primary =
-                cyclicModules.first { $0.1?.module == manifest.targetModuleName }
-                ?? cyclicModules.first
-            let edges: [String] = remaining.sorted { $0.name < $1.name }.map { construction in
-                let wants = construction.needs
-                    .filter { need in cyclic.contains { moduleIdentity($0) == need } }
-                    .sorted()
-                return "  \(construction.name) needs a value from " + wants.joined(separator: ", ")
-            }
+            let anchor = steps.first { isUsers($0.location) }?.location
+                ?? modulesInCycle.first { isUsers($0.1?.location) }?.1?.location
+            let bystanders = names.filter { !cycle.contains($0) }.sorted()
             compositionDiagnostics.append(Diagnostic(
                 .moduleCycle,
-                "modules \(cyclic.joined(separator: ", ")) need each other's values in a cycle",
-                at: primary?.1?.location,
-                context: ["composition cycle:"] + edges,
+                "modules \(cycle.joined(separator: " and ")) need each other's values in a cycle",
+                at: anchor,
+                context: ["composition cycle:"] + steps.map(\.text)
+                    + (bystanders.isEmpty ? [] : [
+                        "also waiting on it: \(bystanders.joined(separator: ", ")) — "
+                            + (bystanders.count == 1 ? "it takes" : "they take") + " a value from the cycle"
+                    ]),
                 explanation: ["Modules are built in dependency order, and a cycle has no first member."],
-                help: ["move the shared value into a module both can take it from — often a small module that only holds it."],
-                notes: cyclicModules.filter { $0.0 != primary?.0 }.compactMap { name, module in
-                    module.map { .init("`\(name)` is part of the cycle", at: $0.location) }
+                help: ["move one of those values out of the cycle — into a module neither side needs, often a small one that only holds it."],
+                notes: modulesInCycle.compactMap { name, module in
+                    guard let module, isUsers(module.location), module.location != anchor else { return nil }
+                    return .init("`\(name)` is part of the cycle", at: module.location)
                 }))
             ordered.append(contentsOf: remaining)
             break

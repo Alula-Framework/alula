@@ -1,0 +1,9 @@
+Main.swift:7:9: error: [ALU-LIFE-8001] modules AlulaGraph and RelayModule need each other's values in a cycle
+    composition cycle:
+      AlulaGraph needs RelayModule.faults (FaultPlan)
+      RelayModule needs the component graph (it takes AlulaGraph)
+    also waiting on it: RealtimeModule — it takes a value from the cycle
+    Modules are built in dependency order, and a cycle has no first member.
+    help: move one of those values out of the cycle — into a module neither side needs, often a small one that only holds it.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-LIFE-8001.md
+Main.swift:6:8: note: `RelayModule` is part of the cycle

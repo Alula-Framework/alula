@@ -1,0 +1,68 @@
+# Every place Alula's runtime code traps on purpose, and why only a
+# programming error can reach it — never input, configuration or the state of
+# a dependency. CI/check-traps.sh fails on any site not listed here, and on
+# any entry whose line no longer exists.
+#
+# Tab-separated: <path>	<the line, trimmed>	<reason>
+# Keyed on the line's text; update the entry when you change the line.
+
+Sources/Channels/AlulaChannels/AlulaChannelsModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Config/AlulaConfig/Configuration.swift	fatalError(	Configuration.get(_:default:), documented to trap; framework code may not call it (checked below), so only application code opting in reaches it
+Sources/Config/AlulaConfig/Configuration.swift	fatalError("""	Configuration.get(_:default:), documented to trap; framework code may not call it (checked below), so only application code opting in reaches it
+Sources/Config/AlulaConfigCore/AlulaYAML.swift	let quote = text.first!	guarded: the caller has matched a first character (a switch on it, or a quote it dispatched on)
+Sources/Config/AlulaConfigCore/AlulaYAML.swift	return "the reserved indicator '\(text.first!)'"	guarded: the caller has matched a first character (a switch on it, or a quote it dispatched on)
+Sources/Config/AlulaConfigCore/ConfigPrefix.swift	precondition(	config prefix is a literal passed once at Alula.run; documented to trap on an unusable prefix
+Sources/Config/AlulaConfigCore/ConfigPrefix.swift	precondition(	config prefix is a literal passed once at Alula.run; documented to trap on an unusable prefix
+Sources/Config/AlulaConfigCore/ConfigPrefix.swift	precondition(!rawValue.isEmpty, "A config prefix cannot be empty.")	config prefix is a literal passed once at Alula.run; documented to trap on an unusable prefix
+Sources/Config/AlulaConfigCore/ConfigPrefix.swift	rawValue.first!.isASCII && rawValue.first!.isLetter && rawValue.first!.isLowercase,	config prefix is a literal passed once at Alula.run; documented to trap on an unusable prefix
+Sources/Core/AlulaCore/Commands.swift	precondition(	command name is a literal in module code
+Sources/HTTPClient/AlulaHTTPClient/AsyncHTTPTransport.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/HTTPClient/AlulaHTTPClientTesting/StubHTTPTransport.swift	precondition(!responses.isEmpty, "give at least one response")	testing target, misuse in a test
+Sources/Mail/AlulaMail/Mailer.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Mail/AlulaMailSMTP/SMTPMailTransport.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Presence/AlulaPresence/CRDT/PresenceCRDT.swift	precondition(!context.contains(dot), "dot \(dot) reused — counters must be monotonic per boot")	local operation with a counter this process allocates; remote deltas take the join path, which tolerates any dot (UInt64.max compaction fixed in 0.52.0, GossipFuzzTests)
+Sources/Presence/AlulaPresence/CRDT/PresenceCRDT.swift	precondition(!context.contains(dot), "dot \(dot) reused — counters must be monotonic per boot")	local operation with a counter this process allocates; remote deltas take the join path, which tolerates any dot (UInt64.max compaction fixed in 0.52.0, GossipFuzzTests)
+Sources/Presence/AlulaPresence/PresenceModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/PubSub/AlulaPubSub/PubSubModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Push/AlulaAPNS/AlulaAPNSModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Queue/AlulaQueue/AlulaQueueModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Queue/AlulaQueue/AlulaQueueModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Queue/AlulaQueue/QueuedJob.swift	precondition(maxAttempts >= 1, "a job has to be tried at least once")	RetryPolicy literal on the job type
+Sources/RateLimit/AlulaRateLimit/AlulaRateLimitModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/RateLimit/AlulaRateLimit/GCRA.swift	precondition(cost >= 0, "A rate limit cost cannot be negative; got \(cost).")	internal: the middleware clamps a negative cost to 1 before it gets here (a thrown error would meet onStoreFailure: .allow and bypass the limit)
+Sources/RateLimit/AlulaRateLimit/InMemoryRateLimitStore.swift	precondition(	literal bound passed by the constructing code; the default is positive and no configuration reaches it unchecked
+Sources/RateLimit/AlulaRateLimit/RateLimitQuota.swift	precondition(burst > 0, "A rate limit quota needs a positive burst; got \(burst).")	literal quota at a call site; quotas from configuration or per request go through RateLimitQuota(validating:) and throw
+Sources/RateLimit/AlulaRateLimit/RateLimitQuota.swift	precondition(period > .zero, "A rate limit quota needs a positive period; got \(period).")	literal quota at a call site; quotas from configuration or per request go through RateLimitQuota(validating:) and throw
+Sources/RateLimit/AlulaRateLimit/RateLimitQuota.swift	precondition(permits > 0, "A rate limit quota needs at least one permit; got \(permits).")	literal quota at a call site; quotas from configuration or per request go through RateLimitQuota(validating:) and throw
+Sources/Security/AlulaSecurityCore/AlulaSecurityModule.swift	precondition(	structural: depends only on which modules are listed, so it fires on the first start of a misassembled application, with a message naming the missing module
+Sources/Security/AlulaSecurityCore/AlulaSecurityModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Security/AlulaSecurityCore/AlulaSecurityModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Security/AlulaSecurityCore/Credentials/APIKeys.swift	precondition(APIKeys.isValidPrefix(prefix), "an API key prefix is letters and digits only")	API key prefix is a literal in the application, checked by isValidPrefix; configuration is not read here
+Sources/Security/AlulaSecurityCore/Credentials/APIKeys.swift	precondition(isValidPrefix(prefix), "an API key prefix is letters and digits only")	API key prefix is a literal in the application, checked by isValidPrefix; configuration is not read here
+Sources/Security/AlulaSecurityCore/SignIn/SignInModules.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Security/AlulaSecurityCore/SignIn/SignInModules.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Security/AlulaSecurityCore/TokenStrategies.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Sessions/AlulaSessions/InMemorySessionStore.swift	precondition(	literal bound passed by the constructing code; the default is positive and no configuration reaches it unchecked
+Sources/Sessions/AlulaSessions/OneTimeTokenStore.swift	precondition(	literal bound passed by the constructing code; the default is positive and no configuration reaches it unchecked
+Sources/Telemetry/AlulaTelemetryBridges/AlulaTelemetryModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Telemetry/AlulaTelemetryBridges/SwiftMetricsReporter.swift	precondition(cardinalityLimit > 0, "cardinalityLimit must be positive")	literal limit passed by the constructing code
+Sources/Web/AlulaOpenAPI/AlulaOpenAPIModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Web/AlulaWeb/ByteSource.swift	precondition(	range checked by the caller: ServeContent clamps and validates a Range header against the source size (overflow fixed in 0.52.0) before building the response
+Sources/Web/AlulaWeb/ByteSource.swift	precondition(chunkSize > 0, "chunkSize must be positive")	range checked by the caller: ServeContent clamps and validates a Range header against the source size (overflow fixed in 0.52.0) before building the response
+Sources/Web/AlulaWeb/CORS.swift	preconditionFailure(	CORS options are literals built at composition; the combination is refused at startup, never on a request
+Sources/Web/AlulaWeb/ContentHashCache.swift	precondition(capacity > 0, "a zero-capacity cache is the bug this type exists to prevent")	test seam; the production initializer passes a positive constant
+Sources/Web/AlulaWeb/Cookies.swift	precondition(	cookie name is a literal written by the developer; request cookies are parsed elsewhere and never reach this initializer
+Sources/Web/AlulaWeb/Exports.swift	fatalError("unavailable")	body of an @available(*, unavailable) declaration; the compiler refuses every call
+Sources/Web/AlulaWeb/FileByteSource.swift	precondition(	range checked by the caller: ServeContent clamps and validates a Range header against the source size (overflow fixed in 0.52.0) before building the response
+Sources/Web/AlulaWeb/FileByteSource.swift	precondition(chunkSize > 0, "chunkSize must be positive")	range checked by the caller: ServeContent clamps and validates a Range header against the source size (overflow fixed in 0.52.0) before building the response
+Sources/Web/AlulaWeb/FormDecoder.swift	return try FormScalar.url(try next(), path: codingPath) as! T	guarded by T == URL on the line above; the cast cannot fail
+Sources/Web/AlulaWeb/FormDecoder.swift	return try FormScalar.url(try scalar(key), path: codingPath + [key]) as! T	guarded by T == URL on the line above; the cast cannot fail
+Sources/Web/AlulaWeb/FormDecoder.swift	return try FormScalar.url(value, path: codingPath) as! T	guarded by T == URL on the line above; the cast cannot fail
+Sources/Web/AlulaWeb/Response.swift	precondition(	range checked by the caller: ServeContent clamps and validates a Range header against the source size (overflow fixed in 0.52.0) before building the response
+Sources/Web/AlulaWeb/Router.swift	preconditionFailure("renderNoMatch called with a match — execute it instead")	internal invariant: called only on the no-match path
+Sources/Web/AlulaWeb/SHA256.swift	precondition(pending.isEmpty, "padding must end exactly on a block boundary")	internal invariant of the padding arithmetic
+Sources/Web/AlulaWeb/SecurityHeaders.swift	public static let `default` = try! SecurityHeaders()	initializer over constant literals; covered by tests
+Sources/Web/AlulaWeb/SecurityHeaders.swift	public static let none = try! SecurityHeaders(	initializer over constant literals; covered by tests
+Sources/Web/AlulaWeb/SessionsModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Web/AlulaWeb/WebModule.swift	preconditionFailure(	module backstop: a module that takes its configuration or collaborators cannot be built from its type; only the composition root builds it, so this fires only on a hand-written Module()
+Sources/Web/AlulaWeb/Exports.swift	preconditionFailure(	route table is built at startup from method literals the route macros validated; an invalid one fails the first start, never a request

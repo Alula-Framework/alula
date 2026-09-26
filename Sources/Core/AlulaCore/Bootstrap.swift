@@ -113,7 +113,8 @@ func _alulaAssemble(
                 moduleName: entry.element.moduleName,
                 service: HealthTrackingService(
                     moduleName: entry.element.moduleName, inner: entry.element.service,
-                    health: health, hooks: entry.element.hooks),
+                    health: health, hooks: entry.element.hooks,
+                    completion: entry.element.completion),
                 completion: entry.element.completion,
                 shutdownPhase: entry.element.phase
             )
@@ -193,8 +194,17 @@ private func _alulaBootstrap(
         gracefulShutdownSignals: [.sigterm, .sigint],
         logger: logger)
     groupConfiguration.maximumGracefulShutdownDuration = lifecycle.shutdownTimeout
-    try await ShutdownDeadline.$current.withValue(shutdown) {
-        try await ServiceGroup(configuration: groupConfiguration).run()  // step 9
+    let run = ApplicationRun(expected: app.services.count)
+    do {
+        try await ShutdownDeadline.$current.withValue(shutdown) {
+            try await ApplicationRun.$current.withValue(run) {
+                try await ServiceGroup(configuration: groupConfiguration).run()  // step 9
+            }
+        }
+    } catch {
+        // Said "could not start" about everything, including a module that
+        // failed after days of serving.
+        throw run.explain(error)
     }
     // ServiceLifecycle cancels what is left at the timeout and says so only at
     // debug level; the process then exited 0, like a clean stop (Relay #36).
@@ -302,6 +312,7 @@ struct HealthTrackingService: Service {
     let inner: any Service
     let health: ModuleHealthRegistry
     var hooks: [LifecycleHook] = []
+    var completion: ServiceCompletionPolicy = .failsApp
 
     func run() async throws {
         for hook in hooks where hook.moment == .startup {
@@ -315,15 +326,24 @@ struct HealthTrackingService: Service {
             }
         }
         health.set(moduleName, .running)
+        ApplicationRun.current?.moduleStarted()
         do {
             try await inner.run()
         } catch {
+            if !Task.isCancelled, !(error is CancellationError) {
+                ApplicationRun.current?.moduleFailed(moduleName, error)
+            }
             noteIfCutOff()
             health.set(moduleName, .failed(error))
             await runShutdownHooks()
             throw error
         }
         noteIfCutOff()
+        if completion == .failsApp, !Task.isCancelled,
+            !(ShutdownDeadline.current?.hasBegun ?? false)
+        {
+            ApplicationRun.current?.moduleEndedOnItsOwn(moduleName)
+        }
         await runShutdownHooks()
     }
 

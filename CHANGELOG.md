@@ -4,6 +4,38 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.0] - 2026-09-26
+
+Guarantees about what a running application says when something goes wrong,
+rather than leaving it to a backtrace.
+
+### Changed
+
+- **The report on exit says what ended the application.** Every error that
+  ended `Alula.run` printed `alula: could not start.` — including a module
+  failing after days of serving, which sent the reader to configuration and
+  connectivity for a process that had started fine. Now:
+  - `alula: stopped after running 3d 4h 12m: FeedModule failed.` and the
+    module's error, when the application had been up;
+  - `alula: stopped after running …: FeedModule's service ended on its own.`
+    when a service meant to run until shutdown returned, with what to look
+    for;
+  - `alula: could not start.` only for a start that did not complete — which
+    includes a failure in the first second after every service was entered,
+    since binding a port or dialling a pool happens there.
+
+### Added
+
+- **`CI/check-traps.sh`: framework code may not crash on what it did not
+  write.** Every `fatalError`, `precondition`, `preconditionFailure`, `try!`,
+  `as!`, `.first!` and `.last!` in runtime code is listed in
+  `CI/trap-allowlist.txt` with the reason only a programming error reaches
+  it — never input, configuration or a dependency's state. A new site fails
+  CI until it throws instead or is listed with its reason. The check also
+  refuses framework calls to `Configuration.get(_:default:)`, which traps on a
+  malformed value. Overflow and index traps on input, which a grep cannot see,
+  stay with the parser and gossip fuzz suites.
+
 ## [0.53.2] - 2026-09-26
 
 ### Fixed

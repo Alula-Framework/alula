@@ -294,6 +294,12 @@ func failureReport(
     detail: String? = getenv("ALULA_STARTUP_ERROR_DETAIL").map { String(cString: $0) }
 ) -> String {
     switch error {
+    case let stopped as StoppedWhileRunning:
+        // It started and served; the reader needs to know which module
+        // stopped it and after how long, not to re-check configuration.
+        return "alula: \(stopped.headline)\n\(startupReport(for: stopped.underlying, detail: detail))\n"
+    case let ended as ServiceEndedOnItsOwn:
+        return "alula: \(ended.description)\n"
     case let timedOut as ShutdownTimedOut:
         // It started and served; saying "could not start" about it would be
         // the Relay #20 mistake again.

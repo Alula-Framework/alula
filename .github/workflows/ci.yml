@@ -43,6 +43,11 @@ jobs:
       # --enable-all-traits: a root build compiles every target, but only
       # traits that are enabled bring their dependencies. Without this the
       # Security target would be built with JWTKit pruned and fail.
+      # Every place framework code can trap is listed with the reason only a
+      # programming error reaches it; a new one fails here (CI/check-traps.sh).
+      - name: No new traps in framework code
+        run: ./CI/check-traps.sh
+
       - name: Build (Alula's own warnings are errors)
         env:
           ALULA_STRICT_WARNINGS: "1"

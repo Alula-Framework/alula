@@ -1,0 +1,12 @@
+Main.swift:17:8: error: [ALU-DI-1002] 2 modules provide `CredentialStore`, and it is asked for by type
+    asked for by:
+      PasswordSignInModule's initializer
+    Composition never guesses between providers: picking one silently is how a service talks to the wrong database.
+    help: if one of them should not be here, remove it from `modules:`.
+          Otherwise say which one an unqualified @Inject means, in the module that lists them:
+              static var defaultProviders: [any AlulaModule.Type] { [AccountsModule.self] }
+          then name the other only where you want it:
+              @Inject(from: DemoAccountsModule.self) var name: CredentialStore
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1002.md
+Main.swift:8:9: note: `AccountsModule.credentialStore` provides `CredentialStore`
+Main.swift:13:9: note: `DemoAccountsModule.credentialStore` provides `CredentialStore`

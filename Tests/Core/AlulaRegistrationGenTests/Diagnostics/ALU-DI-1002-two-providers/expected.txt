@@ -2,7 +2,8 @@ Main.swift:18:23: error: [ALU-DI-1002] 2 modules provide `DataPool`, and it is a
     asked for by:
       OrderRepository.pool
     Composition never guesses between providers: picking one silently is how a service talks to the wrong database.
-    help: say which one an unqualified @Inject means, in the module that lists them:
+    help: if one of them should not be here, remove it from `modules:`.
+          Otherwise say which one an unqualified @Inject means, in the module that lists them:
               static var defaultProviders: [any AlulaModule.Type] { [AnalyticsDataModule.self] }
           then name the other only where you want it:
               @Inject(from: PrimaryDataModule.self) var name: DataPool

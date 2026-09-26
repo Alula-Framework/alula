@@ -1,0 +1,8 @@
+Main.swift:14:28: error: [ALU-DI-1001] `AccountsModule` provides `AccountDirectory` and `OneTimeTokens`, and is not in `modules:`
+    needed by:
+      AccountFlows.directory → AccountDirectory
+      AccountFlows.tokens → OneTimeTokens
+    Nothing included provides these values; that module does.
+    help: add `AccountsModule.self` to `modules:`.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1001.md
+Main.swift:7:8: note: `AccountsModule` is declared here

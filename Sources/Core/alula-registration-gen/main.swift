@@ -2683,6 +2683,9 @@ func emitComposer(into out: inout String) {
     var ambiguousTypes: Set<String> = []
     /// Types a named-provider diagnostic (ALU-DI-1005…1007) already covers.
     var explainedTypes: Set<String> = []
+    /// For a type nothing included provides: a scanned module that does
+    /// provide it and is not in `modules:` — almost always the whole fix.
+    var unlistedProvider: [String: ScannedModule] = [:]
 
     /// Where `type` is asked for: each `@Inject` of it, the application's own
     /// code first, so a diagnostic's primary location is code the reader
@@ -2747,6 +2750,27 @@ func emitComposer(into out: inout String) {
         else { return }
         let askers = consumers(of: type)
         let untyped = untypedCandidates(for: type)
+        // A module the scan saw that holds this type but is not listed —
+        // `AccountsModule` after `alula generate auth`, before its step 1.
+        let included = Set(includedModules.map(moduleIdentity))
+        if let unlisted = moduleGraph.first(where: { module in
+            !included.contains(moduleIdentity(module.typeName))
+                && module.provides.contains { providedTypeKey($0.type) == wanted }
+        }) {
+            unlistedProvider[wanted] = unlisted
+            compositionDiagnostics.append(Diagnostic(
+                .missingProvider,
+                "no module in this application provides `\(wanted)`",
+                at: askers.first?.location,
+                context: askers.isEmpty
+                    ? ["needed by: \(what)"]
+                    : ["needed by:"] + askers.map { "  \($0.name) → \(wanted)" },
+                explanation: ["`\(unlisted.typeName)` provides it, and is not in `modules:`."],
+                help: ["add `\(unlisted.typeName).self` to `modules:`."],
+                notes: [.init("`\(unlisted.typeName)` is declared here", at: unlisted.location)]
+                    + askers.dropFirst().map { .init("`\($0.name)` also needs `\(wanted)`", at: $0.location) }))
+            return
+        }
         compositionDiagnostics.append(Diagnostic(
             .missingProvider,
             "no module in this application provides `\(wanted)`",
@@ -2888,7 +2912,8 @@ func emitComposer(into out: inout String) {
             if let chosen = defaultProviderChoice(for: wanted, among: matches) { return chosen }
             if !ambiguousTypes.contains(wanted) {
                 ambiguousTypes.insert(wanted)
-                compositionDiagnostics.append(ambiguityDiagnostic(wanted: wanted, matches: matches))
+                compositionDiagnostics.append(
+                    ambiguityDiagnostic(wanted: wanted, matches: matches, consumer: consumer))
             }
             return nil
         }
@@ -2920,7 +2945,7 @@ func emitComposer(into out: inout String) {
     /// application acquires a second provider, and the build is the only place
     /// that knows.
     func ambiguityDiagnostic(
-        wanted: String, matches: [(expression: String, module: String)]
+        wanted: String, matches: [(expression: String, module: String)], consumer: String
     ) -> Diagnostic {
         let modules = matches.map(\.module).sorted()
         let suggestion = modules.first ?? "SomeModule"
@@ -2946,14 +2971,22 @@ func emitComposer(into out: inout String) {
                 ],
                 notes: providerNotes(matches, of: wanted))
         }
+        // A module's initializer can be the one asking — the password
+        // sign-in module taking a credential store. That used to read "the
+        // composition root", naming nobody, with no location (Relay rerun).
+        let askingModule = consumer == "AlulaGraph" ? nil : scannedModule(consumer, in: byName)
+        let askedBy: [String] =
+            !askers.isEmpty ? askers.map { "  \($0.name)" }
+            : askingModule.map { ["  \($0.typeName)'s initializer"] } ?? ["  the component graph"]
         return Diagnostic(
             .ambiguousProvider,
             "\(matches.count) modules provide `\(wanted)`, and it is asked for by type",
-            at: askers.first?.location,
-            context: ["asked for by:"] + (askers.isEmpty ? ["  the composition root"] : askers.map { "  \($0.name)" }),
+            at: askers.first?.location ?? askingModule?.location,
+            context: ["asked for by:"] + askedBy,
             explanation: ["Composition never guesses between providers: picking one silently is how a service talks to the wrong database."],
             help: [
-                "say which one an unqualified @Inject means, in the module that lists them:\n"
+                "if one of them should not be here, remove it from `modules:`.\n"
+                    + "Otherwise say which one an unqualified @Inject means, in the module that lists them:\n"
                     + "    static var defaultProviders: [any AlulaModule.Type] { [\(suggestion).self] }\n"
                     + "then name the other only where you want it:\n"
                     + "    @Inject(from: \(other).self) var name: \(wanted)"
@@ -3112,14 +3145,14 @@ func emitComposer(into out: inout String) {
         var canThrow = false
         var needs: Set<String> = []
         /// Each initializer tried, and the parameters nothing could supply.
-        var unmet: [(signature: String, missing: [String])] = []
+        var unmet: [(signature: String, missing: [(text: String, type: String)])] = []
         for candidate in (module?.initializers ?? [(labels: [], types: [], defaulted: [], throws: false)])
             .sorted(by: { $0.labels.count > $1.labels.count })
         {
             var built: [String] = []
             var candidateNeeds: Set<String> = []
             var ok = true
-            var missing: [String] = []
+            var missing: [(text: String, type: String)] = []
             for (index, (label, type)) in zip(candidate.labels, candidate.types).enumerated() {
                 guard
                     let resolved = argument(
@@ -3135,7 +3168,7 @@ func emitComposer(into out: inout String) {
                         continue
                     }
                     ok = false
-                    missing.append("\(label): \(type)")
+                    missing.append(("\(label): \(type)", type))
                     continue
                 }
                 if let resolved {
@@ -3172,17 +3205,31 @@ func emitComposer(into out: inout String) {
             // start-up — a loud failure turned into a quiet one.
             arguments = ["fatalError(\"unresolved: see the composition diagnostic\")"]
             let declared = module ?? moduleGraph.first { moduleKey($0.typeName) == moduleKey(name) }
+            // A parameter two modules provide is not one nothing provides:
+            // ALU-DI-1002 has said so, with both providers, and repeating it
+            // here as "nothing provides it" contradicted that (Relay rerun).
+            // When ambiguity is the only obstacle, that error is the whole
+            // story and this one is not added.
+            let onlyAmbiguous = unmet.allSatisfy { attempt in
+                attempt.missing.allSatisfy { reportedAmbiguity(for: $0.type) }
+            }
+            if !(onlyAmbiguous && !unmet.isEmpty) {
             compositionDiagnostics.append(Diagnostic(
                 .unconstructibleModule,
                 "no initializer of `\(name)` can be satisfied by this application",
                 at: declared?.location,
                 context: unmet.flatMap { attempt in
-                    ["\(attempt.signature) needs:"] + attempt.missing.map { "  \($0) — nothing provides it" }
+                    ["\(attempt.signature) needs:"] + attempt.missing.map { entry in
+                        reportedAmbiguity(for: entry.type)
+                            ? "  \(entry.text) — several modules provide it (ALU-DI-1002)"
+                            : "  \(entry.text) — nothing provides it"
+                    }
                 },
                 explanation: [
                     "A module's parameters must be values another module provides, `Configuration`, or the component graph."
                 ],
                 help: ["add the modules that provide those values, give the parameters defaults, or add an initializer this application can satisfy."]))
+            }
         }
         // `try` only where the initializer throws: an unnecessary one is a
         // warning in every consumer's build.
@@ -3313,8 +3360,37 @@ func emitComposer(into out: inout String) {
     // Reported against the developer's source, and the build stops here:
     // generated code for a composition that cannot be wired would only add
     // Swift errors pointing into a file nobody wrote (relay ISSUES #32).
+    // One unlisted module behind several missing values is one mistake: it
+    // was three errors after `alula generate auth`, each saying the same
+    // module was missing (Relay rerun). Said once, naming everything it
+    // provides.
+    let missingByUnlisted = Dictionary(grouping: unlistedProvider.keys.sorted()) {
+        moduleIdentity(unlistedProvider[$0]!.typeName)
+    }.filter { $0.value.count > 1 }
+    var merged: Set<String> = []
     for diagnostic in compositionDiagnostics {
-        report(diagnostic)
+        guard diagnostic.code == .missingProvider,
+              let type = unlistedProvider.keys.first(where: { diagnostic.summary == "no module in this application provides `\($0)`" }),
+              let group = missingByUnlisted[moduleIdentity(unlistedProvider[type]!.typeName)]
+        else {
+            report(diagnostic)
+            continue
+        }
+        let module = unlistedProvider[type]!
+        guard merged.insert(moduleIdentity(module.typeName)).inserted else { continue }
+        let named = group.map { "`\($0)`" }
+        let list = named.count == 2
+            ? named.joined(separator: " and ")
+            : named.dropLast().joined(separator: ", ") + " and " + named.last!
+        let needers = group.flatMap { wanted in consumers(of: wanted).map { "  \($0.name) → \(wanted)" } }
+        report(Diagnostic(
+            .missingProvider,
+            "`\(module.typeName)` provides \(list), and is not in `modules:`",
+            at: diagnostic.location,
+            context: needers.isEmpty ? [] : ["needed by:"] + needers,
+            explanation: ["Nothing included provides these values; that module does."],
+            help: ["add `\(module.typeName).self` to `modules:`."],
+            notes: [.init("`\(module.typeName)` is declared here", at: module.location)]))
     }
 }
 

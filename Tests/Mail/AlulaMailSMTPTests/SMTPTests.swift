@@ -26,6 +26,19 @@
         var data: String { record.body.withLock { $0 } }
         var connections: Int { record.connections.withLock { $0 } }
 
+    /// Whether `QUIT` has arrived, waiting up to two seconds for it. A client
+    /// sends `QUIT` and closes without waiting for the `221`, so a send can
+    /// return before this server has read it — reading the log at once
+    /// raced the connection's last line (it read `DATA` once under load).
+    func receivedQuit() async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            if commands.last == "QUIT" { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return commands.last == "QUIT"
+    }
+
         /// - Parameters:
         ///   - refusing: Recipients answered `550` at `RCPT`.
         ///   - closeAfter: Drop each connection after this many messages, as a
@@ -155,6 +168,7 @@
             let server = try await FakeSMTPServer()
             defer { Task { await server.stop() } }
             try await transport(server, username: "user").send(message)
+            #expect(await server.receivedQuit())
 
             let commands = server.commands
             #expect(commands.first == "EHLO localhost")
@@ -163,7 +177,6 @@
             #expect(commands.contains("MAIL FROM:<app@example.com>"))
             #expect(commands.contains("RCPT TO:<ada@example.com>"))
             #expect(commands.contains("RCPT TO:<audit@example.com>"))
-            #expect(commands.last == "QUIT")
             #expect(server.data.contains("\r\n..hidden dot line\r\n"))
             #expect(server.data.contains("Subject: Hello"))
             #expect(!server.data.contains("audit@example.com"))
@@ -328,7 +341,7 @@
             try await withPool(settings(server, pool: 1, idle: .milliseconds(150))) { transport in
                 try await transport.send(message(to: "ada@example.com"))
                 try await Task.sleep(for: .milliseconds(400))
-                #expect(server.commands.last == "QUIT")
+                #expect(await server.receivedQuit())
                 try await transport.send(message(to: "grace@example.com"))
             }
             #expect(server.connections == 2)
@@ -344,7 +357,7 @@
                 settings: settings, logger: Logger(label: "test"), pool: idle)
             try await transport.send(message(to: "ada@example.com"))
             #expect(server.connections == 1)
-            #expect(server.commands.last == "QUIT")
+            #expect(await server.receivedQuit())
         }
 
         @Test("pool settings from configuration, and 0 turns the pool off")

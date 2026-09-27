@@ -20,6 +20,34 @@ extension Channel {
     public func leave(_ topic: String, socket: Socket) async {}
 }
 
+/// A channel whose join reads what the client sent with it: a cursor ("I
+/// have everything up to seq 812"), a filter, a client version.
+///
+/// The join frame always carried a payload, but ``Channel/join(_:socket:)``
+/// was never given it, so anything a join needed took a second message and a
+/// round trip — Relay's incident rooms joined, then asked to catch up
+/// (Relay #21). Adopt this instead of `Channel` and implement only this
+/// `join`; the other is provided.
+///
+/// ```swift
+/// struct Room: PayloadJoinChannel {
+///     func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult {
+///         let after = payload["after"]?.intValue ?? 0
+///         return .ok(["events": await timeline(topic, after: after)])
+///     }
+///     func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .noReply }
+/// }
+/// ```
+public protocol PayloadJoinChannel: Channel {
+    func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult
+}
+
+extension PayloadJoinChannel {
+    public func join(_ topic: String, socket: Socket) async -> JoinResult {
+        await join(topic, payload: .object([:]), socket: socket)
+    }
+}
+
 /// Why a join was refused. The `reason` string travels to the client in the
 /// `alula:error` payload — keep it wire-safe.
 public struct JoinRejection: Sendable, Equatable {

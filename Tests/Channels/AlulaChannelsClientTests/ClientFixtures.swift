@@ -38,11 +38,21 @@ struct CounterChannel: Channel {
     }
 }
 
+/// Reads the join payload: answers with the cursor it was given (Relay #21).
+struct CursorChannel: PayloadJoinChannel {
+    func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult {
+        .ok(initialState: ["after": payload["after"] ?? .null])
+    }
+
+    func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .none }
+}
+
 struct ClientFixtureModule {
     let channels: [ChannelRegistration] = [
         ChannelRegistration("counter:*") { channel in
             CounterChannel(broadcaster: channel.broadcaster)
-        }
+        },
+        ChannelRegistration("cursor:*") { _ in CursorChannel() },
     ]
 }
 

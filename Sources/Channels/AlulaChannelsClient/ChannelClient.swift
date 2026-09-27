@@ -57,6 +57,8 @@ public actor ChannelClient {
         /// Membership currently live on the server.
         var joined = false
         var subscribers: [UUID: AsyncStream<ChannelMessage>.Continuation] = [:]
+        /// What each join and rejoin sends (Relay #21).
+        var joinPayload: @Sendable () async -> JSONValue = { .object([:]) }
     }
 
     private var channels: [String: ChannelRecord] = [:]
@@ -159,13 +161,17 @@ public actor ChannelClient {
         ChannelHandle(topic: topic, client: self)
     }
 
-    internal func join(topic: String, timeout: Duration?) async throws -> JSONValue {
+    internal func join(
+        topic: String, payload: @escaping @Sendable () async -> JSONValue, timeout: Duration?
+    ) async throws -> JSONValue {
         channels[topic, default: ChannelRecord()].desired = true
+        channels[topic]?.joinPayload = payload
+        let joinPayload = await payload()
         do {
             let reply = try await request(
                 topic: topic,
                 event: ReservedEvent.join.rawValue,
-                payload: .object([:]),
+                payload: joinPayload,
                 timeout: timeout ?? configuration.pushTimeout
             )
             channels[topic]?.joined = true
@@ -447,10 +453,16 @@ public actor ChannelClient {
     private func rejoinAll() async {
         for topic in channels.keys.sorted() where channels[topic]?.desired == true {
             do {
+                let payload: JSONValue
+                if let provider = channels[topic]?.joinPayload {
+                    payload = await provider()
+                } else {
+                    payload = .object([:])
+                }
                 let initialState = try await request(
                     topic: topic,
                     event: ReservedEvent.join.rawValue,
-                    payload: .object([:]),
+                    payload: payload,
                     timeout: configuration.pushTimeout
                 )
                 guard state == .connected else { return }

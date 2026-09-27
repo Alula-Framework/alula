@@ -20,8 +20,22 @@ public struct ChannelHandle: Sendable {
     /// automatically and the fresh initial state arrives on `messages()`
     /// as a `alula:join` message (`ChannelMessage.isRejoin`).
     @discardableResult
-    public func join(timeout: Duration? = nil) async throws -> JSONValue {
-        try await client.join(topic: topic, timeout: timeout)
+    public func join(payload: JSONValue = .object([:]), timeout: Duration? = nil) async throws -> JSONValue {
+        try await client.join(topic: topic, payload: { payload }, timeout: timeout)
+    }
+
+    /// Joins with a payload worked out afresh for every join — this one and
+    /// each automatic rejoin after a reconnect. For a cursor: the rejoin
+    /// should say what the client holds *then*, not what it held first.
+    ///
+    /// ```swift
+    /// try await room.join(payloadForEachJoin: { ["after": .number(Double(await timeline.lastSeq))] })
+    /// ```
+    @discardableResult
+    public func join(
+        payloadForEachJoin payload: @escaping @Sendable () async -> JSONValue, timeout: Duration? = nil
+    ) async throws -> JSONValue {
+        try await client.join(topic: topic, payload: payload, timeout: timeout)
     }
 
     /// Leaves the topic; the server runs the channel's `leave` and ends its

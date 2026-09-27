@@ -124,16 +124,20 @@ struct LifecycleTests {
 
     @Test("heartbeats keep an otherwise-quiet socket alive")
     func heartbeatKeepsAlive() async throws {
-        let harness = try Harness(heartbeatTimeoutSeconds: 0.15, checkIntervalSeconds: 0.03)
+        // Margins a busy CI runner can keep: with a 150 ms timeout and 50 ms
+        // beats, one scheduling stall of ~100 ms closed the socket, and CI
+        // failed three of these tests at once (0.56.0). A stall must now pass
+        // half a second to matter; the test still spans two windows.
+        let harness = try Harness(heartbeatTimeoutSeconds: 0.6, checkIntervalSeconds: 0.05)
         let wire = try await harness.wire()
         _ = try await wire.join("room:1")
 
-        // Heartbeat at ~50ms for 400ms — several timeout windows.
-        for beat in 0..<8 {
+        // Heartbeat every ~100ms for 1.4s — more than two timeout windows.
+        for beat in 0..<14 {
             try wire.send(ref: "hb\(beat)", topic: "alula", event: "alula:heartbeat")
             let reply = try await wire.nextEnvelope()
             #expect(reply?.ref == "hb\(beat)")
-            try await Task.sleep(for: .milliseconds(50))
+            try await Task.sleep(for: .milliseconds(100))
         }
         // Still alive and functional.
         try wire.send(ref: "9", topic: "room:1", event: "echo", payload: ["alive": true])
@@ -143,14 +147,15 @@ struct LifecycleTests {
 
     @Test("any inbound frame counts as liveness, not only heartbeats")
     func activityIsLiveness() async throws {
-        let harness = try Harness(heartbeatTimeoutSeconds: 0.15, checkIntervalSeconds: 0.03)
+        // The same margins as heartbeatKeepsAlive, for the same reason.
+        let harness = try Harness(heartbeatTimeoutSeconds: 0.6, checkIntervalSeconds: 0.05)
         let wire = try await harness.wire()
         _ = try await wire.join("room:1")
 
-        for n in 0..<8 {
+        for n in 0..<14 {
             try wire.send(ref: "\(n)", topic: "room:1", event: "echo")
             _ = try await wire.nextEnvelope()
-            try await Task.sleep(for: .milliseconds(50))
+            try await Task.sleep(for: .milliseconds(100))
         }
         try wire.send(ref: "z", topic: "room:1", event: "echo")
         #expect(try await wire.nextEnvelope()?.ref == "z")

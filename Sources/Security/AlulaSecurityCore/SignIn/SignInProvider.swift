@@ -17,12 +17,12 @@ import Foundation
 /// @GetRoute("/sign-in")
 /// func begin(_ context: RequestContext) async throws -> Response {
 ///     try await provider.beginSignIn(context, returnTo: context.request.queryParam("return-to"))
-///         .response()
+///         .response(for: context)
 /// }
 ///
 /// @PostRoute("/sign-in", pipelines: [.default, "csrf"])   // the password provider posts here
 /// func submit(_ context: RequestContext) async throws -> Response {
-///     try await provider.signIn(context).response()
+///     try await provider.signIn(context).response(for: context)
 /// }
 ///
 /// @GetRoute("/sign-in/callback")                          // an OIDC provider returns here
@@ -101,6 +101,38 @@ public enum SignInStep: Sendable, Equatable {
         case .redirect(let url): .redirect(to: url.absoluteString, .seeOther)
         }
     }
+
+    /// As ``response()``, except that a script is told where to go rather
+    /// than sent there: see ``RedirectNegotiation``.
+    public func response(for context: RequestContext) throws -> Response {
+        switch self {
+        case .form(let form): try .json(form)
+        case .redirect(let url): try RedirectNegotiation.response(to: url.absoluteString, for: context)
+        }
+    }
+}
+
+/// Redirects that a script can follow.
+///
+/// A `303` works for a browser navigating. A script — `fetch`, or anything
+/// sending `DELETE`, which only scripts do — either follows it cross-origin,
+/// where CORS refuses the provider's logout page, or with `redirect:
+/// "manual"` gets an opaque response whose `Location` it cannot read. So a
+/// single-page application could not end a provider's session on sign-out,
+/// and every one that tried wrote the same workaround (Relay #22).
+///
+/// A request whose `Accept` names no HTML is a script — a browser navigation
+/// always sends `text/html`, and `fetch()`'s default is `*/*` — and gets
+/// `200 {"redirect": "<url>"}` to navigate to itself. Everything else gets
+/// the `303`. The same rule decides when a static-asset mount serves the
+/// application shell.
+public enum RedirectNegotiation {
+    public static func response(to location: String, for context: RequestContext) throws -> Response {
+        guard let accept = context.request.headers[.accept], !accept.contains("text/html") else {
+            return .redirect(to: location, .seeOther)
+        }
+        return try .json(["redirect": location])
+    }
 }
 
 /// The fields a sign-in form needs, described rather than rendered — Alula
@@ -149,6 +181,13 @@ public struct SignInResult: Sendable {
         guard let returnTo else { return .status(.noContent) }
         return .redirect(to: returnTo, .seeOther)
     }
+
+    /// As ``response()``, with the redirect negotiated for a script: see
+    /// ``RedirectNegotiation``.
+    public func response(for context: RequestContext) throws -> Response {
+        guard let returnTo else { return .status(.noContent) }
+        return try RedirectNegotiation.response(to: returnTo, for: context)
+    }
 }
 
 /// What signing out looks like beyond the local session.
@@ -162,6 +201,16 @@ public enum SignOutStep: Sendable, Equatable {
         switch self {
         case .done: .status(.noContent)
         case .redirect(let url): .redirect(to: url.absoluteString, .seeOther)
+        }
+    }
+
+    /// As ``response()``, with the provider's logout negotiated for a
+    /// script — the case this was written for: a single-page application's
+    /// `DELETE /session` (Relay #22). See ``RedirectNegotiation``.
+    public func response(for context: RequestContext) throws -> Response {
+        switch self {
+        case .done: .status(.noContent)
+        case .redirect(let url): try RedirectNegotiation.response(to: url.absoluteString, for: context)
         }
     }
 }

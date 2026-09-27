@@ -1,6 +1,8 @@
 import AlulaChannelsClient
+import AlulaChannelsProtocol
 import AlulaChannelsTesting
 import Foundation
+import Synchronization
 import Testing
 
 @Suite("Swift client — heartbeat, reconnect, rejoin", .timeLimit(.minutes(1)))
@@ -45,6 +47,47 @@ struct ReconnectTests {
         let reply = try await counter.push("echo", payload: ["post": "reconnect"])
         #expect(reply == ["post": "reconnect"])
         #expect(severable.connectCount == 2)
+        await client.disconnect()
+    }
+
+    @Test("a join carries its payload to the channel")
+    func joinPayload() async throws {
+        // Relay #21: the payload never reached `join`, so a cursor took a
+        // second message and a round trip.
+        let harness = try ClientHarness()
+        let client = harness.makeClient(configuration: fastReconnect())
+        try await client.connect()
+        #expect(try await client.channel("cursor:1").join(payload: ["after": 812]) == ["after": 812])
+        await client.disconnect()
+    }
+
+    final class Cursor: Sendable {
+        let value = Mutex(5)
+    }
+
+    @Test("a rejoin after a drop sends the payload as it is then, not as it was")
+    func rejoinRecomputesPayload() async throws {
+        var severable: SeverableTransport!
+        let harness = try ClientHarness { transport in
+            severable = SeverableTransport(wrapping: transport)
+            return severable
+        }
+        let client = harness.makeClient(configuration: fastReconnect())
+        try await client.connect()
+        let cursor = Cursor()
+        let room = client.channel("cursor:2")
+        #expect(
+            try await room.join(payloadForEachJoin: { ["after": .number(Double(cursor.value.withLock { $0 }))] })
+                == ["after": 5])
+        let messages = await room.messages()
+        cursor.value.withLock { $0 = 9 }  // the client caught up meanwhile
+
+        severable.severAll()
+
+        var iterator = messages.makeAsyncIterator()
+        let rejoin = await iterator.next()
+        #expect(rejoin?.isRejoin == true)
+        #expect(rejoin?.payload == ["after": 9])
         await client.disconnect()
     }
 
@@ -176,16 +219,17 @@ struct ReconnectTests {
 
     @Test("heartbeats flow on the wire and keep a quiet client alive")
     func heartbeats() async throws {
-        // Server timeout 0.2s; client heartbeats every 60ms.
-        let harness = try ClientHarness(heartbeatTimeoutSeconds: 0.2)
+        // Server timeout 0.6s; client heartbeats every 150ms. At 0.2s and
+        // 60ms, one stall on a busy CI runner dropped the connection (0.56.0).
+        let harness = try ClientHarness(heartbeatTimeoutSeconds: 0.6)
         let client = harness.makeClient(
-            configuration: ChannelClientConfiguration(heartbeatInterval: .milliseconds(60))
+            configuration: ChannelClientConfiguration(heartbeatInterval: .milliseconds(150))
         )
         try await client.connect()
         let counter = client.channel("counter:1")
         try await counter.join()
 
-        try await Task.sleep(for: .milliseconds(500)) // several server windows
+        try await Task.sleep(for: .milliseconds(1500)) // more than two server windows
         #expect(await client.connectionState == .connected)
         let reply = try await counter.push("echo", payload: ["still": "alive"])
         #expect(reply == ["still": "alive"])

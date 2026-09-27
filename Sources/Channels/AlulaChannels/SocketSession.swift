@@ -233,7 +233,13 @@ internal actor SocketSession {
             return
         }
 
-        switch (await channel.join(topic, socket: socket)).outcome {
+        let admission =
+            if let withPayload = channel as? any PayloadJoinChannel {
+                await withPayload.join(topic, payload: envelope.payload, socket: socket)
+            } else {
+                await channel.join(topic, socket: socket)
+            }
+        switch admission.outcome {
         case .rejected(let rejection):
             routable.remove(topic)
             socket.sendError(ref: envelope.ref, topic: topic, reason: rejection.reason)

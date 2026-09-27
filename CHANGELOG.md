@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0] - 2026-09-27
+
+### Added
+
+- **A channel's join receives the join payload** (Relay #21). The join frame
+  always carried one; `Channel.join(_:socket:)` was never given it, so a
+  cursor or a filter took a second message and a round trip. Adopt
+  `PayloadJoinChannel` and implement `join(_:payload:socket:)`; plain
+  `Channel`s are unchanged. On the client, `join(payload:)` sends a fixed
+  payload, and `join(payloadForEachJoin:)` works one out for every join and
+  every automatic rejoin — so a reconnecting client says what it holds then,
+  not what it held when it first joined.
+- **Sign-in and sign-out redirects a script can follow** (Relay #22).
+  `SignOutStep`, `SignInStep` and `SignInResult` gain `response(for:)`: a
+  request whose `Accept` names no HTML — a script; `fetch()`'s default is
+  `*/*` — gets `200 {"redirect": "<url>"}` to navigate to itself, and a
+  browser navigating still gets the `303`. A single-page application's
+  `DELETE /session` could not follow the provider's logout redirect —
+  cross-origin under CORS, or opaque with `redirect: "manual"` — so every one
+  wrote this itself. `response()` is unchanged.
+
 ## [0.56.0] - 2026-09-26
 
 ### Changed

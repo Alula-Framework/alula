@@ -40,6 +40,8 @@ strings carry tokens.
 
 ## Topics
 
+### Calling other services
+
 - ``OutboundHTTPClient``
 - ``OutboundRequest``
 - ``OutboundResponse``
@@ -49,3 +51,12 @@ strings carry tokens.
 - ``AsyncHTTPTransport``
 - ``AlulaHTTPClientModule``
 - ``OutboundHTTPConfigurationError``
+
+### Service accounts
+
+- ``AlulaClientCredentialsModule``
+- ``ClientCredentialsSettings``
+- ``ClientCredentialsTokenSource``
+- ``AuthorizedHTTPClient``
+- ``ClientCredentialsError``
+- ``ClientCredentialsConfigurationError``

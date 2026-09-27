@@ -22,28 +22,32 @@ application has. The overlay is optional.
 server:
   port: 8080
 datasource:
-  url: postgres://localhost/app_dev
-  pool_size: 5
+  primary:
+    url: postgres://localhost/app_dev
+    pool-size: 5
 ```
 
 ```yaml
 # alula-prod.yaml — only what changes
 datasource:
-  url: "${DATABASE_URL}"
-  pool_size: 50
+  primary:
+    url: "${DATABASE_URL}"
+    pool-size: 50
 ```
 
 In production, `server.port` resolves to `8080` from the base file, while
-`datasource.pool_size` resolves to `50` from the overlay. Nothing needs
+`datasource.primary.pool-size` resolves to `50` from the overlay. Nothing needs
 restating in the overlay just to keep it.
 
 ## Environment variables
 
-A dotted key becomes an upper-snake-case variable with a `ALULA_` prefix:
+A key becomes an upper-snake-case variable with a `ALULA_` prefix: every
+character that is not a letter or digit — the dot and the dash alike —
+becomes `_`:
 
 ```
-server.port           →  ALULA_SERVER_PORT
-datasource.pool_size  →  ALULA_DATASOURCE_POOL_SIZE
+server.port                   →  ALULA_SERVER_PORT
+datasource.primary.pool-size  →  ALULA_DATASOURCE_PRIMARY_POOL_SIZE
 ```
 
 Setting one overrides both files. This is how a deployment platform injects

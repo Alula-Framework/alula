@@ -14,7 +14,7 @@ service, and nothing reads an unbounded response into memory.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.40.0", traits: ["Web", "HTTPClient"]),
+         from: "0.57.0", traits: ["Web", "HTTPClient"]),
 ```
 
 ```yaml
@@ -60,6 +60,48 @@ said.
 A `POST` that failed after the server read it may already have taken
 effect, so repeating it is the caller's decision to make, by sending an
 `Idempotency-Key` the other service honours.
+
+## Calling as a service account
+
+`AlulaClientCredentialsModule` gets a service account's access tokens by the
+OAuth 2.0 client credentials grant and sends them as a bearer token. List it
+beside `AlulaHTTPClientModule`, whose `OutboundHTTPClient` it uses, and
+configure `http-client.client-credentials.*`:
+
+```yaml
+http-client:
+  client-credentials:
+    issuer: https://id.example.com/realms/main   # or token-url, not both
+    client-id: billing-worker
+    client-secret: ${BILLING_CLIENT_SECRET}
+    scope: invoices:write                        # optional
+    audience: https://api.example.com            # optional
+    client-authentication: basic                 # basic (default) | post
+```
+
+```swift
+@Service struct Invoices {
+    @Inject var core: AuthorizedHTTPClient
+
+    func list() async throws -> [Invoice] {
+        try await core.send(OutboundRequest(url: invoicesURL)).decode([Invoice].self)
+    }
+}
+```
+
+- With `issuer`, the token endpoint is discovered from
+  `<issuer>/.well-known/openid-configuration`.
+- `ClientCredentialsTokenSource` caches each token until 30 seconds before it
+  expires (a minute, when the answer has no `expires_in`), and callers asking
+  at once share one request.
+- `AuthorizedHTTPClient` sends the token and, on a `401`, drops it, fetches
+  another and tries once more. A second `401` is the answer.
+- A refusal names the endpoint, the client and the server's reason —
+  `the token endpoint https://id.example.com/token refused client
+  'billing-worker' (401): invalid_client: Invalid client credentials` — never
+  the secret. An authorization server that cannot be reached or answers 5xx
+  is `TemporarilyUnavailable`, so a handler that lets it propagate answers
+  `503`.
 
 ## Tracing
 

@@ -107,7 +107,7 @@ public enum ChannelCloseCode {
     public static let protocolViolation: UInt16 = 4400
 
     /// The peer stopped reading: one outbound frame took longer than
-    /// `alula.channels.write-timeout-seconds` to leave.
+    /// `channels.write-timeout-seconds` to leave.
     ///
     /// Distinct from ``heartbeatTimeout`` because the two say different
     /// things about the same client — one has gone silent, the other is

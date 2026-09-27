@@ -69,7 +69,7 @@ public final class OIDCTokenValidator: TokenValidator {
                     kind: .unsupportedAlgorithm,
                     reason: """
                         alg \(header.algorithm.map { "\"\($0)\"" } ?? "(absent)") is not in \
-                        security.oidc.allowed_algorithms
+                        security.oidc.allowed-algorithms
                         """
                 )
             }

@@ -102,9 +102,11 @@ public enum Alula {
     ///
     /// ```
     /// alula: could not start.
-    /// Configuration key 'datasource.primary.url' is not set in any source
-    /// (active environment: prod). Add it to alula.yaml or alula-prod.yaml,
-    /// or set the ALULA_DATASOURCE_PRIMARY_URL environment variable.
+    /// error: [ALU-CONFIG-5004] Configuration key 'datasource.primary.url' is
+    /// not set in any source (active environment: prod). Add it to alula.yaml
+    /// or alula-prod.yaml, or set the ALULA_DATASOURCE_PRIMARY_URL
+    /// environment variable.
+    ///     docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5004.md
     /// ```
     ///
     /// and the same message under `Swift/ErrorType.swift:254: Fatal error:
@@ -118,8 +120,12 @@ public enum Alula {
     /// missing file, a `${VAR}` with nothing behind it — is reported the same
     /// way as a bootstrap failure rather than trapping at the call site.
     ///
-    /// Exits `0` after a graceful shutdown, `1` on a startup failure. An
-    /// embedder that wants the error rather than the exit uses `bootstrap`.
+    /// Exits `0` after a graceful shutdown, and `1` otherwise, with a first
+    /// line saying what ended it: `alula: could not start.`, `alula: stopped
+    /// after running …` when a module failed or a service returned
+    /// (ALU-LIFE-8005, ALU-LIFE-8006), `alula: shutdown timed out.`
+    /// (ALU-LIFE-8004), or `alula: command '…' failed.` An embedder that
+    /// wants the error rather than the exit uses `bootstrap`.
     /// `composedBy` is how a module gets to take what it needs.
     ///
     /// `composedBy` is **required**, and there is no path without it. Every

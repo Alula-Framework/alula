@@ -17,7 +17,7 @@ startup:
 let configuration = try Configuration.load()
 
 let port: Int = try configuration.get("server.port")
-let poolSize = configuration.get("datasource.pool_size", default: 10)
+let poolSize = configuration.get("datasource.primary.pool-size", default: 10)
 ```
 
 Three layers resolve in precedence order — environment variables, then

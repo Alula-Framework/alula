@@ -32,10 +32,12 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `AlulaScheduler` / `AlulaCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `AlulaCronCore` is the dependency-free engine the macro validates with. |
 | `AlulaQueue` / `AlulaQueueTesting` | Background jobs: enqueue from anywhere, run in a worker at least once, retried with backoff, dead-lettered when they never succeed. Durable with alula-data's `AlulaQueuePostgres`. See [Docs/queue.md](Docs/queue.md). |
 | `AlulaMail` / `AlulaMailSMTP` / `AlulaMailTesting` | Email: a transport seam, header-injection-proof messages, MIME rendering, delivery through the job queue, and an SMTP client (trait `SMTP`). See [Docs/mail.md](Docs/mail.md). |
-| `AlulaHTTPClient` / `AlulaHTTPClientTesting` | Calling other services: timeouts, retries only where safe, trace propagation, response caps (trait `HTTPClient`). See [Docs/http-client.md](Docs/http-client.md). |
+| `AlulaHTTPClient` / `AlulaHTTPClientTesting` | Calling other services: timeouts, retries only where safe, trace propagation, response caps, and a service account's tokens by the client credentials grant (trait `HTTPClient`). See [Docs/http-client.md](Docs/http-client.md). |
+| `AlulaDiagnostics` | The diagnostic codes and their compiler-format rendering. A package reporting its own failures through `Alula.run` defines its codes with it — see [Diagnostics](#diagnostics). |
 | `AlulaOpenAPI` | An OpenAPI 3.1 document generated at build time from the route scan: no annotations, no drift. See [Docs/openapi.md](Docs/openapi.md). |
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
+| `AlulaChannelsTransport` | A WebSocket for `AlulaChannelsClient`, with the handshake headers a server needs — a session cookie, a bearer token. Requires the `Web` trait. |
 | `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
 Per-product documentation lives in [Docs/](Docs/), and
@@ -45,7 +47,7 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
 ```
 
 ```swift
@@ -54,6 +56,48 @@ on it.
     .product(name: "AlulaTransport", package: "alula"),
 ])
 ```
+
+## Diagnostics
+
+What the build refuses, and the startup and exit failures the framework owns,
+carry a stable code, printed in the compiler's format with a link to the
+code's page:
+
+```
+Sources/App/Checkout.swift:8:17: error: [ALU-DI-1001] no module in this application provides `PaymentClient`
+    …
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1001.md
+```
+
+| Family | Area |
+| --- | --- |
+| `ALU-DI-1xxx` | Dependency injection and graph construction |
+| `ALU-WEB-2xxx` | Controllers, routes, middleware, request binding |
+| `ALU-OAPI-3xxx` | OpenAPI generation |
+| `ALU-CONFIG-5xxx` | Configuration |
+| `ALU-SEC-6xxx` | Security and authentication composition |
+| `ALU-CMD-7xxx` | Commands |
+| `ALU-LIFE-8xxx` | Lifecycle and module composition |
+| `ALU-SCHED-9xxx` | Scheduled jobs |
+| `HGR-QUERY-4xxx` | Hangar query semantics — pages in [Hangar's repository](https://github.com/Alula-Framework/hangar/tree/main/Diagnostics) |
+| `ALD-…` | alula-data's cache, data source and migration codes — pages in [alula-data's](https://github.com/Alula-Framework/alula-data/tree/main/Diagnostics) |
+
+Every `ALU-` code has a page in [Diagnostics/](Diagnostics/README.md): what it
+means, why Alula rejects it, and how to fix it. A code is never renumbered or
+reused. [alula-cli](https://github.com/Alula-Framework/alula-cli) prints the
+same page offline:
+
+```
+alula explain ALU-DI-1001
+alula explain 1001
+```
+
+A package that reports its own failures through `Alula.run` conforms its error
+to `StartupDiagnostic` and defines a code with
+`DiagnosticCode(_:_:_:documentationURL:)`; the
+[Diagnostics article](Sources/Core/AlulaCore/AlulaCore.docc/Diagnostics.md)
+shows how. What `Alula.run` prints on exit is in
+[Docs/core.md](Docs/core.md#what-it-prints-on-exit).
 
 ## Traits
 
@@ -73,14 +117,14 @@ All are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.36.0", traits: ["Web"])
+         from: "0.57.0", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.36.0", traits: ["Security"])
+         from: "0.57.0", traits: ["Security"])
 
 // Just composition and lifecycle — 7 resolved dependencies instead of 30.
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the
@@ -106,6 +150,16 @@ A plain `swift build` here fails by design — the trait-gated targets find
 their dependencies pruned. `CI/check-lean-consumer.sh` verifies the lean
 configuration the only way that proves anything: by building a real consumer
 and asserting no gated dependency reached it.
+
+`CI/check-traps.sh` keeps framework code from crashing on what it did not
+write. Every `fatalError`, `precondition`, `preconditionFailure`, `try!`,
+`as!`, `.first!` and `.last!` in runtime code is listed in
+`CI/trap-allowlist.txt` with the reason only a programming error reaches it —
+never input, configuration or a dependency's state. A new site fails CI until
+it throws instead or is listed with its reason. The check also refuses
+framework calls to `Configuration.get(_:default:)`, which traps on a malformed
+value. Macro implementations and the registration generator are exempt: a
+trap there fails the build, not the application.
 
 ## Backends
 
@@ -136,11 +190,11 @@ floor stayed where it is. On `macos-15` it fails.
 
 > The macOS CI job **builds**; it does not run the test suite, which needs
 > service containers macOS runners do not have. So macOS is a supported build
-> platform, verified every push, and Linux is where the 1084 tests run.
+> platform, verified every push, and Linux is where the tests run.
 
 ## Testing
 
-`swift test --enable-all-traits` — 1,000+ tests across 16 targets, no external
+`swift test --enable-all-traits` — 1,700+ tests across 26 targets, no external
 services required.
 
 ## License

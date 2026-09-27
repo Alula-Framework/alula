@@ -162,9 +162,17 @@ rolls back.
 ## Shutdown
 
 On `SIGTERM` the worker stops claiming and waits for the jobs it holds.
-Bound that wait with `lifecycle.shutdown-timeout-seconds`. Past the bound,
-handlers are cancelled, and their jobs run again elsewhere once their leases
-lapse.
+Bound that wait with `lifecycle.shutdown-timeout-seconds`. Shortly before the
+bound — two seconds, or a fifth of the timeout if that is less — the worker
+hands back the jobs still running: their handlers are cancelled and the jobs
+go back to the queue at once, while the store is still up, so they run again
+elsewhere or on restart instead of waiting out their leases. The worker reads
+the deadline from `ShutdownDeadline.current`; with no timeout configured there
+is no deadline and nothing is handed back.
+
+A shutdown that still runs past the bound ends the process with
+`alula: shutdown timed out.` and ALU-LIFE-8004, naming the modules that were
+cancelled.
 
 ## Testing
 

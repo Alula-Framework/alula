@@ -29,7 +29,7 @@ JWKS fetching/rotation, claim policy, and error hygiene.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.36.0", traits: ["Security"]),
+        from: "0.57.0", traits: ["Security"]),
 ],
 targets: [
     .executableTarget(
@@ -326,17 +326,17 @@ enumerate its keys, so an unknown *key* cannot be refused the way an
 unrecognized *value* is.
 
 Missing required keys fail at composition — startup, not first request.
-An unrecognized `jwks_transport` value fails there too, rather than falling
+An unrecognized `jwks-transport` value fails there too, rather than falling
 back to a weaker setting than the operator wrote.
 
 ### Why the transport keys matter
 
 Whoever answers the JWKS fetch chooses the public keys that verify every
 token this service accepts. Someone able to intercept it serves their own
-signing key and mints any principal they like, so `jwks_transport` is not a
+signing key and mints any principal they like, so `jwks-transport` is not a
 hardening preference — it is the boundary the rest of this package's
 guarantees sit behind. HTTPS is enforced on the discovery document, on the
-`jwks_uri` it names, on an explicitly configured `jwks_url`, and on every
+`jwks_uri` it names, on an explicitly configured `jwks-url`, and on every
 redirect hop the fetch actually follows.
 
 `allow_insecure_loopback` exists for a local IdP container in development:
@@ -347,7 +347,7 @@ as you. `allow_insecure_anywhere` has no safe use against a remote host.
 ### Why stale keys expire
 
 When a refresh fails, cached keys keep serving so an IdP blip does not take
-the service down. That window is bounded by `jwks_max_stale`: past it, every
+the service down. That window is bounded by `jwks-max-stale`: past it, every
 request fails — not only the one that happens to attempt the refresh. The
 bound used to be checked on the refresh path alone, and refreshes are
 cooldown-gated, so past the limit roughly one request per cooldown window was
@@ -359,14 +359,14 @@ revocation takes effect the same day.
 
 ### Algorithms
 
-A token's `alg` must be in `security.oidc.allowed_algorithms`, which defaults
+A token's `alg` must be in `security.oidc.allowed-algorithms`, which defaults
 to every asymmetric algorithm JWTKit verifies (`RS*`, `PS*`, `ES*`, `EdDSA`).
 Narrow it to what your IdP issues:
 
 ```yaml
 security:
   oidc:
-    allowed_algorithms: RS256
+    allowed-algorithms: RS256
 ```
 
 The classic reason for an allowlist — an RS256 token replayed as HS256 with
@@ -398,14 +398,14 @@ For every request bearing `Authorization: Bearer <jwt>`:
   is rejected outright; tokens without a `kid` are checked against all keys
   rather than trusting a default-key fallback.
 - **Key rotation** — an unrecognized `kid` triggers one JWKS refetch,
-  rate-limited by `jwks_refresh_cooldown` so garbage tokens can't hammer the
-  IdP. Keys are cached process-wide for `jwks_cache_ttl`; a maintenance
+  rate-limited by `jwks-refresh-cooldown` so garbage tokens can't hammer the
+  IdP. Keys are cached process-wide for `jwks-cache-ttl`; a maintenance
   service pre-warms them at startup and refreshes on the TTL cadence. If the
   IdP blips, cached keys serve stale rather than failing every request.
 - **Claims** — `iss` equals the configured issuer; `aud` (string or array)
   includes the configured audience (missing `aud` is a rejection); `exp`
   required and enforced, `nbf` enforced when present, both with
-  `clock_skew_leeway`; `sub` required and non-empty.
+  `clock-skew-leeway`; `sub` required and non-empty.
 - **Error hygiene** — the wire sees a generic 401 (or an anonymous
   `.continue` on unguarded routes); the precise reason
   (`TokenValidationError`) goes to the internal log only.

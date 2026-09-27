@@ -13,12 +13,18 @@ import Foundation
 /// |-------------------------|----------|--------------------------------------|
 /// | `issuer`                | yes      | —                                    |
 /// | `audience`              | yes      | —                                    |
-/// | `jwks_url`              | no       | OIDC discovery from the issuer       |
-/// | `jwks_cache_ttl`        | no       | 3600 (seconds)                       |
-/// | `clock_skew_leeway`     | no       | 60 (seconds)                         |
-/// | `jwks_refresh_cooldown` | no       | 30 (seconds)                         |
-/// | `roles_claim`           | no       | `roles,groups,realm_access.roles`    |
-/// | `scopes_claim`          | no       | `scope,scp`                          |
+/// | `jwks-url`              | no       | OIDC discovery from the issuer       |
+/// | `jwks-cache-ttl`        | no       | 3600 (seconds)                       |
+/// | `clock-skew-leeway`     | no       | 60 (seconds)                         |
+/// | `jwks-refresh-cooldown` | no       | 30 (seconds)                         |
+/// | `jwks-max-stale`        | no       | 21600 (seconds)                      |
+/// | `jwks-transport`        | no       | `https_only`                         |
+/// | `roles-claim`           | no       | `roles,groups,realm_access.roles`    |
+/// | `scopes-claim`          | no       | `scope,scp`                          |
+/// | `allowed-algorithms`    | no       | every asymmetric algorithm JWTKit verifies |
+///
+/// The snake_case spellings these keys shipped with (`jwks_url`) are still
+/// read; kebab-case wins when both are set.
 public struct OIDCSecurityConfiguration: Sendable {
     /// The IdP's issuer identifier; must equal the token's `iss` exactly.
     public var issuer: String
@@ -151,7 +157,7 @@ public struct OIDCSecurityConfiguration: Sendable {
         self.allowedAlgorithms = Set(allowedAlgorithms.map { $0.uppercased() })
     }
 
-    /// Parses `security.oidc.jwks_transport`, refusing anything unrecognized
+    /// Parses `security.oidc.jwks-transport`, refusing anything unrecognized
     /// rather than falling back — a typo here would otherwise silently pick a
     /// weaker transport than the operator wrote.
     static func transportPolicy(_ raw: String?) throws -> JWKSTransportPolicy {
@@ -164,7 +170,7 @@ public struct OIDCSecurityConfiguration: Sendable {
             return .allowInsecureAnywhere
         case .some(let other):
             throw ConfigError.decodingFailed(
-                key: "security.oidc.jwks_transport", rawValue: other,
+                key: "security.oidc.jwks-transport", rawValue: other,
                 targetType: String(describing: JWKSTransportPolicy.self))
         }
     }
@@ -172,8 +178,8 @@ public struct OIDCSecurityConfiguration: Sendable {
     /// Reads a `security.oidc.*` setting, accepting either spelling.
     ///
     /// Every other configuration namespace in Alula is kebab-case —
-    /// `alula.channels.heartbeat-timeout-seconds`, `web.json.date-strategy`,
-    /// `alula.presence.max-entries-per-frame`. These keys shipped
+    /// `channels.heartbeat-timeout-seconds`, `web.json.date-strategy`,
+    /// `presence.max-entries-per-frame`. These keys shipped
     /// snake_case, following OIDC's own spec vocabulary (`jwks_uri`,
     /// `client_id`), and the inconsistency is invisible until someone writes
     /// `jwks-url` from habit and is handed the default instead of the value

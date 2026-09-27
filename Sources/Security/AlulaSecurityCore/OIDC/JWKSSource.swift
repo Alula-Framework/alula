@@ -216,7 +216,7 @@ public final class HTTPJWKSSource: JWKSSource {
             // Checked every time rather than once at construction: this is the
             // path that skipped discovery entirely, and it was the one URL in
             // the package that nothing validated.
-            try policy.validate(explicitJWKSURL, what: "the configured jwks_url")
+            try policy.validate(explicitJWKSURL, what: "the configured jwks-url")
             return explicitJWKSURL
         }
         if let cached = discoveredJWKSURL.withLock({ $0 }) { return cached }

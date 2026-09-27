@@ -17,7 +17,7 @@ process is running:
 @Service
 final class UserService: Sendable {
     @Inject let repository: any UserRepository
-    @ConfigValue("features.signup_enabled", default: true) let signupEnabled: Bool
+    @ConfigValue("features.signup-enabled", default: true) let signupEnabled: Bool
 }
 ```
 
@@ -97,3 +97,4 @@ context as a typed value — one copy per request, never shared between them.
 
 - <doc:Lifetimes>
 - <doc:CompileTimeWiring>
+- <doc:Diagnostics>

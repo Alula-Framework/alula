@@ -12,12 +12,17 @@ noticed — become build errors.
 ```swift
 .target(
     name: "MyApp",
-    dependencies: [.product(name: "AlulaCore", package: "alula-core")],
-    plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula-core")]
+    dependencies: [.product(name: "AlulaCore", package: "alula")],
+    plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
 )
 ```
 
 ## What it checks
+
+Every problem is reported in the compiler's format with a stable code —
+`error: [ALU-DI-1001] no module provides …` — so an IDE attaches it to your
+line, and each code has a page saying why it is refused and how to fix it.
+<doc:Diagnostics> has the families and where the pages are.
 
 **Missing registrations.** An `@Inject` property whose type is not a
 scanned component is reported, naming the type.
@@ -27,6 +32,11 @@ which edge to break.
 
 **`@ConfigValue` keys.** Checked against `alula.yaml`. A typo in a
 configuration key is a build error rather than a startup failure.
+
+**Declaration shapes.** `@Component`, `@Service` and `@Repository` — and
+`@Controller` and `@Middleware` — go on a struct or a `final class`. A class
+without `final` is a build error (ALU-DI-1018, ALU-WEB-2003) with a fix-it that
+adds it.
 
 **Existential bridges.** A protocol with exactly one conformer is resolvable
 as `any Protocol` with no hand-written glue:

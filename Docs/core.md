@@ -11,7 +11,7 @@ and component once, at composition, and runs your services under a
 @Service
 final class UserService: Sendable {
     @Inject let repository: any UserRepository
-    @ConfigValue("features.signup_enabled", default: true) let signupEnabled: Bool
+    @ConfigValue("features.signup-enabled", default: true) let signupEnabled: Bool
 }
 
 @main
@@ -30,7 +30,7 @@ struct App {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
 ]
 ```
 
@@ -52,6 +52,36 @@ instead reports the same message under `Fatal error: Error raised at top
 level`, a backtrace and a `Signal 4` — a configuration typo dressed as a
 crash. `bootstrap` remains for embedders that want the error rather than the
 exit.
+
+### What it prints on exit
+
+`Alula.run` exits `0` after a graceful shutdown and `1` otherwise, and the
+first line on standard error says which of these ended it:
+
+| First line | When | Code |
+|---|---|---|
+| `alula: could not start.` | The start did not complete — including a failure in the first second after every service was entered, where binding a port or dialling a pool happens. | The error's own, if it has one |
+| `alula: stopped after running 3d 4h 12m: FeedModule failed.` | A module failed after the application had started. | ALU-LIFE-8005 |
+| `alula: stopped after running …: FeedModule's service ended on its own.` | A service meant to run until shutdown returned. | ALU-LIFE-8006 |
+| `alula: shutdown timed out.` | Shutdown ran past `lifecycle.shutdown-timeout-seconds`; the modules still running are named. | ALU-LIFE-8004 |
+| `alula: command 'prune-visits' failed.` | A command threw. | — |
+
+A framework-owned failure is rendered in the compiler's format, with its code
+and a link to the code's page:
+
+```
+alula: could not start.
+error: [ALU-CONFIG-5004] Configuration key 'datasource.primary.url' is not set in any source (active environment: prod). Add it to alula.yaml or alula-prod.yaml, or set the ALULA_DATASOURCE_PRIMARY_URL environment variable.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-CONFIG-5004.md
+```
+
+What is printed for an error is its description, never its reflected form,
+which can carry a connection URL or a secret. An error with something safe
+and more useful to say conforms to `StartupDiagnostic`; see
+[Diagnostics](../Sources/Core/AlulaCore/AlulaCore.docc/Diagnostics.md) in the
+AlulaCore documentation. For a local session,
+`ALULA_STARTUP_ERROR_DETAIL=reflect` prints the reflected form. The codes are
+listed in [Diagnostics/](../Diagnostics/README.md).
 
 ## Two phases, and why it matters
 
@@ -288,7 +318,10 @@ would have while serving. Only **infrastructure** services start (database
 pools, buses). The HTTP server, the scheduler and queue workers do not, so
 running one beside a live deployment adds no server and runs no jobs twice.
 `context.arguments` holds whatever followed the name. The process exits 0
-when the command returns, and 1, with the error, when it throws.
+when the command returns, and 1 when it throws, printing
+`alula: command 'prune-visits' failed.` and the error. A name no module
+declares exits 1 with ALU-CMD-7002 and the list of commands there are; two
+modules declaring one name is ALU-CMD-7001.
 
 With no arguments, with `serve`, or with a first argument that is a flag,
 the application serves exactly as before.
@@ -318,6 +351,24 @@ module's service stops, in the same phase order as services: inbound first,
 infrastructure last, so a shutdown hook can still use the database. One
 that throws is logged and the rest still run. `lifecycle.shutdown-timeout-seconds`
 bounds them like the rest of shutdown.
+
+`.beforeStart` hooks run earlier still: before any service of the application
+starts, one at a time in dependency order. They are for proving a dependency
+is there — a pool dialling its connections — so a start that cannot work fails
+with that reason alone, before a listener announces itself and before workers
+log their own failures to reach it. One that throws stops the application with
+its error, unwrapped. Nothing else is running yet, so such a hook can use only
+what its own module holds.
+
+```swift
+.beforeStart("dial the pool") { _ in try await pool.connect() }
+```
+
+A shutdown that runs past `lifecycle.shutdown-timeout-seconds` cancels
+whatever is still running and exits 1 with `alula: shutdown timed out.`
+(ALU-LIFE-8004). A service that holds work it can hand back reads
+`ShutdownDeadline.current` and does so before the deadline — the queue
+worker does this with its running jobs.
 
 Use a `service` for work that goes on the whole time (a poller, a consumer),
 and hooks for work that happens once.
@@ -406,4 +457,4 @@ ALULA_BUILD_DOCS=1 swift package generate-documentation --target AlulaCore
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](../LICENSE).

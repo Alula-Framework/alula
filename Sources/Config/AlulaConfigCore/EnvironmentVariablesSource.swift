@@ -48,7 +48,8 @@ public struct EnvironmentVariablesSource: ConfigSource {
     }
 
     /// The fixed key → variable-name transform at the default prefix:
-    /// uppercase, `.` → `_`, prefixed `ALULA_`. Public so error messages and
+    /// uppercase, every character that is not a letter or digit → `_`,
+    /// prefixed `ALULA_`. Public so error messages and
     /// docs can tell users exactly which variable would satisfy a key.
     ///
     /// For a non-default prefix use ``ConfigPrefix/variableName(for:)``.

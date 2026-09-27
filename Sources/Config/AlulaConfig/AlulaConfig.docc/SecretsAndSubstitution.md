@@ -9,7 +9,8 @@ load time:
 
 ```yaml
 datasource:
-  url: "${DATABASE_URL}"
+  primary:
+    url: "${DATABASE_URL}"
 ```
 
 With an optional fallback, for a value that has a sensible default but should
@@ -17,7 +18,8 @@ stay overridable:
 
 ```yaml
 datasource:
-  pool_size: ${DB_POOL_SIZE:-10}
+  primary:
+    pool-size: ${DB_POOL_SIZE:-10}
 ```
 
 This is how a file stays committable while the values that vary — and the

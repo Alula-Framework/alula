@@ -88,6 +88,9 @@ public func compose(_ chain: [MiddlewareRegistration], around responder: @escapi
 /// - a registered ``ErrorMapper`` answers first, for the error types this
 ///   application does not own;
 /// - `HTTPErrorRepresentable` renders its own status and message;
+/// - `RejectedInput` is a 400 with its `rejectionMessage`;
+/// - `TemporarilyUnavailable` is a 503, with `Retry-After` when it gives a
+///   `retryAfter`;
 /// - everything else is an opaque 500 — details go to `context.logger`,
 ///   never to the client.
 public func errorResponse(for error: any Error, context: RequestContext) -> Response {

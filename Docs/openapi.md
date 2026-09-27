@@ -71,6 +71,29 @@ Foundation.
 - **Framework routes** (Actuator, uploads, the document itself). They are not
   `@Controller`s.
 
+The build says where the document is incomplete, at the route, when the
+application includes `AlulaOpenAPIModule`:
+
+- **ALU-OAPI-3001** (warning): a type the route takes or returns has no
+  schema — declared outside the scanned targets, or an enum with associated
+  values or a generic type. The document names it and describes nothing.
+- **ALU-OAPI-3002** (warning, off by default): a handler returns `Response`.
+  Most do that to choose a status, so it is opt-in:
+
+  ```yaml
+  openapi:
+    warn-undocumented-responses: true
+  ```
+
+  A handler that deliberately answers with a redirect or a file says so with
+  a comment above it, and the warning stays quiet:
+
+  ```swift
+  // alula:undocumented-response — a PDF download.
+  @GetRoute("/:id/pdf")
+  func pdf(_ context: RequestContext, id: String) async throws -> Response
+  ```
+
 The document is validated with `openapi-spec-validator` against the demo
 application in alula-cli.
 

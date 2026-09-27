@@ -156,11 +156,11 @@ public enum PresenceConfigurationError: Error, CustomStringConvertible, Sendable
     public var description: String {
         switch self {
         case .nonPositiveInterval:
-            return "alula.presence intervals must be positive, finite numbers of seconds."
+            return "presence intervals must be positive, finite numbers of seconds."
         case .downAfterNotAboveHeartbeat(let heartbeat, let downAfter):
             return """
-            alula.presence.down-after-seconds (\(downAfter)) must exceed \
-            alula.presence.heartbeat-interval-seconds (\(heartbeat)); otherwise every \
+            presence.down-after-seconds (\(downAfter)) must exceed \
+            presence.heartbeat-interval-seconds (\(heartbeat)); otherwise every \
             heartbeat gap flaps the node.
             """
         }

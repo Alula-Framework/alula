@@ -33,9 +33,9 @@ extension Channel {
 /// struct Room: PayloadJoinChannel {
 ///     func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult {
 ///         let after = payload["after"]?.intValue ?? 0
-///         return .ok(["events": await timeline(topic, after: after)])
+///         return .ok(initialState: ["events": await timeline(topic, after: after)])
 ///     }
-///     func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .noReply }
+///     func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .none }
 /// }
 /// ```
 public protocol PayloadJoinChannel: Channel {

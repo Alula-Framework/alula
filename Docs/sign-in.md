@@ -91,6 +91,25 @@ which regenerates the session id. `returnTo` must be a path on this site.
 Anything else is dropped rather than followed, because a sign-in page that
 redirects wherever a query string says is an open redirect.
 
+A single-page application that signs out with `fetch` cannot follow a
+`303` to the provider's logout page: cross-origin, CORS refuses it, and with
+`redirect: "manual"` the response is opaque and its `Location` unreadable.
+`SignInStep`, `SignInResult` and `SignOutStep` each have `response(for:)`
+beside `response()` for that. A request whose `Accept` header names no HTML —
+a script; `fetch()` sends `*/*` by default — gets `200 {"redirect": "<url>"}`
+and navigates there itself. A request that sends `text/html`, or no `Accept`
+at all, still gets the `303`:
+
+```swift
+@DeleteRoute("/session", pipelines: [.default, "csrf"])
+func signOut(_ context: RequestContext) async throws -> Response {
+    try await provider.signOut(context).response(for: context)
+}
+```
+
+`RedirectNegotiation.response(to:for:)` applies the same rule to a redirect
+of your own.
+
 Every route that changes state belongs on the `csrf` lane, including
 sign-in. See *Guard sign-in too* in `Docs/web.md` for why.
 

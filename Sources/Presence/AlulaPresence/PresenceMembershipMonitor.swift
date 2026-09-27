@@ -1,6 +1,6 @@
 /// A cluster node's liveness changed, as seen by a membership system.
 /// `node` is the peer's stable node *name* — it must equal the peer's
-/// `alula.presence.node-name`, which is also the `name` half of the
+/// `presence.node-name`, which is also the `name` half of the
 /// replica ids its gossip carries. One id vocabulary end to end, wired at
 /// deployment; the adapter module that provides the monitor owns keeping
 /// them aligned.

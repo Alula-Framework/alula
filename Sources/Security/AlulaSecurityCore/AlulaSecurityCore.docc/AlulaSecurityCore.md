@@ -149,6 +149,7 @@ the whole story.
 - ``SignInForm``
 - ``SignInResult``
 - ``SignOutStep``
+- ``RedirectNegotiation``
 - ``SignInReturnPath``
 - ``SignInEvents``
 - ``SignInMetrics``

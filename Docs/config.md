@@ -12,7 +12,7 @@ naming the key and the environment, not three services deep at request time.
 let configuration = try Configuration.load()
 
 let port: Int = try configuration.get("server.port")
-let poolSize = configuration.get("datasource.pool_size", default: 10)
+let poolSize = configuration.get("datasource.primary.pool-size", default: 10)
 let certPath: String? = try configuration.getIfPresent("tls.certificate")
 ```
 
@@ -20,7 +20,7 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.36.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
 ]
 ```
 
@@ -75,15 +75,17 @@ let configuration = try Configuration.load(
 server:
   port: 8080
 datasource:
-  url: postgres://localhost/app_dev
-  pool_size: 5
+  primary:
+    url: postgres://localhost/app_dev
+    pool-size: 5
 ```
 
 ```yaml
 # alula-prod.yaml
 datasource:
-  url: "${DATABASE_URL}"
-  pool_size: 50
+  primary:
+    url: "${DATABASE_URL}"
+    pool-size: 50
 ```
 
 A key set in a higher layer wins outright. A key absent from a higher layer
@@ -91,14 +93,22 @@ falls through to the next one.
 
 ### Environment variables
 
-A dotted key maps to an upper-snake-case variable with a `ALULA_` prefix:
+A key maps to an upper-snake-case variable with a `ALULA_` prefix: uppercase,
+and every character that is not a letter or digit — the dot and the dash
+alike — becomes `_`:
 
 ```
-server.port           →  ALULA_SERVER_PORT
-datasource.pool_size  →  ALULA_DATASOURCE_POOL_SIZE
+server.port                   →  ALULA_SERVER_PORT
+datasource.primary.pool-size  →  ALULA_DATASOURCE_PRIMARY_POOL_SIZE
+pubsub.node-id                →  ALULA_PUBSUB_NODE_ID
 ```
 
 Setting one overrides both files, with no configuration change required.
+
+The mapping is not reversible: `pool-size`, `pool_size` and `pool.size` all
+read `…_POOL_SIZE`, so don't define keys that collide under it. A
+missing-key error and the build's key check name the variable this way, which
+is the name the runtime reads.
 
 ### Changing the prefix
 
@@ -177,7 +187,7 @@ Three accessors, each for a different kind of "missing":
 let port: Int = try configuration.get("server.port")
 
 // Has a sensible default. Returns it only when the key is ABSENT.
-let poolSize = configuration.get("datasource.pool_size", default: 10)
+let poolSize = configuration.get("datasource.primary.pool-size", default: 10)
 
 // Genuinely optional — absence means the feature is off.
 let certPath: String? = try configuration.getIfPresent("tls.certificate")
@@ -192,7 +202,18 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 > `get(_:as:)` and handle the error. The same holds for a key present in a
 > shape with no raw-string form, and for a provider that fails rather than
 > answering: the default is for one case only, the key genuinely absent
-> everywhere.
+> everywhere. Alula's own modules never call it — `CI/check-traps.sh` refuses
+> it in framework code — so a malformed value they read is a coded
+> configuration error at startup rather than a crash.
+
+A key that has been renamed is read with `getIfPresent(_:formerly:as:)`: the
+current spelling wins, and each former one is tried in order when it is
+absent, so a deployment that still sets the old key keeps working:
+
+```swift
+let nodeID = try configuration.getIfPresent(
+    "pubsub.node-id", formerly: ["pubsub.node_id"], as: String.self)
+```
 
 ### A provider that fails is not a provider that is empty
 
@@ -231,8 +252,9 @@ means something unexpected at runtime.
 
 ```yaml
 datasource:
-  url: "${DATABASE_URL}"
-  pool_size: ${DB_POOL_SIZE:-10}
+  primary:
+    url: "${DATABASE_URL}"
+    pool-size: ${DB_POOL_SIZE:-10}
 ```
 
 An unresolved `${VAR}` with no fallback fails the whole load. That is
@@ -283,6 +305,11 @@ environment variable.
 alula.yaml:4:3: flow style ('[…]' / '{…}') is not supported by the Alula
 YAML subset — quote the value if the character is literal
 ```
+
+When one of these stops an application `Alula.run` started, it is printed
+under `alula: could not start.` with its diagnostic code and a link to the
+code's page — a missing key is ALU-CONFIG-5004, a malformed value
+ALU-CONFIG-5008. See [Diagnostics](../README.md#diagnostics).
 
 `ConfigError` and `ConfigLoadError` are both `Equatable` and conform to
 `LocalizedError`, so they can be asserted on directly in tests and logged
@@ -337,4 +364,4 @@ ALULA_BUILD_DOCS=1 swift package generate-documentation --target AlulaConfig
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](../LICENSE).

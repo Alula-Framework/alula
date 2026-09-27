@@ -10,9 +10,12 @@ another service, an integration test, an iOS app:
 
 ```swift
 let client = ChannelClient(url: url, transport: transport)
-let room = try await client.join("room:42")
+try await client.connect()
 
-for await message in room.messages {
+let room = client.channel("room:42")
+try await room.join()
+
+for await message in await room.messages() {
     handle(message)
 }
 ```
@@ -33,7 +36,10 @@ want to know: showing a "reconnecting" banner, pausing optimistic writes.
 ## The transport is a seam
 
 ``ChannelClientTransport`` is what actually carries bytes.
-`AlulaChannelsTesting`'s in-memory transport conforms to it, which is how
+`AlulaChannelsTransport`'s `WebSocketChannelTransport` is the one for a real
+server: swift-websocket's client, with the handshake headers — a session
+cookie, a bearer token — the server needs to know who is connecting.
+`AlulaChannelsTesting`'s in-memory transport conforms to it too, which is how
 end-to-end channel tests run with no socket, no port, and no timing
 assumptions.
 

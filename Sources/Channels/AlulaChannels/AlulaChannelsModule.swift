@@ -58,7 +58,7 @@ public struct AlulaChannelsModule: AlulaModule {
 
     /// - Parameters:
     ///   - bus: The application's PubSub, from `AlulaPubSubModule.bus`.
-    ///   - configuration: For `alula.channels.*`.
+    ///   - configuration: For `channels.*`.
     ///   - channels: Every declared channel, from every module that declares
     ///     any. The composer concatenates them — see `ChannelRegistration`
     ///     for why they are values rather than container registrations, and

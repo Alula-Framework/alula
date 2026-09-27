@@ -38,7 +38,7 @@ a stub service and call the method.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.36.0"),
+        from: "0.57.0"),
 ],
 targets: [
     .executableTarget(
@@ -130,12 +130,12 @@ per-process by nature — warming an in-memory cache, trimming a local buffer.
 Note that no cluster vocabulary appears unless you have a cluster.
 
 On one server, "once" is simply what happens. On several it needs a
-`JobCoordinator`, and if none is registered the scheduler says so at startup:
+`JobCoordinator`, and if none is present the scheduler says so at startup:
 
 ```
 warning: 3 job(s) are set to run once per firing, and no distributed
-JobCoordinator is registered. That is correct on a single server. If you run
-more than one, every one of them will run these jobs — register a coordinator.
+JobCoordinator is present. That is correct on a single server. If you run
+more than one, every one of them will run these jobs — add a coordinator.
 ```
 
 That line exists because the failure it describes is otherwise silent. An

@@ -22,7 +22,7 @@ Core's `AlulaModule` composition — through exactly one channel,
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.36.0", traits: ["Web"]),
+        from: "0.57.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
@@ -104,9 +104,9 @@ for a segment the path does not declare is a build error naming the ones it
 does:
 
 ```
-error: Route handler 'user' takes 'slug:', but no path segment is named
-':slug' — declared: :id. A path parameter's label is the segment it binds to,
-so the two cannot drift apart.
+error: [ALU-WEB-2002] Route handler 'user' takes 'slug:', but no path segment
+is named ':slug' — declared: :id. A path parameter's label is the segment it
+binds to, so the two cannot drift apart.
 ```
 
 A segment that will not parse never reaches the handler: it is a 400 naming
@@ -218,6 +218,13 @@ Transport settings come from the same `alula.yaml` everything else uses:
 `server.max-request-body-bytes`, `server.max-websocket-frame-bytes`,
 `server.websocket-ping-seconds`.
 
+An address the server cannot listen on stops the start with ALU-WEB-2010,
+naming the address and the reason:
+
+```
+error: [ALU-WEB-2010] could not listen on 127.0.0.1:8080: the address is already in use — another process is listening there. Stop what holds it, or set server.host and server.port.
+```
+
 ### Request timeouts
 
 A route can bound how long a request may take. Past the limit the client gets
@@ -293,6 +300,26 @@ cross-field condition ("end after start"), and `try value.validated()`
 validates anything by hand. With a custom error renderer, the message lists
 every field, since the `errors` member belongs to the problem+json shape.
 
+### What a thrown error becomes
+
+A registered `ErrorMapper` answers first. Otherwise:
+
+| Thrown | Response | Logged |
+|---|---|---|
+| `HTTPErrorRepresentable` (`HTTPError`, and Alula's own) | its status, message and headers | at `error` when the status is 5xx |
+| `RejectedInput` | `400` with its `rejectionMessage` | at `debug` |
+| `TemporarilyUnavailable` | `503`, with `Retry-After` in whole seconds when it gives a `retryAfter` | at `debug` |
+| anything else | `500 Internal Server Error`, no detail | at `error` |
+
+`RejectedInput` and `TemporarilyUnavailable` are in AlulaCore and say nothing
+about HTTP, so a package below the web layer can conform its errors: Alula
+Data conforms Hangar's dynamic-filter errors to `RejectedInput`, and its
+data-source errors and Hangar's transient database errors to
+`TemporarilyUnavailable`. A `rejectionMessage` reaches
+the client, so it says only what the request said; the error's description,
+which may name a table, stays in the log. An enum where only some cases apply
+answers per case through `isRejectedInput` or `isTemporarilyUnavailable`.
+
 ### Roles protect routes
 
 A controller's roles apply to every route below it; a route's roles narrow
@@ -335,8 +362,9 @@ enough. Roles on a `.public` route are a build error, because a lane that
 establishes no principal can only ever reject:
 
 ```
-error: 'ping' requires roles but runs on '.public', which establishes no
-principal — every request would be rejected.
+error: [ALU-SEC-6001] 'ping' requires roles but runs on '.public', which
+establishes no principal — every request would be rejected. Give it a lane
+that authenticates, or drop the roles.
 ```
 
 `context.requireRole("admin")` is still there for a check a signature cannot
@@ -662,8 +690,14 @@ hijacking) unless the server checks `Origin`.
 
 `AlulaWebModule` checks it on every upgrade route, before any lane runs. By
 default the `Origin` must be the host the request was addressed to; anything
-else gets `403`. A handshake with no `Origin` did not come from a browser page
-and is allowed. To accept other origins:
+else gets `403`, and the refusal's log line names
+`web.websocket.allowed-origins`. A handshake with no `Origin` did not come from
+a browser page and is allowed, and so is a `ws://` or `wss://` `Origin`: a
+browser's is its page's — http or https, `null`, or an extension's scheme —
+never ws or wss, so only a non-browser client sends one, and it carries no
+ambient cookies. (swift-websocket, which Alula's own Swift client uses, always
+sends `ws://<host>`.) `null` and extension origins are refused. To accept other
+origins:
 
 ```yaml
 web:
@@ -766,6 +800,14 @@ level, and reads with `pread` off the cooperative pool.
 `Accept-Encoding` negotiation against precompressed siblings, per-pattern
 cache headers, an SPA fallback, and path containment that resolves before it
 compares.
+
+A mount whose directory holds its index file warns at startup when a `GET`
+route claims exactly the mount's prefix, because a route always beats a mount
+and the index would never be served there:
+
+```
+GET / is answered by a route, so the asset mount's index.html is never served there
+```
 
 `ResumableUploads` implements tus 1.0 over a `DiskUploadStore` whose recorded
 offsets can only be produced by a proof type that performs the `fsync` — the

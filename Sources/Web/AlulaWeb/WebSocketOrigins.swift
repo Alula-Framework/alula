@@ -14,7 +14,9 @@ import HTTPTypes
 /// The default is **same origin**: the `Origin` must name the host the request
 /// was addressed to. A request with no `Origin` is allowed, because it did not
 /// come from a browser page, and those are the only callers that carry someone
-/// else's cookies.
+/// else's cookies. So is a `ws://` or `wss://` `Origin`, which no browser page
+/// sends — swift-websocket's client always does. `null` and extension origins
+/// are refused.
 ///
 /// ```yaml
 /// web:

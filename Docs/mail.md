@@ -14,7 +14,7 @@ request never waits on a mail server.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.39.0", traits: ["Web", "SMTP"]),
+         from: "0.57.0", traits: ["Web", "SMTP"]),
 ```
 
 ```swift
@@ -38,8 +38,30 @@ mail:
     security: starttls          # starttls | tls | none
     username: apikey
     # password: set ALULA_MAIL_SMTP_PASSWORD, never in the file
-    timeout-seconds: 30
+    timeout-seconds: 30         # bounds every exchange, opening included
+    pool-size: 4                # long-lived connections; 0 = one per message
+    idle-seconds: 30            # close a pooled connection idle this long
+    messages-per-connection: 100
 ```
+
+### Pooled connections
+
+`AlulaMailSMTPModule` keeps up to `pool-size` long-lived connections and every
+send shares them, with `RSET` between messages. Opening a connection costs a
+TCP handshake, TLS, `EHLO` and `AUTH`; against the same Mailpit, one
+connection per message sent 55 messages a second and the pool 875.
+
+- A pooled connection is closed with `QUIT` after `idle-seconds` with nothing
+  to send, and reopened after `messages-per-connection` messages.
+- A connection the server has already dropped is found at `RSET`. That costs
+  a reconnect, and the message goes out on the new connection.
+- A refused recipient or message fails that message only; the connection
+  carries on. A broken connection or a timeout fails the message it was
+  carrying, transiently, and the queue retries it.
+- `pool-size: 0`, an `SMTPMailTransport` built by hand, and commands (which do
+  not start the pool) open one connection per message.
+- The pool is an infrastructure service: it stops after the queue worker whose
+  jobs send mail, and sends what is still queued.
 
 ## Sending
 
@@ -132,5 +154,3 @@ await harness.drain()                 // delivered
   `MIMERenderer`'s output is a small adapter for any of them.
 - **Templates.** Messages are built in Swift. There is deliberately no
   templating engine in Alula.
-- **Connection reuse.** Each send opens one SMTP connection, which is fine at
-  transactional volume.

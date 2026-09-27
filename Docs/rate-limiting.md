@@ -23,7 +23,7 @@ limiter as the web layer without any of them needing an HTTP server.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.36.0", traits: ["Web"]),
+        from: "0.57.0", traits: ["Web"]),
 ],
 ```
 
@@ -127,6 +127,19 @@ operator budgets. The burst is how far ahead of that rate a caller may run,
 which decides whether a page issuing twelve requests on load works or fails.
 The default burst is the full quota, which is what "a hundred a minute"
 usually means to the person saying it.
+
+These, and `RateLimitQuota(permits:per:burst:)`, trap on a count, period or
+burst that is not positive — right for a literal, wrong for a quota built from
+data. A quota read from a row or a form uses
+`RateLimitQuota(validating:per:burst:)`, which returns `nil` instead; in a
+per-request `quota:` closure one bad row would otherwise stop the server:
+
+```swift
+RateLimiting(store: store, quota: { context in
+    RateLimitQuota(validating: context.plan.requestsPerMinute, per: .seconds(60))
+        ?? .perMinute(60)
+}, key: { $0.tenantID })
+```
 
 Quotas are passed per call rather than configured globally, because one
 application limits logins, uploads and reads at completely different rates

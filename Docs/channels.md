@@ -30,7 +30,7 @@ join/leave, routing to handlers, replies, heartbeats, reconnection.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.36.0", traits: ["Web"]),
+        from: "0.57.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
@@ -94,6 +94,7 @@ dependency DAG. A module you write can declare framework modules in its own
 | `AlulaChannels` | Server: `Channel`, `Socket`, `ChannelRouter`, `ChannelBroadcaster`, `ChannelSocketHandler`, `AlulaChannelsModule` | Core, PubSub, Web |
 | `AlulaChannelsProtocol` | The wire protocol alone: `Envelope`, `JSONValue`, reserved events, error reasons, close codes | nothing |
 | `AlulaChannelsClient` | Swift reference client: `ChannelClient`, `ChannelHandle`, transport seam, reconnect-with-backoff-and-rejoin | Protocol, swift-log |
+| `AlulaChannelsTransport` | `WebSocketChannelTransport`: swift-websocket's client as the client's transport, with handshake headers (trait `Web`) | Client, hummingbird-websocket |
 | `AlulaChannelsTesting` | `InMemoryChannelTransport` (client ↔ in-process server, no socket), `ChannelWireClient` (raw-envelope driver) | the above + WebTesting |
 
 The JS/TS reference client is
@@ -263,6 +264,24 @@ and suits a test harness or a spike. An application is better served by the
 declared form: `@WebSocketRoute` is visible to the build-time scan and takes
 its dependencies through the type (`@Inject`) rather than looking them up.
 
+### Reading the join payload
+
+The join frame carries a payload — a cursor ("I have everything up to seq
+812"), a filter, a client version. A channel that needs it adopts
+`PayloadJoinChannel` instead of `Channel` and implements
+`join(_:payload:socket:)`; the plain `join(_:socket:)` is provided, and a
+plain `Channel` is unchanged:
+
+```swift
+struct Room: PayloadJoinChannel {
+    func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult {
+        let after = payload["after"]?.intValue ?? 0
+        return .ok(initialState: ["events": await timeline(topic, after: after)])
+    }
+    func handle(_ event: InboundEvent, socket: Socket) async -> HandleResult { .none }
+}
+```
+
 Topic patterns are exact (`"lobby"`), prefix-wildcard (`"room:*"`), or
 catch-all (`"*"`); the most specific match wins, and duplicate or malformed
 patterns fail bootstrap, not a join. Joining creates one `Channel` instance
@@ -281,8 +300,12 @@ await broadcaster.broadcast(topic: "room:42", event: "new_msg", payload: p, excl
 
 ```swift
 import AlulaChannelsClient
+import AlulaChannelsTransport   // WebSocketChannelTransport
+import HTTPTypes
 
-let client = ChannelClient(url: url, transport: myTransport) // transport seam, see below
+var headers = HTTPFields()
+headers[.cookie] = "session=\(sessionID)"             // who is connecting
+let client = ChannelClient(url: url, transport: WebSocketChannelTransport(headers: headers))
 try await client.connect()
 
 let room = client.channel("room:42")
@@ -301,9 +324,22 @@ state arrives on `messages()` as a `alula:join` message. In-flight pushes
 fail fast with `.disconnected`. Heartbeats run automatically; an unanswered
 heartbeat is treated as a dead connection.
 
+A join can carry a payload. `join(payload:)` sends a fixed one;
+`join(payloadForEachJoin:)` works one out for this join and for every
+automatic rejoin, so a reconnecting client says what it holds then, not what
+it held when it first joined:
+
+```swift
+try await room.join(payloadForEachJoin: { ["after": .number(Double(await timeline.lastSeq))] })
+```
+
 `ChannelClientTransport` is the one seam: implement `connect(to:)` over any
-WebSocket (the E2E suite shows a hummingbird `WSClient` adapter in ~60
-lines; `AlulaChannelsTesting` ships the in-memory one).
+WebSocket. `AlulaChannelsTransport` ships `WebSocketChannelTransport`, over
+swift-websocket, with the headers the server needs — a session cookie, a
+bearer token — and a failed handshake names the URL. swift-websocket sends
+`Origin: ws://<host>`, which Alula's WebSocket origin check admits, so it
+connects to a server on its default settings. `AlulaChannelsTesting` ships the
+in-memory transport.
 
 ## Wire protocol — the contract all three artifacts version together
 

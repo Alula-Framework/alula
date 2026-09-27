@@ -5,9 +5,9 @@
 /// @Test
 /// func dataSourceUsesConfiguredPoolSize() throws {
 ///     let config = Configuration(sources: [
-///         TestConfigSource(["datasource.pool_size": "3"])
+///         TestConfigSource(["datasource.primary.pool-size": "3"])
 ///     ])
-///     #expect(try config.get("datasource.pool_size", as: Int.self) == 3)
+///     #expect(try config.get("datasource.primary.pool-size", as: Int.self) == 3)
 /// }
 /// ```
 ///

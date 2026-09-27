@@ -52,7 +52,7 @@ public struct AlulaPresenceModule: AlulaModule {
     private let gossipBus: any PubSub
 
     /// - Parameters:
-    ///   - configuration: For `alula.presence.*`.
+    ///   - configuration: For `presence.*`.
     ///   - localBus: `AlulaPubSubModule.local` — intra-node fan-out.
     ///   - gossipBus: `AlulaPubSubModule.bus` — what carries presence
     ///     between nodes when the deployment is clustered.

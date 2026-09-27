@@ -107,6 +107,8 @@ extension DiagnosticCode {
         "ALU-DI-1018", "@Component on something other than a struct or final class")
     public static let invalidInjectionTarget = DiagnosticCode(
         "ALU-DI-1019", "@Inject or @ConfigValue on something other than a stored instance property")
+    public static let nonSendableClassComponent = DiagnosticCode(
+        "ALU-DI-1020", "A class component that is not Sendable")
 
     // Controllers, routes, middleware, request binding.
     public static let duplicateRoute = DiagnosticCode("ALU-WEB-2001", "Two handlers for one method and path")
@@ -204,7 +206,7 @@ extension DiagnosticCode {
         .unscannedInjection, .ambiguousExistential, .untypedProvidedProperty,
         .nonPublicCrossModuleComponent, .removedScopeArgument, .removedQualifierArgument,
         .indistinguishableInjections, .untypedInjection, .uninitializedStoredProperty,
-        .unsupportedComponentDeclaration, .invalidInjectionTarget,
+        .unsupportedComponentDeclaration, .invalidInjectionTarget, .nonSendableClassComponent,
         .duplicateRoute, .invalidHandlerParameter, .unsupportedControllerDeclaration,
         .invalidRoutePath, .nonLiteralRoutePath, .invalidHandlerDeclaration,
         .routeOutsideController, .pipelineNarrowing, .undeclaredLane, .listenFailed,

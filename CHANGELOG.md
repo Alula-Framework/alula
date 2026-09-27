@@ -4,6 +4,30 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.58.0] - 2026-09-27
+
+### Added
+
+- **ALU-DI-1020: a class component that is not Sendable is reported at the
+  class.** A component is built once and shared across tasks, so the graph
+  holding it must be `Sendable`, and one non-`Sendable` class makes the whole
+  graph non-`Sendable`. The compiler reported that wherever generated code
+  captured the graph — `capture of 'graph' with non-Sendable type
+  'AlulaGraph'`, inside `AlulaRegistration.generated.swift`, naming none of
+  the application's types. The generator now reports it at the class, with the
+  fix: `final class X: Sendable` with `let` properties, or a struct. A class
+  isolated to a global actor, and a controller (built per request, not held by
+  the graph), are not reported. An application whose class component compiled
+  only because nothing captured the graph now gets this error; the class was
+  already shared across tasks without the compiler checking it.
+
+### Changed
+
+- Documentation caught up with 0.49–0.57 (see the commits of 2026-09-27),
+  including a Diagnostics article for users and package authors, and
+  `CI/check-diagnostic-quotes.py`, which fails when the docs quote a
+  diagnostic whose wording the source no longer has.
+
 ## [0.57.0] - 2026-09-27
 
 ### Added

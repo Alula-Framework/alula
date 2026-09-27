@@ -139,7 +139,9 @@ func documents(_ context: RequestContext) async throws -> Response {
 }
 
 @Service
-final class DocumentService {
+final class DocumentService: Sendable {
+    @Inject let repository: any DocumentRepository
+
     func currentUsersDocuments() async throws -> [Document] {
         guard let principal = Principal.current else { throw SecurityError.unauthenticated }
         return try await repository.documents(ownedBy: principal.subject)

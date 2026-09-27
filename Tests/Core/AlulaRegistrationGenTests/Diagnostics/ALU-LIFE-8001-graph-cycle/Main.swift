@@ -9,8 +9,8 @@ struct RelayModule: AlulaModule {
 }
 
 @Service
-final class Escalations {
-    @Inject var faults: FaultPlan
+final class Escalations: Sendable {
+    @Inject let faults: FaultPlan
 }
 
 // Takes the graph too, and did nothing wrong.

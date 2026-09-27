@@ -75,6 +75,12 @@ struct ScannedComponent {
     /// extensions are the part of the conformance picture an attached macro
     /// can never see).
     var conformanceNames: [String]
+    /// A class rather than a struct. A struct of `Sendable` values is
+    /// `Sendable` on its own; a class has to say so (ALU-DI-1020).
+    let isClass: Bool
+    /// Isolated to a global actor (`@MainActor`), which makes a class
+    /// `Sendable` without the conformance being written.
+    let isGlobalActorIsolated: Bool
     let injectTypeNames: [String]
     /// The property names behind `injectTypeNames`, positionally. The
     /// generated initializer labels its parameters by property name, so a
@@ -697,7 +703,8 @@ final class ComponentVisitor: SyntaxVisitor {
             name: node.name.text, attributes: node.attributes,
             modifiers: node.modifiers, members: node.memberBlock,
             inheritanceClause: node.inheritanceClause, position: node.position,
-            leadingTrivia: node.leadingTrivia.description, nameToken: node.name)
+            leadingTrivia: node.leadingTrivia.description, nameToken: node.name,
+            isClass: true)
         return .skipChildren
     }
 
@@ -775,7 +782,8 @@ final class ComponentVisitor: SyntaxVisitor {
         inheritanceClause: InheritanceClauseSyntax?,
         position: AbsolutePosition,
         leadingTrivia: String,
-        nameToken: TokenSyntax? = nil
+        nameToken: TokenSyntax? = nil,
+        isClass: Bool = false
     ) {
         let registrable = attributes.lazy
             .compactMap { $0.as(AttributeSyntax.self) }
@@ -898,6 +906,13 @@ final class ComponentVisitor: SyntaxVisitor {
                 conformanceNames: inheritanceClause?.inheritedTypes.map {
                     $0.type.trimmedDescription
                 } ?? [],
+                isClass: isClass,
+                isGlobalActorIsolated: attributes.contains {
+                    guard let name = $0.as(AttributeSyntax.self)?.attributeName.trimmedDescription else {
+                        return false
+                    }
+                    return name == "MainActor" || name.hasSuffix("Actor")
+                },
                 injectTypeNames: inject,
                 injectPropertyNames: injectNames,
                 acknowledgedTypeNames: acknowledged,
@@ -1630,6 +1645,34 @@ func diagnoseRemovedComponentArguments() {
     }
 }
 diagnoseRemovedComponentArguments()
+
+// A component is built once and shared by every request and task, so the
+// graph that holds it must be Sendable — and one non-Sendable class makes the
+// whole graph non-Sendable. The compiler then reports it wherever generated
+// code captures the graph: "capture of 'graph' with non-Sendable type
+// 'AlulaGraph'", in a file the author never wrote, naming none of their types.
+// A struct of Sendable values is Sendable on its own; a class has to say so.
+// Controllers are built per request, not held by the graph.
+for component in components
+where component.isClass && component.attributeName != "Controller"
+    && !component.isGlobalActorIsolated
+    && !component.conformanceNames.contains(where: {
+        $0 == "Sendable" || $0 == "Swift.Sendable" || $0.hasSuffix(" Sendable")
+    })
+{
+    report(Diagnostic(
+        .nonSendableClassComponent,
+        "`\(component.typeName)` is a class the application shares across tasks, but it is not Sendable",
+        at: component.location,
+        explanation: [
+            "Every component is built once and shared, so the graph holding it must be Sendable. A class "
+                + "has to declare it, and the compiler then checks it holds only immutable, Sendable state."
+        ],
+        help: [
+            "declare it `final class \(component.typeName): Sendable` and make its stored properties `let` "
+                + "(`@Inject let`, `@ConfigValue(…) let`), or make it a struct."
+        ]))
+}
 
 // Cross-module registration requires the component be visible to the target's
 // generated code.

@@ -1,0 +1,4 @@
+Main.swift:7:13: error: [ALU-DI-1020] `Welcomer` is a class the application shares across tasks, but it is not Sendable
+    Every component is built once and shared, so the graph holding it must be Sendable. A class has to declare it, and the compiler then checks it holds only immutable, Sendable state.
+    help: declare it `final class Welcomer: Sendable` and make its stored properties `let` (`@Inject let`, `@ConfigValue(…) let`), or make it a struct.
+    docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1020.md

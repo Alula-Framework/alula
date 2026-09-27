@@ -178,7 +178,7 @@ struct GeneratorTests {
             @Service
             struct EnglishGreeter: Greeter {}
             @Component
-            final class Welcomer {
+            final class Welcomer: Sendable {
                 @Inject var greeter: (any Greeter)
             }
             """
@@ -249,7 +249,7 @@ struct GeneratorTests {
             protocol Validator {}
             // alula:module-registered
             @Service struct GatedValidator: Validator {}
-            @Component final class Consumer {
+            @Component final class Consumer: Sendable {
                 @Inject var validator: (any Validator)
             }
             """

@@ -20,7 +20,7 @@ noticed — become build errors.
 ## What it checks
 
 Every problem is reported in the compiler's format with a stable code —
-`error: [ALU-DI-1001] no module provides …` — so an IDE attaches it to your
+`error: [ALU-DI-1001] no module in this application provides …` — so an IDE attaches it to your
 line, and each code has a page saying why it is refused and how to fix it.
 <doc:Diagnostics> has the families and where the pages are.
 

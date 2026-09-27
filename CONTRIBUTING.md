@@ -31,7 +31,12 @@ ALULA_STRICT_WARNINGS=1 swift build --enable-all-traits
 ./CI/check-versioned-consumer.sh                      # ...and resolves Alula by version
 ./CI/check-generated-compiles.sh                      # generated registration code compiles
 swift format lint --recursive --strict Sources Tests  # advisory in CI
+python3 CI/check-diagnostic-quotes.py --docs README.md Docs Diagnostics Sources --source ALU=Sources
 ```
+
+The last one fails when documentation quotes a diagnostic whose wording has
+since changed: every run of three or more fixed words in a quoted
+`[ALU-…]` message must still appear in `Sources`.
 
 The documentation job builds every DocC catalog with `--warnings-as-errors`;
 run it as `.github/workflows/ci.yml`'s `docs` job does, with

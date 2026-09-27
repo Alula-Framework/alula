@@ -114,6 +114,21 @@ jobs:
       alula_ref: ${{ github.event.pull_request.head.sha || github.sha }}
     secrets: inherit
 
+  quotes:
+    # A diagnostic quoted in the docs — `error: [ALU-CONFIG-5004] Configuration
+    # key '…' is not set in any source` — goes stale silently when the message
+    # is reworded; nothing else reads the docs against the source. This fails
+    # when a quote's fixed wording is no longer in Sources. No Swift needed.
+    name: Quoted diagnostics match the source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check quoted diagnostics
+        run: >-
+          python3 CI/check-diagnostic-quotes.py
+          --docs README.md Docs Diagnostics Sources
+          --source ALU=Sources
+
   lint:
     # Advisory only. Seven of the eight merged packages predate the shared
     # .swift-format config, leaving 1,725 violations as measured on

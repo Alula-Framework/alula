@@ -15,7 +15,9 @@ public struct EnqueueOptions: Sendable, Equatable {
     public var uniqueKey: String?
     /// Overrides the type's queue.
     public var queue: String?
-    /// Overrides the type's `RetryPolicy.maxAttempts`.
+    /// Overrides the type's `RetryPolicy.maxAttempts`. The delay between
+    /// attempts still comes from the type's policy. Below 1, the job is
+    /// discarded on its first claim without running.
     public var maxAttempts: Int?
 
     public init(
@@ -62,6 +64,18 @@ public struct JobQueue: Sendable {
     }
 
     /// Adds `job` to its queue.
+    ///
+    /// Returns once the store has written it, or has found a live job of the
+    /// same kind with the same `uniqueKey`: then the result is
+    /// ``EnqueueResult/duplicate(_:)`` and nothing new is written. A worker in
+    /// this process is woken at once; one elsewhere sees it on its next poll.
+    ///
+    /// Throws if `job` does not encode, or whatever the store throws: an
+    /// unreachable store fails the enqueue, and it is not retried here. Being
+    /// separate from the caller's own writes, it can fail after they
+    /// committed — use ``JobQueue/prepare(_:options:)`` with a store that
+    /// writes jobs inside the caller's transaction when the two must not
+    /// diverge.
     @discardableResult
     public func enqueue<Job: QueuedJob>(_ job: Job, options: EnqueueOptions = EnqueueOptions())
         async throws -> EnqueueResult

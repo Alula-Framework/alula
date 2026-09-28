@@ -5,10 +5,13 @@ import Synchronization
 /// What one attempt came to.
 public enum QueueAttemptOutcome: Sendable, Equatable {
     case completed
-    /// Failed with attempts left; runs again at this instant.
+    /// Failed with attempts left; runs again at this instant. Also a job
+    /// handed back at shutdown: due at once, with no backoff, and with its
+    /// attempt given back (see `QueueStore.handBack`).
     case retrying(at: Date, error: String)
     /// Failed for good — out of attempts, a ``DiscardJob``, an undecodable
-    /// payload, or no handler at all.
+    /// payload, no handler at all, or a final attempt lost when the worker
+    /// holding it died.
     case discarded(reason: String)
     /// The store no longer had this attempt running — its lease expired and
     /// another worker took it — so this result was not recorded.
@@ -36,6 +39,12 @@ public struct QueueRunner: Sendable {
 
     /// Runs `job` with `handler` (nil when this process has none for it) and
     /// records what happened.
+    ///
+    /// Never throws. The outcome is what was decided; if the store failed
+    /// while recording it, that is logged and the outcome is returned all the
+    /// same, but the job is still `running` in the store and runs again once
+    /// its lease expires. ``QueueAttemptOutcome/superseded`` means the store
+    /// refused the result because another worker now holds the job.
     public func run(_ job: ClaimedJob, handler: QueueHandler?) async -> QueueAttemptOutcome {
         let startedAt = now()
         let clock = ContinuousClock.now
@@ -72,12 +81,13 @@ public struct QueueRunner: Sendable {
             return await record(.completed, job, logger)
         } catch is QueueShutdownCutoff.Reached {
             // Not a failure of the job, so not a retry with backoff, and not
-            // a discard even on its last attempt: it goes back as it was, to
-            // run as soon as a worker is there to claim it.
+            // a discard even on its last attempt: it goes back with the
+            // attempt given back (`QueueStore.handBack`), to run as soon as a
+            // worker is there to claim it.
             logger.info("job handed back at shutdown; it runs again")
             return await record(
                 .retrying(at: now(), error: "handed back at shutdown before it finished"), job, logger,
-                quietly: true)
+                handedBack: true)
         } catch let discard as DiscardJob {
             return await record(.discarded(reason: discard.reason), job, logger)
         } catch {
@@ -123,7 +133,7 @@ public struct QueueRunner: Sendable {
     }
 
     private func record(
-        _ outcome: QueueAttemptOutcome, _ job: ClaimedJob, _ logger: Logger, quietly: Bool = false
+        _ outcome: QueueAttemptOutcome, _ job: ClaimedJob, _ logger: Logger, handedBack: Bool = false
     ) async -> QueueAttemptOutcome {
         do {
             let recorded: Bool
@@ -132,9 +142,17 @@ public struct QueueRunner: Sendable {
                 recorded = try await store.complete(job.id, attempt: job.attempt, at: now())
                 logger.debug("job completed")
             case .retrying(let at, let error):
-                recorded = try await store.retry(
-                    job.id, attempt: job.attempt, runAt: at, error: error)
-                if !quietly {
+                if handedBack {
+                    // The attempt is given back: stopping at shutdown is not
+                    // the job failing, so it must not cost the job its last
+                    // try.
+                    recorded = try await store.handBack(
+                        job.id, attempt: job.attempt, runAt: at, error: error)
+                } else {
+                    recorded = try await store.retry(
+                        job.id, attempt: job.attempt, runAt: at, error: error)
+                }
+                if !handedBack {
                     logger.warning(
                         "job failed; will retry",
                         metadata: ["error": "\(error)", "retry-at": "\(at)"])

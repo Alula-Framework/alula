@@ -34,6 +34,12 @@ public struct RateLimiter: Sendable {
 
     /// Spends `cost` permits against `key`. See
     /// ``RateLimitStore/consume(key:cost:quota:)``.
+    ///
+    /// Throws whatever the store throws — a negative `cost`, or a store
+    /// that cannot answer — and applies no fail-open policy of its own:
+    /// that is the `RateLimiting` middleware's choice, not this call's. A
+    /// caller that lets the error propagate is therefore failing closed; one
+    /// that wants to fail open catches it.
     @discardableResult
     public func consume(
         _ key: String, cost: Int = 1, quota: RateLimitQuota

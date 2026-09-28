@@ -12,7 +12,15 @@ import Synchronization
 /// Set for every service of an application Alula runs, and `nil` outside one
 /// (a test driving a service by hand). ``deadline`` is `nil` until shutdown
 /// begins, and stays `nil` when no timeout is configured.
+///
+/// Shutdown begins when graceful shutdown does — `SIGTERM`, `SIGINT`, or an
+/// `.endsApp` service finishing — before `lifecycle.drain-seconds` is waited
+/// out, so the drain counts against the timeout. A service failing cancels
+/// the application instead, and no deadline begins. A shutdown that overruns is not a clean stop:
+/// the application reports which modules were cancelled and exits non-zero.
 public final class ShutdownDeadline: Sendable {
+    /// The deadline of the application this task is running in; `nil`
+    /// outside one.
     @TaskLocal public static var current: ShutdownDeadline?
 
     /// `lifecycle.shutdown-timeout-seconds`, if set.
@@ -20,6 +28,8 @@ public final class ShutdownDeadline: Sendable {
     private let began = Mutex<ContinuousClock.Instant?>(nil)
     private let cut = Mutex<[String]>([])
 
+    /// Bootstrap makes one per application run; a test builds one to drive
+    /// a service by hand under a deadline.
     public init(timeout: Duration?) {
         self.timeout = timeout
     }

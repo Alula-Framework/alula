@@ -31,11 +31,13 @@ public protocol PasswordHashing: Sendable {
     /// question here whose honest answer is "error" rather than "no."
     func verify(_ password: String, against hash: String) -> Bool
 
-    /// Whether `hash` was produced under weaker parameters than this
-    /// instance is configured with now — a lower time cost, less memory, a
-    /// different algorithm version. `true` means the caller should hash the
-    /// password again and store the new result, which is only possible
-    /// exactly when a request already has the plaintext in hand: right
+    /// Whether `hash` was produced under parameters other than the ones this
+    /// instance is configured with now — usually weaker ones, after the
+    /// deployment raised its costs, but a conformance may answer `true` for
+    /// any difference, and for a hash it cannot parse. `true` means the
+    /// caller should hash the password again and store the new result,
+    /// which is only possible exactly when a request already has the
+    /// plaintext in hand: right
     /// after a successful ``verify(_:against:)``, never on its own.
     ///
     /// This is what lets a deployment raise its cost parameters over time —

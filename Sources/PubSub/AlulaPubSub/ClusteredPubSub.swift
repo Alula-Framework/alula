@@ -108,6 +108,17 @@ public final class ClusteredPubSub: PubSub, Sendable {
         local.observeTopicInterest(self)
     }
 
+    /// Delivers `message` to this node's subscribers, then broadcasts it to
+    /// the other nodes through the adapter.
+    ///
+    /// Local delivery happens first and does not depend on the adapter.
+    /// Returns once the adapter has taken the broadcast, or when
+    /// `broadcastTimeout` runs out (five seconds by default; with nil it waits
+    /// as long as the adapter takes). A broadcast that throws or times out is
+    /// logged and dropped — never retried or queued here — so other nodes miss
+    /// that message. Reserved `alula.pubsub.` keys are stripped before local
+    /// delivery; keys under ``ClusteredPubSub/localOnlyMetadataPrefix`` are
+    /// delivered locally and never broadcast.
     public func publish(_ message: Message) async {
         // Local fan-out first and unconditionally: subscribers on this node
         // never wait on, or fail with, the inter-node relay.

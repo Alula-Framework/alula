@@ -29,6 +29,16 @@ public protocol WebSocketUpgradeHandler: Sendable {
     /// Takes ownership of the now-upgraded connection for its lifetime.
     /// Alula Web's involvement ends the moment this is called — no further
     /// middleware runs, no response encoding happens on Web's side.
+    ///
+    /// The session lasts exactly as long as this call. Returning — or
+    /// throwing — ends it: the NIO transport cancels its inbound reader and
+    /// completes the close handshake with ``WebSocketCloseCode/normalClosure``
+    /// unless the handler already closed with its own code. A thrown error
+    /// does not reach the client and is logged only at `debug`, so a handler
+    /// that wants a failure visible logs it itself. Conversely, the inbound
+    /// side ending (peer close, server shutdown, protocol error) cancels this
+    /// task, so work still running here sees `CancellationError` and further
+    /// sends throw ``WebSocketError/connectionClosed``.
     func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws
 }
 
@@ -51,11 +61,23 @@ public enum WebSocketFrame: Sendable, Equatable {
     /// pong (RFC 6455 §5.5.2) before delivering it.
     case ping(Data)
     case pong(Data)
-    /// The peer initiated (or acknowledged) closing. Delivered last; the
-    /// frame stream finishes immediately after.
+    /// The inbound side ended. Delivered last; the frame stream finishes
+    /// immediately after.
+    ///
+    /// On the NIO transport this is synthesized, and the code says why the
+    /// stream ended rather than what the peer sent: ``WebSocketCloseCode/noStatus``
+    /// for a clean close by the peer (the transport consumes the peer's own
+    /// close frame, so its code is not recoverable), ``WebSocketCloseCode/goingAway``
+    /// when the server is shutting down, and ``WebSocketCloseCode/protocolError``
+    /// — with the transport's error as the reason — for an oversized message
+    /// or a protocol violation. The in-memory test pair delivers whatever
+    /// close the test sent, verbatim.
     case close(code: WebSocketCloseCode, reason: String)
 }
 
+/// A WebSocket close status code (RFC 6455 §7.4). Any `UInt16` is
+/// accepted; the named constants are the ones Alula itself produces or
+/// expects handlers to use.
 public struct WebSocketCloseCode: Sendable, Equatable, RawRepresentable {
     public let rawValue: UInt16
     public init(rawValue: UInt16) { self.rawValue = rawValue }
@@ -79,7 +101,8 @@ public struct WebSocketCloseCode: Sendable, Equatable, RawRepresentable {
 ///
 /// `frames` is a single-consumer sequence: iterate it from exactly one task
 /// (normally the `WebSocketUpgradeHandler` body). It finishes when the peer
-/// closes or the transport shuts the connection down.
+/// closes or the transport shuts the connection down; on the NIO transport
+/// a final ``WebSocketFrame/close(code:reason:)`` saying which comes first.
 public struct WebSocketConnection: Sendable {
     /// Inbound frames, protocol frames already handled by the transport.
     public let frames: WebSocketFrames
@@ -113,28 +136,52 @@ public struct WebSocketConnection: Sendable {
         self.init(frames: WebSocketFrames(frames), send: send, close: close)
     }
 
-    /// Sends one frame. Throws `WebSocketError.connectionClosed` once the
-    /// connection is gone.
     func agreeing(on subprotocol: String?) -> WebSocketConnection {
         var copy = self
         copy.subprotocol = subprotocol
         return copy
     }
 
+    /// Sends one frame, returning once the transport has taken it.
+    ///
+    /// On the NIO transport this waits while the socket cannot take more, so
+    /// a peer that stops reading slows the sender down instead of growing a
+    /// server-side buffer. Safe to call from several tasks at once — each
+    /// frame goes out whole — but frames from concurrent senders go out in
+    /// no guaranteed order. Sending `.close` is the same as ``close(code:reason:)``
+    /// except that it can throw.
+    ///
+    /// Once the connection is closed — by the peer, the transport, or the
+    /// handler's own ``close(code:reason:)`` — or the handler's task is
+    /// cancelled, this throws ``WebSocketError/connectionClosed``: nothing is
+    /// dropped silently. The
+    /// in-memory pair `AlulaWebTesting` provides is the exception: it drops
+    /// frames sent after close without throwing, so a test cannot observe
+    /// this.
     public func send(_ frame: WebSocketFrame) async throws {
         try await sendFrame(frame)
     }
 
+    /// Sends one text frame. See the `WebSocketFrame` overload for
+    /// backpressure and what happens after close.
     public func send(_ text: String) async throws {
         try await sendFrame(.text(text))
     }
 
+    /// Sends one binary frame. See the `WebSocketFrame` overload for
+    /// backpressure and what happens after close.
     public func send(_ binary: Data) async throws {
         try await sendFrame(.binary(binary))
     }
 
     /// Initiates the closing handshake. Idempotent: closing an already
     /// closed connection is a no-op, not an error.
+    ///
+    /// Returns once the close frame is sent, without waiting for the peer's
+    /// reply; the transport finishes the handshake after the handler
+    /// returns. On the NIO transport it never actually throws — a failure to
+    /// send the close frame is ignored, since the peer may already be gone.
+    /// Sending more frames afterwards throws (see `send(_:)`).
     public func close(
         code: WebSocketCloseCode = .normalClosure,
         reason: String = ""
@@ -143,8 +190,16 @@ public struct WebSocketConnection: Sendable {
     }
 }
 
+/// What a ``WebSocketConnection`` throws.
 public enum WebSocketError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// The connection is gone — closed by the peer or the transport, or the
+    /// handler's task was cancelled. A send that throws this was not
+    /// delivered; there is no reconnect, so stop sending.
     case connectionClosed
+    /// A peer's text frame was not valid UTF-8. For transports that report it
+    /// this way; the built-in NIO transport never throws it — it ends the
+    /// inbound stream with a ``WebSocketFrame/close(code:reason:)`` carrying
+    /// ``WebSocketCloseCode/protocolError`` instead.
     case invalidUTF8InTextFrame
 
     public var description: String {

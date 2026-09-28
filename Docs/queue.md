@@ -99,7 +99,7 @@ sending it, and write with a key that makes the second write a no-op.
 
 | What happened | What the queue does |
 |---|---|
-| The handler threw | Retries after `base × 2^(attempt−1)` (±10% jitter), up to `cap` |
+| The handler threw | Retries after `base × 2^(attempt−1)`, capped at `cap`, then spread by ±`jitter` (10% by default, so a capped delay can run slightly past `cap`) |
 | It threw on its last attempt | Discards it: kept, with the error, for `retain-discarded-days` |
 | It threw `DiscardJob("reason")` | Discards it now |
 | The payload no longer decodes | Discards it now, since no retry changes it |
@@ -129,8 +129,10 @@ queue:
     table: alula_jobs          # AlulaQueuePostgresModule
 ```
 
-An enqueue in the same process wakes its worker at once. One from another
-process is picked up on the next poll.
+An enqueue through `JobQueue` in the same process wakes its worker at once.
+One from another process, and one written straight to the store — the
+transactional enqueue below, and every outbox message — is picked up on the
+next poll.
 
 ## Durability
 
@@ -157,18 +159,30 @@ try await pool.withRepo { repo in
 
 Enqueueing after the commit risks losing the job if the process dies between
 the two. Enqueueing before it risks running a job for a change that then
-rolls back.
+rolls back. [interactions.md](interactions.md#a-transaction-and-the-work-it-causes)
+has the whole rule, and what it does not make exactly-once.
 
 ## Shutdown
 
-On `SIGTERM` the worker stops claiming and waits for the jobs it holds.
-Bound that wait with `lifecycle.shutdown-timeout-seconds`. Shortly before the
-bound — two seconds, or a fifth of the timeout if that is less — the worker
-hands back the jobs still running: their handlers are cancelled and the jobs
-go back to the queue at once, while the store is still up, so they run again
-elsewhere or on restart instead of waiting out their leases. The worker reads
-the deadline from `ShutdownDeadline.current`; with no timeout configured there
-is no deadline and nothing is handed back.
+The worker shuts down in the standard phase: after the HTTP server, before
+the database pool. So on `SIGTERM` it goes on claiming through
+`lifecycle.drain-seconds` and while the server finishes, then stops claiming
+and waits for the jobs it holds. Bound the whole shutdown with
+`lifecycle.shutdown-timeout-seconds`; its clock starts at `SIGTERM`, not when
+the worker is told. Shortly before the bound — two seconds, or a fifth of the
+timeout if that is less — the worker hands back the jobs still running: their
+handlers are cancelled and the jobs go back to the queue at once, while the
+store is still up, so they run again elsewhere or on restart instead of
+waiting out their leases. The worker reads the deadline from
+`ShutdownDeadline.current`; with no timeout configured there is no deadline
+and nothing is handed back.
+
+A handed-back job gets its attempt back: stopping at shutdown is not the job
+failing, so it runs again at the same attempt number, even on its last one.
+(A store that does not implement `QueueStore.handBack` keeps the attempt
+spent, and a job handed back on its final attempt is then discarded; both
+built-in stores implement it.) A job whose *worker died* on its last attempt
+is still discarded: that attempt was spent.
 
 A shutdown that still runs past the bound ends the process with
 `alula: shutdown timed out.` and ALU-LIFE-8004, naming the modules that were

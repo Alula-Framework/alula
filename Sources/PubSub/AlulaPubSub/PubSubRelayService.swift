@@ -2,9 +2,6 @@ import AlulaCore
 import Logging
 import ServiceLifecycle
 
-/// Wiring errors surfaced at service start — misconfiguration, not runtime
-/// conditions.
-
 /// The long-running half of a distributed deployment: drains the
 /// adapter's incoming stream into local fan-out for the app's lifetime.
 /// Handed to the `ServiceGroup` by whichever module provides the adapter —

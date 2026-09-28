@@ -239,6 +239,24 @@
             }
         }
 
+        @Test("settings built in code still never send credentials in plaintext")
+        func plaintextAuthRefusedByTheTransport() async throws {
+            let server = try await FakeSMTPServer()
+            defer { Task { await server.stop() } }
+            let transport = SMTPMailTransport(
+                settings: SMTPSettings(
+                    host: "127.0.0.1", port: server.port, security: .none, username: "user",
+                    password: "secret", messageIDDomain: "example.com"))
+            do {
+                try await transport.send(message)
+                Issue.record("sent with credentials over plaintext")
+            } catch MailError.transient(let reason) {
+                #expect(reason.contains("unencrypted"))
+            }
+            #expect(!server.commands.contains { $0.hasPrefix("AUTH") })
+            #expect(!server.commands.contains { $0.hasPrefix("MAIL") })
+        }
+
         @Test("dot-stuffing and the terminator")
         func dotStuffing() {
             let stuffed = String(

@@ -9,8 +9,10 @@ public struct RateLimitDecision: Sendable, Equatable {
     /// Whether the call may proceed.
     public let isAllowed: Bool
 
-    /// Permits left after this call. Zero on a denial, and zero on the call
-    /// that spends the last one.
+    /// Permits left after this call. Zero on the call that spends the last
+    /// one. On a denial, the whole permits currently free — fewer than the
+    /// call's `cost`, so zero for a one-permit call but not necessarily for
+    /// a costlier one.
     public let remaining: Int
 
     /// How long until this call would be admitted, on a denial.

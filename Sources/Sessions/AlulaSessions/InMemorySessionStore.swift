@@ -13,7 +13,8 @@ import Synchronization
 /// every anonymous visitor who logs in adds to. Expiry is lazy: an expired
 /// entry is dropped when loaded, and swept when the bound is reached. Past
 /// the bound the least recently loaded entries go, in batches, so the cost
-/// of bounding is paid once per batch rather than once per save.
+/// of bounding is paid once per batch rather than once per save. An evicted
+/// session is simply gone: its user is signed out, with no error to anyone.
 public final class InMemorySessionStore: OwnerIndexedSessionStore, Sendable {
     public static let defaultMaxEntries = 100_000
 

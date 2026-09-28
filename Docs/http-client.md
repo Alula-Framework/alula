@@ -14,12 +14,12 @@ service, and nothing reads an unbounded response into memory.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.57.0", traits: ["Web", "HTTPClient"]),
+         from: "0.59.0", traits: ["Web", "HTTPClient"]),
 ```
 
 ```yaml
 http-client:
-  timeout-seconds: 30        # per attempt, connect to last byte
+  timeout-seconds: 30        # per attempt, connect to response head
   max-attempts: 3            # for retryable failures, the first included
   max-response-bytes: 10485760
 ```
@@ -50,12 +50,24 @@ optional per-request timeout). `get` and `post(_:json:)` are shorthands. A
 | any request with an `Idempotency-Key` header | yes |
 | `POST`, `PATCH` without one | **never** |
 
-For those, it retries on a connection failure, a timeout, or a 429, 502, 503
-or 504, with jittered exponential backoff from 200 ms. `Retry-After` is
-honoured up to 10 seconds. A longer one returns the response as it is,
-rather than hold a caller open for a minute. When attempts run out, the last
-response is returned rather than an error, so a caller sees what the service
-said.
+For those, it retries on a timeout, a failure to connect or a connection
+that broke, or a 429, 502, 503 or 504, with jittered exponential backoff
+from 200 ms. `Retry-After` is honoured up to 10 seconds. A longer one returns
+the response as it is, rather than hold a caller open for a minute. When
+attempts run out on one of those statuses, the last response is returned
+rather than an error, so a caller sees what the service said. When they run
+out on a timeout or a broken connection, the last error is thrown.
+
+The timeout is per attempt, and it ends when the response head arrives:
+the body is then read up to `max-response-bytes` under AsyncHTTPClient's own
+idle read timeout, not this one. There is no budget across attempts, so a
+call can take `max-attempts` timeouts plus the waits between them — unless
+it runs inside a request with a deadline. There, each attempt's timeout
+shrinks to the time left, no retry waits past it, and an attempt that would
+start with nothing left throws `timedOut` without sending. A task cancelled
+during a backoff wait ends with `CancellationError`, not another attempt.
+[interactions.md](interactions.md#request-deadlines-and-outbound-retries)
+has how that meets `web.request-timeout-seconds`.
 
 A `POST` that failed after the server read it may already have taken
 effect, so repeating it is the caller's decision to make, by sending an

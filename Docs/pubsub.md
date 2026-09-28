@@ -27,7 +27,7 @@ multi-node story needs. Modeled on
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.57.0"),
+        from: "0.59.0"),
 ],
 targets: [
     .executableTarget(
@@ -144,10 +144,17 @@ bookkeeping, and never sees a caller's imitation of it.
 | Registration | Effective when `subscribe` returns: a publish that happens-after subscribe is delivered. |
 | Isolation | A slow subscriber buffers (or, under a bounded policy, drops) on its own; it never blocks the publisher or other subscribers. |
 
+A publish is not tied to any database transaction around it. To publish only
+what commits, see [interactions.md](interactions.md#a-transaction-and-the-work-it-causes).
+
 `LocalPubSub(bufferingPolicy:)` controls per-subscriber buffering:
 `.unbounded` (default — BEAM-mailbox behavior, nothing dropped),
 `.bufferingOldest(n)` / `.bufferingNewest(n)` for a memory ceiling at the
-price of drops, which at-most-once semantics already permit.
+price of drops, which at-most-once semantics already permit. The name says
+what is *kept*: when the buffer is full, `.bufferingOldest` drops the
+arriving message, and `.bufferingNewest` evicts the oldest pending one to
+make room. A subscriber that only cares about the latest state wants
+`newest`.
 
 Through the module, that and the cluster knobs are configuration:
 

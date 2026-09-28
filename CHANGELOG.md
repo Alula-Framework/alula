@@ -4,6 +4,60 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.59.0] - 2026-09-28
+
+### Fixed
+
+- **A job handed back at shutdown on its last attempt runs again.** The
+  worker hands back jobs still running just before the shutdown deadline, and
+  the runner treated that as "not a failure, not a discard". The store was
+  never told: the attempt stayed spent, the next claim pushed it past
+  `maxAttempts`, and the job was discarded as "its final attempt was lost when
+  the worker running it stopped". A new `QueueStore.handBack(_:attempt:runAt:error:)`
+  returns the job to `available` with its attempt given back.
+  `InMemoryQueueStore` implements it, and so does alula-data's
+  `PostgresQueueStore` from 0.24.0. A store of your own gets a default that
+  calls `retry`, which keeps the old behaviour until it implements
+  `handBack`.
+- **CSRF exempts only a bearer token authentication would accept.**
+  `CSRFProtection` treated any `Authorization: Bearer <something>` as a
+  bearer request and skipped its check, while `Request.bearerToken` rejects a
+  token containing whitespace. For `Bearer a b` beside a session cookie, CSRF
+  let the request through and authentication then used the cookie: a
+  cookie-authenticated request with no CSRF token. Both now use one parser. A
+  cross-site page cannot set `Authorization` without a CORS preflight
+  allowing it, which limited the exposure to applications whose CORS policy
+  allows that header with credentials.
+- **SMTP never sends credentials over an unencrypted connection unless
+  allowed.** `allowPlaintextAuth` was checked only by
+  `SMTPSettings(configuration:)`, so `SMTPSettings` built in code with a
+  username and `security: .none` sent the password in cleartext. The
+  transport now refuses to authenticate there, sending no credentials, and
+  the send fails with `MailError.transient`.
+- **A WebSocket send after close throws `WebSocketError.connectionClosed`.**
+  After the handler's own close, or a close racing a send, the NIO writer
+  threw `NIOAsyncWriterError.alreadyFinished`, which surfaced unmapped.
+
+### Changed
+
+- **Documentation pass** from a documentation audit:
+  - `Docs/README.md` is an index by concept across alula, alula-data, Hangar
+    and Fledge, and `Docs/interactions.md` covers where subsystems meet.
+  - Doc comments now state guarantees, failure behaviour and lifetimes on
+    about 190 queue, PubSub, HTTP client, mail, security, session, WebSocket,
+    lifecycle and rate-limit declarations. Among them were wrong ones: the
+    two bounded PubSub buffering policies were described backwards, the
+    queue's default retries span about two hours (not three and a half), mail
+    about twelve (not a day), and the HTTP client's timeout covers the
+    response head, not the body.
+  - `web.md`'s CSRF section now gives the real rule (every method but GET,
+    HEAD, OPTIONS and TRACE, and the bearer exemption), and a code block that
+    never closed is fixed.
+  - Snippets compile the queue and HTTP client guides' examples.
+  - `CI/docs-report.py` and an advisory CI job list undocumented public
+    declarations, one-sentence paraphrase comments, and doc pins behind the
+    latest release.
+
 ## [0.58.0] - 2026-09-27
 
 ### Added

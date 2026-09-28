@@ -1,5 +1,6 @@
 import protocol AlulaWeb.WebSocketUpgradeHandler
 import struct AlulaWeb.WebSocketConnection
+import enum AlulaWeb.WebSocketError
 import struct AlulaWeb.RequestContext
 import struct AlulaWeb.RouteRegistration
 import Foundation
@@ -225,6 +226,42 @@ struct WebSocketWireTests {
                 #expect(data.readInteger(as: UInt16.self) == 1000)
             }
         }
+    }
+
+    struct SendAfterCloseHandler: WebSocketUpgradeHandler {
+        static let error = Mutex<String?>(nil)
+        func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+            try await connection.close(code: .normalClosure, reason: "done")
+            do {
+                try await connection.send("too late")
+                Self.error.withLock { $0 = "no error" }
+            } catch let error as WebSocketError {
+                Self.error.withLock { $0 = "\(error)" }
+            } catch {
+                Self.error.withLock { $0 = "unmapped: \(type(of: error))" }
+            }
+        }
+    }
+
+    @Test("a send after the handler's own close throws connectionClosed, not a NIO error")
+    func sendAfterCloseIsConnectionClosed() async throws {
+        let route = RouteRegistration(
+            method: .get, path: "/closing", kind: .upgrade(.webSocket), source: "t"
+        ) { context in .upgrade(handler: SendAfterCloseHandler(), context: context) }
+        try await withRunningServer(routes: [route]) { port in
+            try await withWebSocket(port: port, path: "/closing") { inbound, _ in
+                var iterator = inbound.makeAsyncIterator()
+                let close = try await iterator.next()
+                #expect(close?.opcode == .connectionClose)
+            }
+        }
+        // The handler finishes on its own task; give it a moment to record.
+        for _ in 0..<100 where SendAfterCloseHandler.error.withLock({ $0 }) == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(
+            SendAfterCloseHandler.error.withLock { $0 }
+                == "\(WebSocketError.connectionClosed)")
     }
 
     @Test func fragmentedMessageIsReassembled() async throws {

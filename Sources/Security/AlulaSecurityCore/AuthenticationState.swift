@@ -16,14 +16,21 @@ import AlulaWeb
 /// which the seam protocol solves directly rather than by routing through
 /// the container.
 public enum AuthenticationState: Sendable {
-    /// No bearer token was presented.
+    /// No usable bearer token and no signed-in session — including a
+    /// malformed `Authorization` header, a session sign-in past its
+    /// authenticated lifetime, and a stored principal that no longer
+    /// decodes. Also what a request no ``Authentication`` ran for reports.
     case anonymous
-    /// A bearer token was presented but failed validation. The failure
-    /// detail stays in the internal log (design error hygiene).
+    /// A bearer token was presented but failed validation — for any reason,
+    /// including a key source or key store that could not answer. The
+    /// failure detail stays in the internal log (design error hygiene). A
+    /// session is not consulted once a bearer token has been presented.
     case invalidCredential
-    /// A bearer token was presented and validated.
+    /// A bearer token validated, or, with none presented, the session
+    /// carried a principal inside its authenticated lifetime.
     case authenticated(Principal)
 
+    /// The principal when ``authenticated(_:)``, otherwise nil.
     public var principal: Principal? {
         if case .authenticated(let principal) = self { return principal }
         return nil

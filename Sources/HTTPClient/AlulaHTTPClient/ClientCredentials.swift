@@ -38,7 +38,8 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
     public var audience: String?
     public var clientAuthentication: ClientAuthentication
     /// A token is renewed this long before it expires, so a request never
-    /// leaves with one that lapses on the way.
+    /// leaves with one that lapses on the way. Whole seconds; not read from
+    /// configuration.
     public var renewBefore: Duration
 
     public init(
@@ -55,6 +56,11 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
         self.renewBefore = renewBefore
     }
 
+    /// Reads the keys above under `prefix`. Throws
+    /// ``ClientCredentialsConfigurationError`` when both or neither of
+    /// `token-url` and `issuer` are set, either is not an http(s) URL, the
+    /// client id or secret is missing or empty, or `client-authentication`
+    /// is not `basic` or `post`. Nothing is fetched here.
     public init(configuration: Configuration, prefix: String = "http-client.client-credentials")
         throws
     {
@@ -111,12 +117,15 @@ public struct ClientCredentialsConfigurationError: Error, Sendable, CustomString
 /// A token could not be had. Never carries the client secret.
 public enum ClientCredentialsError: Error, Sendable, CustomStringConvertible, TemporarilyUnavailable
 {
-    /// The authorization server said no — usually configuration: a wrong
-    /// secret (`invalid_client`), a scope the client may not have
-    /// (`invalid_scope`). Retrying will not help.
+    /// The authorization server said no (a non-2xx below 500) — usually configuration: a
+    /// wrong secret (`invalid_client`), a scope the client may not have
+    /// (`invalid_scope`). Retrying will not help. A 429 that outlasts the
+    /// HTTP client's own retries also lands here.
     case refused(
         endpoint: String, clientID: String, status: Int, error: String?, errorDescription: String?)
-    /// The authorization server could not be reached or failed (5xx).
+    /// The authorization server could not be reached, timed out, or failed
+    /// (5xx), or OpenID discovery answered anything but 2xx. The only case
+    /// that is `TemporarilyUnavailable`, with a `retryAfter` of 5 seconds.
     case unavailable(endpoint: String, reason: String)
     /// An answer that is not a token response.
     case malformed(endpoint: String, reason: String)
@@ -176,6 +185,15 @@ public actor ClientCredentialsTokenSource {
     }
 
     /// A token valid for at least `renewBefore`, fetching one if needed.
+    ///
+    /// Callers that arrive while a fetch is in flight wait for it and share
+    /// its token or its error. A failed fetch is not cached: the next call
+    /// tries again. Inside the renewal margin, a failure throws even though
+    /// the cached token has not yet expired; it is not handed out as a
+    /// fallback. The token request goes through the HTTP client marked
+    /// idempotent, so the client's retries apply to it.
+    ///
+    /// - Throws: ``ClientCredentialsError``.
     public func token() async throws -> String {
         let renewBefore = Double(settings.renewBefore.components.seconds)
         if let current, current.expires.timeIntervalSince(now()) > renewBefore {
@@ -290,6 +308,10 @@ public actor ClientCredentialsTokenSource {
 
 /// An ``OutboundHTTPClient`` that sends a service account's bearer token,
 /// and on a `401` fetches a new one and tries once more.
+///
+/// That one resend happens for every method, `POST` included, on the
+/// reading that a request answered 401 was not acted on. It is separate
+/// from, and on top of, the client's own retries.
 public struct AuthorizedHTTPClient: Sendable {
     public let http: OutboundHTTPClient
     public let tokens: ClientCredentialsTokenSource
@@ -299,6 +321,10 @@ public struct AuthorizedHTTPClient: Sendable {
         self.tokens = tokens
     }
 
+    /// Sends `request` with `Authorization: Bearer`, replacing any
+    /// `Authorization` header it carried. Throws ``ClientCredentialsError``
+    /// when no token can be had, including the fresh one after a 401;
+    /// otherwise as ``OutboundHTTPClient/send(_:)``.
     public func send(_ request: OutboundRequest) async throws -> OutboundResponse {
         var request = request
         var token = try await tokens.token()

@@ -1,9 +1,16 @@
 /// The authenticated identity.
 ///
-/// A `Principal` is produced by a ``TokenValidator`` from an externally
-/// issued identity token. `roles`, `scopes`, and `claims` are surfaced
-/// directly from the validated token — Alula parses data it already has,
-/// it does not build an identity model.
+/// A `Principal` is produced by a ``TokenValidator`` from a bearer token, or
+/// by a sign-in (``PasswordAuthenticator``, ``OIDCSignIn``) and then kept in
+/// the session. `roles`, `scopes`, and `claims` are surfaced directly from
+/// what was validated — Alula parses data it already has, it does not build
+/// an identity model.
+///
+/// A session-held principal is a snapshot taken at sign-in: roles removed
+/// from the account afterwards stay on it until the user signs in again or
+/// `sessions.authenticated-lifetime` runs out. Revoke the sessions
+/// (`SessionRuntime.revokeSessions(ownedBy:keeping:)`) when that window
+/// matters.
 public struct Principal: Sendable {
     /// The IdP's stable user id (JWT `sub`).
     public let subject: String

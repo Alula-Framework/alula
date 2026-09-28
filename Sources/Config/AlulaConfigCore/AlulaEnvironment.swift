@@ -35,13 +35,16 @@ public struct AlulaEnvironment: RawRepresentable, Sendable, Hashable, Codable {
 
     /// Creates an environment from its name.
     ///
-    /// Never fails: any non-empty name is a valid environment, which is what
-    /// makes the type extensible.
+    /// Never fails and validates nothing, which is what makes the type
+    /// extensible. The name is used verbatim — not trimmed, not
+    /// lowercased — so `"Prod"` is not ``prod`` and would select
+    /// `alula-Prod.yaml`, not `alula-prod.yaml`.
     public init(rawValue: String) {
         self.rawValue = rawValue
     }
 
-    /// Creates an environment from its name.
+    /// Creates an environment from its name, used verbatim; the same as
+    /// ``init(rawValue:)``.
     public init(_ rawValue: String) {
         self.rawValue = rawValue
     }

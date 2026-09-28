@@ -182,6 +182,28 @@ struct QueueStoreContractTests {
         #expect(try await store.complete(id, attempt: 2, at: t0 + 33))
     }
 
+    @Test("a job handed back keeps its attempt, even its last one, and stays fenced")
+    func handBackGivesTheAttemptBack() async throws {
+        let store = InMemoryQueueStore()
+        var last = job()
+        last.maxAttempts = 1
+        let id = try await store.enqueue(last).id
+        let first = try await store.claim(
+            queue: "default", kinds: ["Greet"], limit: 1, now: t0, leaseUntil: t0 + 30)
+        #expect(first.map(\.attempt) == [1])
+
+        #expect(try await store.handBack(id, attempt: 1, runAt: t0, error: "shutdown"))
+        #expect(
+            try await store.handBack(id, attempt: 1, runAt: t0, error: "again") == false,
+            "fenced: no longer running")
+
+        let again = try await store.claim(
+            queue: "default", kinds: ["Greet"], limit: 1, now: t0 + 1, leaseUntil: t0 + 31)
+        #expect(again.map(\.attempt) == [1], "the same attempt, so it runs rather than discards")
+        #expect(again.map(\.maxAttempts) == [1])
+        #expect(try await store.complete(id, attempt: 1, at: t0 + 2))
+    }
+
     @Test("a renewed lease keeps the job")
     func renewal() async throws {
         let store = InMemoryQueueStore()

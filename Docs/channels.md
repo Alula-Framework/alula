@@ -30,7 +30,7 @@ join/leave, routing to handlers, replies, heartbeats, reconnection.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.57.0", traits: ["Web"]),
+        from: "0.59.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
@@ -322,7 +322,9 @@ Reconnection is client-driven: on a drop the client re-dials with
 `ReconnectPolicy` backoff and rejoins every joined topic; the fresh initial
 state arrives on `messages()` as a `alula:join` message. In-flight pushes
 fail fast with `.disconnected`. Heartbeats run automatically; an unanswered
-heartbeat is treated as a dead connection.
+heartbeat is treated as a dead connection. The default policy re-dials
+forever, and a refused handshake counts as a failed dial like any other, so
+pass `maxAttempts` where a revoked credential should stop the client.
 
 A join can carry a payload. `join(payload:)` sends a fixed one;
 `join(payloadForEachJoin:)` works one out for this join and for every
@@ -336,7 +338,10 @@ try await room.join(payloadForEachJoin: { ["after": .number(Double(await timelin
 `ChannelClientTransport` is the one seam: implement `connect(to:)` over any
 WebSocket. `AlulaChannelsTransport` ships `WebSocketChannelTransport`, over
 swift-websocket, with the headers the server needs — a session cookie, a
-bearer token — and a failed handshake names the URL. swift-websocket sends
+bearer token — and a failed handshake names the URL. The headers are fixed
+when the transport is built and re-sent on every reconnect; a client whose
+credential changes implements `ChannelClientTransport` and reads it in
+`connect(to:)`. swift-websocket sends
 `Origin: ws://<host>`, which Alula's WebSocket origin check admits, so it
 connects to a server on its default settings. `AlulaChannelsTesting` ships the
 in-memory transport.
@@ -407,6 +412,10 @@ could never have been admitted.
 
 `roles:` on `@WebSocketRoute` is a third question again — whether this client
 may open a socket at all — and guards the upgrade, not any topic on it.
+
+All three are asked against the principal the socket was opened with, which
+never changes for the socket's life. Signing out does not reach it. See
+[interactions.md](interactions.md#authentication-and-long-lived-sockets).
 
 ## How many topics one socket may hold
 

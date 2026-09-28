@@ -42,7 +42,10 @@ public protocol SignInProvider: Sendable {
     func beginSignIn(_ context: RequestContext, returnTo: String?) async throws -> SignInStep
 
     /// Finishes a sign-in: a submitted form, or a callback from an external
-    /// provider. Does not touch the session — ``signIn(_:)`` does that.
+    /// provider. Does not sign the session in or regenerate its id —
+    /// ``signIn(_:)`` does that; call this directly only to put the principal
+    /// somewhere else. (``OIDCSignIn`` does consume its pending `state` from
+    /// the session, whether or not the sign-in then succeeds.)
     func completeSignIn(_ context: RequestContext) async throws -> SignInResult
 
     /// What signing out means beyond the local session: nothing for a local
@@ -170,6 +173,9 @@ public struct SignInResult: Sendable {
     /// The validated path the browser asked to return to, if any.
     public var returnTo: String?
 
+    /// Takes `returnTo` as given: pass anything from the request through
+    /// ``SignInReturnPath/validated(_:)`` first, or ``response()`` is an
+    /// open redirect.
     public init(principal: Principal, returnTo: String? = nil) {
         self.principal = principal
         self.returnTo = returnTo

@@ -129,6 +129,25 @@ jobs:
           --docs README.md Docs Diagnostics Sources
           --source ALU=Sources
 
+  docs-report:
+    # A review list, never a gate: the script always exits 0. It lists public
+    # declarations with no doc comment, one-sentence comments that only
+    # paraphrase the name ("Returns the response."), and docs pinning this
+    # package at a release other than the latest. Many entries need nothing —
+    # a protocol witness inherits its protocol's comment — so the list is a
+    # place to look, not a number to drive to zero. It lands in the job
+    # summary.
+    name: Documentation review list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report
+        run: >-
+          python3 CI/docs-report.py
+          --package-url https://github.com/Alula-Framework/alula.git
+          --docs README.md Docs
+          | tee -a "$GITHUB_STEP_SUMMARY"
+
   lint:
     # Advisory only. Seven of the eight merged packages predate the shared
     # .swift-format config, leaving 1,725 violations as measured on

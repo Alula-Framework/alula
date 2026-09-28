@@ -34,7 +34,12 @@ import HTTPTypes
 ///   either signature is accepted.
 /// - **Replay window.** Schemes that sign a timestamp (Stripe, Standard
 ///   Webhooks) refuse one older or newer than `tolerance`, five minutes by
-///   default, so a captured request cannot be replayed next week.
+///   default, so a captured request cannot be replayed next week. Within
+///   the window a replay still verifies — nothing here remembers what it has
+///   seen — so a handler whose effect must not repeat dedupes on the
+///   sender's event or `webhook-id`. GitHub and ``hmacSHA256(header:prefix:base64:secrets:)``
+///   sign no timestamp and have no window at all. The window is whole
+///   seconds; a sub-second part of `tolerance` is ignored.
 /// - **One answer.** Every failure is a `401` saying only that the
 ///   signature did not verify.
 ///
@@ -127,6 +132,11 @@ public struct WebhookSignature: Sendable {
     }
 
     /// Throws a `401` unless the request carries a valid signature.
+    ///
+    /// Pure and local: it reads the buffered body and headers and the clock,
+    /// and never fails for any other reason. A pass says who signed the
+    /// bytes, not that this delivery is the first — see the replay window
+    /// above.
     public func verify(_ context: RequestContext) throws {
         guard isValid(context.request) else {
             context.logger.info("webhook signature did not verify")

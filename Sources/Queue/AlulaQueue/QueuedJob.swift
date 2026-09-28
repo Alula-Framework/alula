@@ -30,6 +30,7 @@ public protocol QueuedJob: Codable, Sendable {
     static var queue: String { get }
 
     /// How many times it is tried and how long to wait between tries.
+    /// Default `RetryPolicy.default`.
     static var retry: RetryPolicy { get }
 }
 
@@ -42,11 +43,17 @@ extension QueuedJob {
 /// How a failed job is retried.
 ///
 /// The delay before attempt *n + 1* is `base × 2^(n−1)`, capped at `cap`,
-/// with ±`jitter` so a batch that failed together does not retry together.
-/// The defaults — 10 attempts, 15 seconds doubling to at most an hour —
-/// span roughly three and a half hours, long enough to ride out a deploy or
-/// a provider's bad afternoon.
+/// then spread by ±`jitter` (a fraction of that delay) so a batch that failed
+/// together does not retry together. The spread is applied after the cap, so
+/// a capped delay can exceed `cap` by up to that fraction. The defaults — 10
+/// attempts, 15 seconds doubling to at most an hour — put about two hours
+/// between the first failure and the last attempt, long enough to ride out a
+/// deploy or a provider's bad afternoon.
+///
+/// A failure on the last attempt discards the job: it stays in the store as a
+/// dead letter, with its error, for `queue.retain-discarded-days`.
 public struct RetryPolicy: Sendable, Equatable {
+    /// Total attempts, including the first. At least 1.
     public var maxAttempts: Int
     public var base: Duration
     public var cap: Duration

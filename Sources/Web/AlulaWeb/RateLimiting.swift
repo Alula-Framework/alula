@@ -13,7 +13,9 @@ public enum RateLimitFailurePolicy: Sendable, Equatable {
     /// microseconds rather than hanging on every request.
     case allow
 
-    /// Refuse the request with a 503.
+    /// Refuse the request with a 503. The refusal carries neither
+    /// `Retry-After` nor `X-RateLimit-*`: with the store down there is
+    /// nothing true to put in them.
     ///
     /// For the endpoint where being unlimited is worse than being down: a
     /// signup that costs money per call, a password check an attacker would
@@ -65,7 +67,9 @@ public struct RateLimiting: Middleware {
     ///     fixed quota.
     ///   - cost: What this request spends. Defaults to one. A search that
     ///     costs ten and a health check that costs one out of the same
-    ///     budget is the reason this is a closure.
+    ///     budget is the reason this is a closure. Zero is never refused and
+    ///     spends nothing, so a request costed at zero is unlimited; a
+    ///     negative value is an application bug, logged and charged as one.
     ///   - onStoreFailure: What an unreachable store means.
     ///     ``RateLimitFailurePolicy/allow`` by default.
     ///   - advertisesLimit: Whether successful responses carry

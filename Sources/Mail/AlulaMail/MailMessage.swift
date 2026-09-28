@@ -102,6 +102,10 @@ public struct MailMessage: Sendable, Hashable, Codable {
 
     /// Refuses a message that cannot be sent as-is: no sender, no
     /// recipients, no body, or a line break where one would start a header.
+    /// Also refuses a custom header whose name is not a plain token or is
+    /// one the renderer writes itself (`From`, `Bcc`, `Content-Type`, …).
+    ///
+    /// - Throws: ``MailError/invalidMessage(_:)``.
     public func validate() throws {
         guard from != nil else { throw MailError.invalidMessage("it has no sender") }
         guard !recipients.isEmpty else { throw MailError.invalidMessage("it has no recipients") }
@@ -131,8 +135,13 @@ public struct MailMessage: Sendable, Hashable, Codable {
     }
 }
 
+/// Why a message was not sent. The first two are the caller's mistake and
+/// are found before anything is sent; the last two come from delivery.
 public enum MailError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// A ``MailAddress`` refused the text it was given.
     case invalidAddress(String)
+    /// ``MailMessage/validate()`` refused the message. A queued job failing
+    /// this way is discarded, not retried.
     case invalidMessage(String)
     /// Refused for good: a bad address, a policy rejection. Retrying will not help.
     case permanent(String)

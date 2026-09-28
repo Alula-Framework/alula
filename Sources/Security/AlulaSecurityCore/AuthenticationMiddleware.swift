@@ -177,10 +177,11 @@ extension RequestContext {
 /// *authentication*, not authorization — "is there anyone here", not "is
 /// this the right someone".
 ///
-/// Not installed by ``AlulaSecurityModule`` — an application adds it to its
-/// own lane (after ``Authentication`` — it needs the
-/// principal *this* request's authentication decided, not some other
-/// request's) for the routes it wants protected. For selective protection,
+/// ``AlulaSecurityModule`` installs it in the `.authenticated` lane, after
+/// ``Authentication`` — it needs the principal *this* request's
+/// authentication decided, not some other request's. A route opts in by
+/// naming that lane; an application building its own lane puts it after
+/// ``Authentication`` the same way. For selective protection,
 /// use the handler-level guards (`context.requirePrincipal()` /
 /// `requireRole` / `requireScope`) instead.
 ///

@@ -16,6 +16,11 @@ import CArgon2
 /// resistant to both the side-channel attacks Argon2i defends against and
 /// the GPU-cracking attacks Argon2d defends against, which is why it is the
 /// one OWASP recommends without qualification.
+///
+/// ``needsRehash(_:)`` compares only `m`, `t` and `p` with ``parameters``,
+/// and answers `true` for any difference — lowering a cost rehashes too —
+/// and for a string it cannot parse. The version field, salt length and hash
+/// length are not compared.
 public struct Argon2idHashing: PasswordHashing {
 
     /// The cost parameters, and how much salt and output to use.

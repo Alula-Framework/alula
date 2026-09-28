@@ -14,6 +14,21 @@ import Foundation
 /// Non-ASCII subjects and display names become RFC 2047 encoded words.
 /// Attachments are base64 in 76-character lines.
 public enum MIMERenderer {
+    /// The message as bytes, validated first. `Bcc` recipients are left out
+    /// of the headers.
+    ///
+    /// Each call writes a new `Message-ID`, so rendering the same message
+    /// twice (a retried job does) gives two messages a receiver cannot tell
+    /// are one.
+    ///
+    /// - Parameters:
+    ///   - message: The message to render.
+    ///   - messageIDDomain: The right-hand side of the `Message-ID`.
+    ///   - date: The `Date` header.
+    ///   - boundarySeed: Makes the multipart boundaries; fix it in a test
+    ///     that needs to know them.
+    /// - Throws: ``MailError/invalidMessage(_:)`` from
+    ///   ``MailMessage/validate()``.
     public static func render(
         _ message: MailMessage, messageIDDomain: String, date: Date = Date(),
         boundarySeed: String = UUID().uuidString

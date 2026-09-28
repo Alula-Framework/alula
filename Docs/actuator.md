@@ -18,7 +18,7 @@ implementation had to make.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.57.0", traits: ["Web"]),
+        from: "0.59.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

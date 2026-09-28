@@ -18,6 +18,12 @@ import Tracing
 /// upgrade-shaped request — see that property for why.
 public struct Dispatch: Sendable {
     /// Runs the full pipeline: middleware, routing, handler.
+    ///
+    /// Never throws: an error from a handler or a middleware comes back as
+    /// the response it maps to (see Docs/web.md, "What a thrown error
+    /// becomes"). Each call runs the handler and its side effects, so a
+    /// transport calls this once per request and never retries it. An
+    /// upgrade-shaped request must pass ``acceptsUpgrade`` first.
     public let respond: @Sendable (Request) async -> Response
 
     /// Whether this request's method and path resolve to an upgrade route.

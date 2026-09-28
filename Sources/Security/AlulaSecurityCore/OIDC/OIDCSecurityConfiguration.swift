@@ -39,8 +39,10 @@ public struct OIDCSecurityConfiguration: Sendable {
     /// How long fetched keys stay fresh before a revalidating refetch.
     public var jwksCacheTTL: TimeInterval
 
-    /// Leeway applied to `exp` and `nbf` (design: JWTKit supplies the
-    /// primitive; Alula sets the policy).
+    /// Leeway applied to `exp` and `nbf`, in seconds (design: JWTKit supplies
+    /// the primitive; Alula sets the policy). A token is accepted until
+    /// `exp + leeway` and from `nbf - leeway`; `iat` is not checked. Negative
+    /// values are clamped to zero.
     public var clockSkewLeeway: TimeInterval
 
     /// Minimum interval between JWKS fetch attempts, so unknown-`kid`

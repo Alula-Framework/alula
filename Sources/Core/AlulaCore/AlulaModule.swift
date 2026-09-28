@@ -87,9 +87,10 @@ public enum ServiceShutdownPhase: Int, Sendable, Comparable, CaseIterable {
     case infrastructure = 0
     /// The default: schedulers, background workers, application services.
     case standard = 1
-    /// Accepts work from outside — an HTTP transport, a queue consumer.
-    /// Started last, shut down **first**, so nothing new arrives while the
-    /// rest of the system is being taken apart.
+    /// Accepts work from outside — the HTTP transport. Started last, shut
+    /// down **first**, so nothing new arrives while the rest of the system
+    /// is being taken apart. The queue worker is `standard`, not `inbound`:
+    /// it stops claiming only after the HTTP server has stopped.
     case inbound = 2
 
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }

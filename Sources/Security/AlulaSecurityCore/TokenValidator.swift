@@ -15,6 +15,13 @@ public protocol TokenValidator: Sendable {
     /// *internal* log only. The authentication middleware never lets them
     /// reach the wire; if application code rethrows one from a handler, it
     /// renders as an opaque 500, not as token detail.
+    ///
+    /// Fails closed. ``Authentication`` treats *any* thrown error — a bad
+    /// token, but equally a key source or key store that is down — as an
+    /// invalid credential: the request continues unauthenticated and
+    /// ``RequireAuthentication`` answers `401`, never a `5xx`. An outage
+    /// therefore looks like every bearer client's credential failing; the
+    /// log line ("token validation failed") carries the real reason.
     func validate(_ token: String) async throws -> Principal
 }
 
@@ -39,7 +46,9 @@ public struct TokenValidationError: Error, Sendable, CustomStringConvertible {
         case unknownKeyID = "unknown_key_id"
         /// The token's `alg` is not acceptable (e.g. `none`).
         case unsupportedAlgorithm = "unsupported_algorithm"
-        /// The JWKS could not be fetched and no cached keys exist.
+        /// No key set may be used: the JWKS could not be fetched and none is
+        /// cached, or the cached one is past `jwksMaxStaleAge` while
+        /// refreshes keep failing.
         case keySourceUnavailable = "key_source_unavailable"
     }
 

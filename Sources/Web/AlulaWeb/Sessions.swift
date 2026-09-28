@@ -29,8 +29,9 @@ public final class SessionRuntime: Sendable {
     /// that isn't the default.
     ///
     /// Throws `SessionRevocationUnsupported` when the store does not index
-    /// by owner. The in-memory store does; alula-data's Valkey store does
-    /// from the release that follows this one.
+    /// by owner. The in-memory store and alula-data's Valkey store both do.
+    /// A store failure is rethrown as the store threw it; sessions it had
+    /// already ended stay ended.
     @discardableResult
     public func revokeSessions(ownedBy owner: String, keeping: SessionID? = nil) async throws -> Int
     {
@@ -91,6 +92,11 @@ public final class SessionRuntime: Sendable {
 /// session that silently read empty would sign the user out without a word;
 /// a save that silently dropped would lose a login after the handler
 /// reported success. Refusing is honest, and the operator sees it.
+/// A 503 on the way out comes *after* the handler ran: its side effects
+/// stand, and a client that retries repeats them. When a regenerated
+/// session is saved but deleting the old id fails, the request is still a
+/// 503, no cookie is set, and the old id stays live until its TTL — so a
+/// failed `signOut()` leaves the browser signed in.
 ///
 /// What the handler did is committed whether or not it succeeded: the router
 /// renders a handler's error into a response *inside* the chain, so this

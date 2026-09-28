@@ -30,7 +30,8 @@ public struct SMTPSettings: Sendable, Equatable {
         case startTLS = "starttls"
         /// TLS from the first byte (SMTPS, usually port 465).
         case implicitTLS = "tls"
-        /// No encryption: a local relay or a test server only.
+        /// No encryption: a local relay or a test server only. Credentials
+        /// are then sent in cleartext; see ``SMTPSettings/allowPlaintextAuth``.
         case none
     }
 
@@ -41,10 +42,23 @@ public struct SMTPSettings: Sendable, Equatable {
     public var password: String?
     /// The name this client gives in `EHLO`.
     public var heloName: String
+    /// How long the server may take. Without the pool, the whole session
+    /// (greeting, `EHLO`, TLS, `AUTH`, the message) must fit in it. With the
+    /// pool, opening a connection and each message get it separately; time
+    /// spent waiting for a pooled connection does not count. The TCP
+    /// connect itself gives up after 10 seconds. Running out is
+    /// `MailError.transient`.
     public var timeout: Duration
-    /// Off only for a test server with a self-signed certificate.
+    /// Off only for a test server with a self-signed certificate. Applies to
+    /// both `starttls` and `tls`.
     public var verifyCertificates: Bool
     /// Credentials over an unencrypted connection. Off unless asked for.
+    ///
+    /// ``SMTPSettings/init(configuration:)`` refuses a username with
+    /// `security: none` at startup unless this is on. Settings built in code
+    /// are checked where it matters: with this off, the transport refuses to
+    /// authenticate over a `.none` connection, sending no credentials, and
+    /// the send fails with `MailError.transient`.
     public var allowPlaintextAuth: Bool
     /// The right-hand side of generated `Message-ID`s.
     public var messageIDDomain: String
@@ -89,6 +103,10 @@ public struct SMTPSettings: Sendable, Equatable {
         self.messagesPerConnection = messagesPerConnection
     }
 
+    /// Reads `mail.smtp.*`. Throws ``SMTPConfigurationError`` when the host
+    /// is missing, `security` is not `starttls`, `tls` or `none`, a count or
+    /// duration is out of range, or a username is set with `security: none`
+    /// and `allow-plaintext-auth` is not `true`.
     public init(configuration: Configuration) throws {
         guard let host = try configuration.getIfPresent("mail.smtp.host", as: String.self) else {
             throw SMTPConfigurationError("mail.smtp.host is required")
@@ -142,6 +160,7 @@ public struct SMTPSettings: Sendable, Equatable {
     }
 }
 
+/// A `mail.smtp.*` value that cannot be used, reported at startup.
 public struct SMTPConfigurationError: Error, Sendable, CustomStringConvertible {
     public let description: String
     init(_ description: String) { self.description = description }
@@ -180,6 +199,21 @@ public struct SMTPMailTransport: MailTransport {
         self.pool = pool
     }
 
+    /// Delivers `message` in one SMTP transaction: `MAIL FROM`, a `RCPT TO`
+    /// for every recipient, then `DATA`.
+    ///
+    /// All recipients or none, as far as this client controls it: a refusal
+    /// of any one recipient ends the transaction before `DATA`, so nobody
+    /// gets the message, and a 5xx there makes the whole message
+    /// `MailError.permanent` (a queued job is discarded for every
+    /// recipient). An address that is not ASCII, to a server without
+    /// SMTPUTF8, is permanent too. The message counts as sent only on the
+    /// `250` after the body; if the connection breaks or the timeout fires
+    /// after the body went out, the error is transient though the server
+    /// may have accepted it, so a retry can send a second copy.
+    ///
+    /// Throws only `MailError`: `invalidMessage` before connecting,
+    /// otherwise `permanent` or `transient` as the type's overview describes.
     public func send(_ message: MailMessage) async throws {
         try message.validate()
         let data = try MIMERenderer.render(message, messageIDDomain: settings.messageIDDomain)
@@ -358,6 +392,14 @@ final class SMTPConnection {
         }
 
         if let username = settings.username {
+            // Enforced here, where the password would go out, and not only
+            // in `init(configuration:)`: settings built in code never pass
+            // through that check.
+            guard settings.security != .none || settings.allowPlaintextAuth else {
+                throw MailError.transient(
+                    "refusing to send SMTP credentials over an unencrypted connection; "
+                        + "use security starttls or tls, or set allowPlaintextAuth for a local relay")
+            }
             let password = settings.password ?? ""
             if capabilities.auth.contains("PLAIN") || !capabilities.auth.contains("LOGIN") {
                 let token = Data("\0\(username)\0\(password)".utf8).base64EncodedString()
@@ -499,7 +541,11 @@ public struct AlulaMailSMTPModule: AlulaModule {
 
     public var service: (any Service)? { pool.map { SMTPPoolService(pool: $0) } }
 
-    /// Stops after the queue worker, whose jobs are what send mail.
+    /// Stops after the queue worker, whose jobs are what send mail. On
+    /// graceful shutdown the pool takes no new messages but sends those
+    /// already waiting before it stops; a send after that opens its own
+    /// connection. If the pool is cancelled instead, the waiting messages
+    /// fail with `MailError.transient`, and queued jobs are retried.
     public var serviceShutdownPhase: ServiceShutdownPhase { .infrastructure }
 
     public init() {

@@ -29,7 +29,9 @@ import Synchronization
 /// - **One answer for every failure.** The client gets the generic 401. The
 ///   reason, never the key, goes to the log.
 public enum APIKeys {
-    /// A key as the store keeps it.
+    /// A key as the store keeps it. Holds no secret:
+    /// ``APIKeys/Stored/id`` is not one (it is in every key, in the clear)
+    /// and ``APIKeys/Stored/secretDigest`` cannot be presented as a key.
     public struct Stored: Sendable, Equatable, Codable {
         public var id: String
         /// SHA-256 of the secret, base64url.
@@ -37,7 +39,11 @@ public enum APIKeys {
         public var subject: String
         public var roles: Set<String>
         public var scopes: Set<String>
+        /// When the key stops working; nil for never. Compared with the
+        /// validator's clock, with no leeway.
         public var expiresAt: Date?
+        /// Set it to refuse the key from the next request the store answers
+        /// with it: ``APIKeyValidator`` keeps no cache of its own.
         public var revoked: Bool
 
         public init(
@@ -130,7 +136,13 @@ public enum APIKeys {
 /// Where API keys are looked up. The application implements it over its own
 /// table; ``InMemoryAPIKeyStore`` is for tests and prototypes.
 public protocol APIKeyStore: Sendable {
-    /// The key with `id`, or nil.
+    /// The key with `id`, or nil. Called once per request that presents a
+    /// well-formed key, before the secret is compared.
+    ///
+    /// Return revoked and expired keys as they are — ``APIKeyValidator``
+    /// refuses them — and throw when the store cannot answer. A throw is
+    /// not a 5xx: authentication treats it as a failed credential, so every
+    /// API-key client gets `401` for the length of the outage.
     func key(id: String) async throws -> APIKeys.Stored?
 }
 

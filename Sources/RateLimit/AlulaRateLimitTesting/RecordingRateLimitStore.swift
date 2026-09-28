@@ -91,12 +91,15 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
         clock.advance(by: duration.recordingMicroseconds)
     }
 
-    /// From now on, every call throws.
+    /// From now on, every call throws `RateLimitStoreError`. A call that
+    /// throws is not recorded in ``consumed`` and spends nothing.
     public func misbehave() {
         state.withLock { $0.misbehaving = true }
     }
 
-    /// Stops misbehaving, for testing recovery.
+    /// Stops misbehaving, for testing recovery. The limiter state is as it
+    /// was before ``misbehave()``: calls refused during the outage spent
+    /// nothing, so a key's allowance has only been refilling since.
     public func recover() {
         state.withLock { $0.misbehaving = false }
     }

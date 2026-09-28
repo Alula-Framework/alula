@@ -86,14 +86,15 @@ public struct CSRFProtection: Middleware, SessionReading {
 }
 
 extension CSRFProtection {
-    /// `Authorization: Bearer <token>`, scheme matched case-insensitively
-    /// (RFC 9110 §11.1). Only the scheme matters here, not whether the token
-    /// is any good: a bad one is `Authentication`'s to refuse.
+    /// `Authorization: Bearer <token>`, parsed exactly as authentication
+    /// parses it (`Request.parseBearer(_:)`), scheme matched
+    /// case-insensitively (RFC 9110 §11.1). Whether the token is any good is
+    /// `Authentication`'s to decide; what matters here is that a header it
+    /// would ignore — and fall back to the session cookie for — is not
+    /// exempt.
     static func carriesBearerToken(_ request: Request) -> Bool {
         guard let value = request.headers[.authorization] else { return false }
-        let parts = value.split(separator: " ", maxSplits: 1)
-        return parts.count == 2 && parts[0].lowercased() == "bearer"
-            && !parts[1].trimmingCharacters(in: .whitespaces).isEmpty
+        return Request.parseBearer(value) != nil
     }
 }
 

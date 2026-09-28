@@ -32,7 +32,7 @@ Three pieces, and you name one of them:
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.57.0", traits: ["Web"]),
+        from: "0.59.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(
@@ -367,6 +367,10 @@ bounds whatever gets through.
 A stronger guarantee is possible, but it means a per-account version that
 every request checks: a store read on every authenticated request, forever,
 to close a window measured in milliseconds. That's the trade D40 records.
+
+Revoking ends session records, not connections. A WebSocket opened before
+the revocation stays open, with the identity it had at the upgrade: see
+[interactions.md](interactions.md#authentication-and-long-lived-sockets).
 
 ## The authenticated lifetime
 

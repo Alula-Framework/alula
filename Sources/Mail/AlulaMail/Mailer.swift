@@ -8,7 +8,14 @@ import Logging
 /// Throw ``MailError/permanent(_:)`` for a refusal no retry will change (the
 /// address does not exist) and ``MailError/transient(_:)`` for one that might
 /// (the server is busy). Mail sent through the queue is retried on anything
-/// but a permanent refusal.
+/// but a permanent refusal, ``MailError/invalidAddress(_:)`` or
+/// ``MailError/invalidMessage(_:)``; an error that is not a ``MailError`` is
+/// retried too.
+///
+/// Throw only when the message was not accepted. An error after the
+/// receiving server may have taken it (a lost reply, a timeout after the
+/// body went out) should still be transient, and then the retry can deliver
+/// a second copy.
 public protocol MailTransport: Sendable {
     func send(_ message: MailMessage) async throws
 }
@@ -47,6 +54,11 @@ public struct Mailer: Sendable {
 
     /// Delivers `message` now. Fills in the default sender and validates
     /// before anything is sent.
+    ///
+    /// Not retried: whatever the transport throws reaches the caller, and
+    /// the message is not kept. A message that fails
+    /// ``MailMessage/validate()``, with the default sender applied, throws
+    /// ``MailError/invalidMessage(_:)`` before the transport sees it.
     public func send(_ message: MailMessage) async throws {
         try await transport.send(prepared(message))
     }
@@ -54,6 +66,12 @@ public struct Mailer: Sendable {
     /// Enqueues `message` for delivery by a worker, retried under
     /// ``DeliverMail``'s policy. Validation happens here, so a message that
     /// could never be sent fails now rather than as a dead letter.
+    ///
+    /// Returning means the job is stored, not that mail went out. If the
+    /// enqueue itself fails, the queue's error is thrown and nothing is
+    /// stored. Each call enqueues a new job unless `options.uniqueKey` joins
+    /// it to one already waiting. Delivery is at least once; see
+    /// ``Mailer/deliveryHandler``.
     @discardableResult
     public func sendLater(
         _ message: MailMessage, via jobs: JobQueue, options: EnqueueOptions = EnqueueOptions()
@@ -61,8 +79,18 @@ public struct Mailer: Sendable {
         try await jobs.enqueue(DeliverMail(message: prepared(message)), options: options)
     }
 
-    /// Runs ``DeliverMail`` jobs with this mailer. A permanent refusal
-    /// discards the job instead of retrying it.
+    /// Runs ``DeliverMail`` jobs with this mailer. A permanent refusal, or a
+    /// message the transport finds invalid, discards the job instead of
+    /// retrying it; any other error is retried.
+    ///
+    /// **At least once, so a recipient can get two copies.** The queue runs a
+    /// job again when its worker dies or its attempt fails, and an attempt
+    /// can fail after the server accepted the message: the reply to the
+    /// final `.` lost, or the attempt past this handler's 120-second
+    /// timeout. With the SMTP pool, a message still waiting for a
+    /// connection when the attempt times out is not withdrawn, and is sent
+    /// as well as the retry. `SMTPMailTransport` renders a new `Message-ID`
+    /// on each attempt, so the copies do not share one. See Docs/mail.md and Docs/queue.md.
     public var deliveryHandler: QueueHandler {
         .handle(DeliverMail.self, timeout: .seconds(120)) { job, _ in
             do {
@@ -84,8 +112,12 @@ public struct Mailer: Sendable {
 }
 
 /// A message waiting to be delivered: `Mailer.sendLater`'s job. On the
-/// `mail` queue, retried for about a day. A mail server down for a few hours
-/// should delay a password reset, not lose it.
+/// `mail` queue, retried for about twelve hours. A mail server down for a
+/// few hours should delay a password reset, not lose it.
+///
+/// Twelve attempts, the waits between them 30 seconds doubling to a 4-hour
+/// cap (±10%). After the last, the job is discarded and the message is not
+/// sent.
 public struct DeliverMail: QueuedJob {
     public static let kind = "alula.mail.deliver"
     public static let queue = "mail"
@@ -182,7 +214,10 @@ public struct AlulaMailModule: AlulaModule {
     }
 }
 
+/// Why ``AlulaMailModule`` refused to compose.
 public enum MailConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// No module provides a ``MailTransport`` and the environment is not
+    /// `dev` or `test`, and `mail.transport` is not `log`.
     case noTransport(environment: String)
 
     public var description: String {

@@ -105,6 +105,17 @@ public final class InMemoryQueueStore: QueueStore {
         }
     }
 
+    public func handBack(_ id: QueuedJobID, attempt: Int, runAt: Date, error: String) async throws
+        -> Bool
+    {
+        transition(id, attempt: attempt) {
+            $0.state = .available
+            $0.attempt -= 1
+            $0.job.runAt = runAt
+            $0.lastError = error
+        }
+    }
+
     public func discard(_ id: QueuedJobID, attempt: Int, at: Date, error: String) async throws
         -> Bool
     {

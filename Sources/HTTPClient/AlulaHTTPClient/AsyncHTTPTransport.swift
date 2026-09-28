@@ -7,7 +7,15 @@ import NIOFoundationCompat
 import NIOHTTP1
 
 /// The production transport: AsyncHTTPClient's process-wide shared client,
-/// which needs no lifecycle of its own.
+/// which needs no lifecycle of its own: there is nothing to shut down.
+///
+/// The attempt's `timeout` is AsyncHTTPClient's request deadline, which
+/// ends when the response head arrives; the body is then read up to
+/// `maxResponseBytes` under the shared client's 90-second idle read timeout
+/// only. Redirects are followed (up to 20) inside the one attempt. A
+/// connect, read or deadline timeout before the head becomes
+/// ``OutboundHTTPError/timedOut(_:)``; any other failure, a refused
+/// connection included, ``OutboundHTTPError/transport(_:)``.
 public struct AsyncHTTPTransport: OutboundHTTPTransport {
     public init() {}
 

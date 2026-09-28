@@ -19,6 +19,10 @@ extension Session {
     /// anything else: like every other `Session` write, nothing is
     /// persisted until the request actually modifies something, and
     /// calling this is exactly that.
+    ///
+    /// Not rotated by `regenerate()` or a sign-in: the token is a
+    /// session value, and values move to the new id with the rest. It ends
+    /// with the session — destroyed, emptied, or expired.
     public func csrfToken() throws -> String {
         if let existing = try get(Self.csrfTokenKey, as: String.self) {
             return existing

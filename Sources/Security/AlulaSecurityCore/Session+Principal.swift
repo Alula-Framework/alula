@@ -39,6 +39,11 @@ extension Session {
     /// Forgets the principal and regenerates the id, keeping the rest.
     /// `destroy()` is the stronger form, for a logout that should leave
     /// nothing behind.
+    ///
+    /// Ends only this session. Other devices stay signed in; ending those is
+    /// `SessionRuntime.revokeSessions(ownedBy:keeping:)`. Like every session
+    /// change it is persisted after the handler returns, and a store that
+    /// fails then leaves the old, signed-in id live (see `Sessions`).
     public func signOut() {
         remove(Self.principalKey)
         remove(Self.authenticatedAtKey)
@@ -46,14 +51,15 @@ extension Session {
         regenerate()
     }
 
-    /// The stored principal, or `nil` when nobody is signed in. Throws when
-    /// the stored bytes do not decode as one — a format change, or another
-    /// writer under the reserved key.
-    /// When the stored principal signed in, if recorded.
+    /// When the stored principal signed in, if recorded. Throws when the
+    /// stored bytes do not decode as a date.
     public func authenticatedAt() throws -> Date? {
         try get(Self.authenticatedAtKey, as: Date.self)
     }
 
+    /// The stored principal, or `nil` when nobody is signed in. Throws when
+    /// the stored bytes do not decode as one — a format change, or another
+    /// writer under the reserved key.
     public func principal() throws -> Principal? {
         try get(Self.principalKey, as: Principal.self)
     }

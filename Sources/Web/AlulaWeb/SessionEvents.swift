@@ -19,6 +19,8 @@ public enum SessionEvents {
     public enum Created {}
 
     /// A session moved to a new id — sign-in, sign-out, `regenerate()`.
+    /// Emitted only once the old id is deleted. A sign-out that leaves the
+    /// session empty deletes it instead, and is not counted here.
     @TelemetryEvent("alula.sessions.regenerated")
     public enum Regenerated {}
 

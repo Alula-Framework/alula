@@ -73,7 +73,11 @@ public struct SecurityHeaders: Sendable, Equatable {
     /// close to permanent; the list's own requirements are checked at
     /// construction.
     public struct StrictTransportSecurity: Sendable, Equatable {
+        /// How long a browser remembers the promise. Sent in whole seconds;
+        /// zero tells browsers to forget an earlier one.
         public var maxAge: Duration
+        /// Extends the promise to every subdomain — including ones this
+        /// service does not run.
         public var includeSubdomains: Bool
         public var preload: Bool
 
@@ -93,9 +97,12 @@ public struct SecurityHeaders: Sendable, Equatable {
 
     /// `X-Content-Type-Options: nosniff` when true.
     public var contentTypeOptions: Bool
+    /// `X-Frame-Options`; nil sends none.
     public var frameOptions: FrameOptions?
     /// A `Referrer-Policy` token; checked against the specification's list.
+    /// Nil sends none.
     public var referrerPolicy: String?
+    /// HSTS; nil, the default, sends none.
     public var strictTransportSecurity: StrictTransportSecurity?
     /// Sent verbatim. Alula does not parse or validate CSP.
     public var contentSecurityPolicy: String?

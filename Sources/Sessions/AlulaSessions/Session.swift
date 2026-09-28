@@ -95,10 +95,10 @@ public final class Session: Sendable {
     // MARK: - Identity
 
     /// The id this session is stored under, or `nil` for one nothing has
-    /// persisted yet. Assigned when the middleware commits a new session, so
-    /// a handler that needs the id of a session it just created does not
-    /// have one — call ``regenerate()`` first if the id must exist during the
-    /// request, or key off something the application owns instead.
+    /// persisted yet. Assigned when the middleware commits, after the
+    /// handler has returned — so a handler that creates a session never sees
+    /// its id, and one that calls ``regenerate()`` still sees the old id.
+    /// Key off something the application owns instead.
     public var id: SessionID? {
         state.withLock { $0.committedID ?? $0.loaded?.id }
     }
@@ -108,6 +108,7 @@ public final class Session: Sendable {
         state.withLock { $0.loaded == nil }
     }
 
+    /// Whether ``destroy()`` has been called during this request.
     public var isDestroyed: Bool {
         state.withLock { $0.isDestroyed }
     }
@@ -203,6 +204,11 @@ public final class Session: Sendable {
     /// a session id handed out before authentication must not be the one
     /// that is authenticated afterwards, or an attacker who planted it holds
     /// the signed-in session (fixation).
+    ///
+    /// Takes effect at commit, not now: ``id`` keeps answering the old id
+    /// for the rest of this request. The new record is saved before the old
+    /// id is deleted, so if the store fails the delete the old id stays live
+    /// until its TTL (the middleware answers 503 and sets no cookie).
     public func regenerate() {
         state.withLock { state in
             state.regenerateRequested = true

@@ -51,13 +51,19 @@ public struct QueueHandler: Sendable {
     public let kind: String
     public let queue: String
     public let retry: RetryPolicy
-    /// How long one attempt may run before it counts as a failure. Nil is no
-    /// limit — but a hung attempt then holds a worker slot, and its lease is
-    /// renewed, for as long as it hangs.
+    /// How long one attempt may run before it counts as a failure, retried
+    /// like any other. Nil is no limit — but a hung attempt then holds a
+    /// worker slot, and its lease is renewed, for as long as it hangs.
+    ///
+    /// Reaching it cancels the handler's task; it does not stop code that
+    /// ignores cancellation, and the attempt is not recorded until the
+    /// handler returns. Side effects it has already made are not undone, and
+    /// the retry makes them again.
     public let timeout: Duration?
     let perform: @Sendable (Data, QueueJobContext) async throws -> Void
 
-    /// A handler for `Job`.
+    /// A handler for `Job`, running on `Job.queue` under `Job.retry`.
+    /// `timeout` defaults to five minutes; see ``QueueHandler/timeout``.
     public static func handle<Job: QueuedJob>(
         _ job: Job.Type, timeout: Duration? = .seconds(300),
         _ body: @escaping @Sendable (Job, QueueJobContext) async throws -> Void

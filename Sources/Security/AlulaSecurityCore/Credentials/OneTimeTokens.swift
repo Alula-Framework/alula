@@ -72,6 +72,11 @@ public struct OneTimeTokens: Sendable {
 
     /// A fresh token for `subject`. Return it to whoever delivers it — an
     /// email, usually — and do not keep it anywhere else.
+    ///
+    /// Issuing does not void earlier tokens for the same subject and purpose;
+    /// each works until used or expired, unless a `binding` has since
+    /// changed. Expiry is checked in whole seconds of `lifetime`. Rethrows
+    /// the store's error when it cannot save, and no token is returned.
     public func issue(
         for subject: String, purpose: Purpose, lifetime: Duration, binding: String? = nil
     ) async throws -> String {
@@ -96,7 +101,9 @@ public struct OneTimeTokens: Sendable {
     ///     the token was issued with a binding; a nil answer (the account is
     ///     gone) fails the redemption.
     /// - Throws: ``OneTimeTokenError/invalidOrExpired`` for every way a token
-    ///   can be wrong.
+    ///   can be wrong. An error from the store, or from `currentBinding`, is
+    ///   rethrown as it is — an outage is not reported as a bad link. A token
+    ///   the store took before `currentBinding` threw is spent.
     public func redeem(
         _ token: String, purpose: Purpose,
         currentBinding: (@Sendable (String) async throws -> String?)? = nil

@@ -131,6 +131,18 @@ public struct AlulaSecurityModule: AlulaModule {
 
 }
 
+/// Stands in when an application has no bearer-token validator: every token
+/// presented fails, so the request is an invalid credential rather than
+/// silently anonymous — a caller sending a token should learn it was not
+/// accepted.
+struct RejectingTokenValidator: TokenValidator {
+    func validate(_ token: String) async throws -> Principal {
+        throw TokenValidationError(
+            kind: .keySourceUnavailable,
+            reason: "no token validator is configured; this application accepts sessions only")
+    }
+}
+
 /// OIDC/JWT token validation: the default implementation of the seam
 /// ``AlulaSecurityModule`` leaves open.
 ///
@@ -144,18 +156,11 @@ public struct AlulaSecurityModule: AlulaModule {
 ///
 /// List this module to get OIDC. Omit it and provide your own
 /// `(any TokenValidator)` to authenticate any other way.
-/// Stands in when an application has no bearer-token validator: every token
-/// presented fails, so the request is an invalid credential rather than
-/// silently anonymous — a caller sending a token should learn it was not
-/// accepted.
-struct RejectingTokenValidator: TokenValidator {
-    func validate(_ token: String) async throws -> Principal {
-        throw TokenValidationError(
-            kind: .keySourceUnavailable,
-            reason: "no token validator is configured; this application accepts sessions only")
-    }
-}
-
+///
+/// The maintenance service fetches keys once at startup and then every
+/// `jwks-cache-ttl` (at least a minute). A failed fetch is logged and never
+/// stops the application; validation keeps serving cached keys within
+/// `jwks-max-stale` and fails closed after it.
 public final class AlulaOIDCModule: AlulaModule {
     public static var dependencies: [any AlulaModule.Type] {
         [AlulaSecurityModule.self]

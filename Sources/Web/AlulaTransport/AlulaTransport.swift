@@ -441,6 +441,11 @@ public struct AlulaTransport: ServerTransport {
                     throw WebSocketError.connectionClosed
                 } catch let error as NIOCore.ChannelError where error == .ioOnClosedChannel {
                     throw WebSocketError.connectionClosed
+                } catch let error as NIOAsyncWriterError where error == .alreadyFinished() {
+                    // The outbound writer is finished once any close has gone
+                    // out — the handler's own, or the reply to the peer's —
+                    // so a send after it lands here, not on the channel.
+                    throw WebSocketError.connectionClosed
                 }
             },
             close: { code, reason in

@@ -24,7 +24,7 @@ validates the message and enqueues a ``DeliverMail`` job, so the request
 neither waits on a mail server nor fails when one is down. Add
 ``Mailer/deliveryHandler`` to a module's `queueHandlers`. A permanent refusal,
 such as a 5xx or a malformed message, discards the job. Anything else is
-retried for about a day.
+retried for about twelve hours.
 
 ## Transports
 

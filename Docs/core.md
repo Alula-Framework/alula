@@ -30,7 +30,7 @@ struct App {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
 ]
 ```
 
@@ -372,6 +372,9 @@ worker does this with its running jobs.
 
 Use a `service` for work that goes on the whole time (a poller, a consumer),
 and hooks for work that happens once.
+
+See also [interactions.md](interactions.md#shutdown-order-the-queue-and-the-pools)
+for the phases services stop in, and what the queue and the pools do then.
 
 ## Logging
 

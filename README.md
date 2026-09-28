@@ -40,14 +40,15 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `AlulaChannelsTransport` | A WebSocket for `AlulaChannelsClient`, with the handshake headers a server needs — a session cookie, a bearer token. Requires the `Web` trait. |
 | `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
-Per-product documentation lives in [Docs/](Docs/), and
+Per-product documentation lives in [Docs/](Docs/README.md), indexed by concept
+rather than by target, and
 [Docs/testing.md](Docs/testing.md) covers how to test an application built
 on it.
 
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
 ```
 
 ```swift
@@ -117,14 +118,14 @@ All are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.57.0", traits: ["Web"])
+         from: "0.59.0", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.57.0", traits: ["Security"])
+         from: "0.59.0", traits: ["Security"])
 
 // Just composition and lifecycle — 7 resolved dependencies instead of 30.
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.57.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the

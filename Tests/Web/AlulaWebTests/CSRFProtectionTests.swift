@@ -150,6 +150,19 @@ struct CSRFProtectionTests {
         #expect(empty.status == .forbidden)
     }
 
+    @Test("a bearer header authentication would ignore is not exempt either")
+    func malformedBearerIsNotExempt() async throws {
+        // `Bearer a b` is no token to `Request.bearerToken`, so
+        // authentication falls back to the session cookie. Exempting it here
+        // would let a cookie-authenticated POST through with no CSRF token.
+        let client = try client()
+        let form = await client.get("/form")
+        let cookie = try #require(sessionCookie(form))
+        let response = await client.post(
+            "/transfer", headers: [.cookie: cookie, .authorization: "Bearer a b"])
+        #expect(response.status == .forbidden)
+    }
+
     // MARK: The real round trip
 
     @Test("the token a GET hands out is accepted on the POST that follows")

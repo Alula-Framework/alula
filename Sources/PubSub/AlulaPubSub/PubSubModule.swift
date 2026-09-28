@@ -94,10 +94,7 @@ public struct AlulaPubSubModule: AlulaModule {
                 + "yourself and use the entry point taking module instances.")
     }
 
-    /// Projects what this module already holds. Nothing is constructed here:
-    /// the components already exist, built at composition — the difference
-    /// between a module that registers and one that owns.
-    /// The relay, when clustered. It belongs here rather than to the adapter
+    /// The relay, when clustered; nil on a single node. It belongs here rather than to the adapter
     /// module because this is what has both halves — the adapter to drain and
     /// the local core to drain it into. An adapter module used to have to
     /// remember to expose it, and a cluster whose author forgot relayed

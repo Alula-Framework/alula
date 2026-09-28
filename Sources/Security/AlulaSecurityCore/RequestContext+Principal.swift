@@ -20,8 +20,7 @@ extension RequestContext {
 
     /// Runs `operation` with `Principal.current` bound to this request's
     /// principal (or `nil` when unauthenticated), so services can read the
-    /// ambient identity without threading it through every signature
-    ///:
+    /// ambient identity without threading it through every signature:
     ///
     /// ```swift
     /// @GetRoute("/documents")
@@ -39,8 +38,10 @@ extension RequestContext {
     }
 
     /// Returns the current principal or throws ``SecurityError/unauthenticated``
-    /// (rendered as an opaque 401). The "is there *anyone* here" check
-    ///, as a handler-level guard.
+    /// (rendered as an opaque 401). The "is there *anyone* here" check, as
+    /// a handler-level guard. An invalid credential and no credential both
+    /// throw the same error; only ``RequireAuthentication`` tells them apart
+    /// on the wire.
     @discardableResult
     public func requirePrincipal() throws -> Principal {
         guard let principal else { throw SecurityError.unauthenticated }

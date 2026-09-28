@@ -30,6 +30,10 @@ public final class QueueTestHarness: Sendable {
         var now: Date { value.withLock { $0 } }
     }
 
+    /// Jobs whose kind has no handler here are never claimed by
+    /// ``QueueTestHarness/drain(limit:)``; they stay waiting. Unlike the
+    /// worker module, two handlers for one kind are not an error here: the
+    /// first is used.
     public init(
         handlers: [QueueHandler] = [], start: Date = Date(timeIntervalSince1970: 1_000_000_000)
     ) {

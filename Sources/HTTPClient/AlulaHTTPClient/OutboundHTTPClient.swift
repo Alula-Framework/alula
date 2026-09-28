@@ -12,12 +12,18 @@ public struct OutboundRequest: Sendable {
     public var url: URL
     public var headers: HTTPFields
     public var body: Data?
-    /// Overrides the client's timeout for this request: the whole of one
-    /// attempt, from connecting to the last byte of the response.
+    /// Overrides the client's timeout for this request: one attempt, from
+    /// connecting until the response head arrives. See
+    /// ``OutboundHTTPPolicy/timeout`` for what it does not cover.
     public var timeout: Duration?
     /// Whether repeating this request is safe. Nil infers it: `GET`, `HEAD`,
     /// `OPTIONS`, `PUT` and `DELETE` are, and so is any request carrying an
     /// `Idempotency-Key` header. A `POST` without one is never retried.
+    ///
+    /// `true` opts any method into retries; set it only when the receiver
+    /// deduplicates, since a retried attempt may follow one the server
+    /// already acted on. The client does not generate an `Idempotency-Key`;
+    /// one you set is sent unchanged on every attempt.
     public var idempotent: Bool?
 
     public init(
@@ -66,14 +72,26 @@ public struct OutboundResponse: Sendable {
     }
 }
 
+/// Why an outbound call failed. ``OutboundHTTPError/timedOut(_:)`` and
+/// ``OutboundHTTPError/transport(_:)`` are the retryable ones, for
+/// idempotent requests; ``OutboundHTTPClient/send(_:)`` throws the error of
+/// the attempt it stopped at.
 public enum OutboundHTTPError: Error, Sendable, Equatable, CustomStringConvertible {
-    /// A non-2xx status where one was required.
+    /// A non-2xx status where one was required. Thrown only by
+    /// ``OutboundResponse/decode(_:using:)``, never by `send`. The body
+    /// prefix is its first 200 bytes.
     case unexpectedStatus(Int, bodyPrefix: String)
-    /// The response body exceeded the client's `maxResponseBytes`.
+    /// The response body exceeded the client's `maxResponseBytes`. Not
+    /// retried.
     case responseTooLarge(limit: Int)
-    /// No response within the timeout.
+    /// No response within the attempt's timeout. Also thrown, with `.zero`
+    /// and nothing sent, when the enclosing request's deadline has already
+    /// passed. For a request that is not retried, the server may still
+    /// have acted on it.
     case timedOut(Duration)
-    /// Could not connect, or the connection broke.
+    /// Could not connect, or the connection broke. When it broke after the
+    /// request was written, the server may have acted on it; that is why a
+    /// non-idempotent request is not retried.
     case transport(String)
 
     public var description: String {
@@ -95,6 +113,13 @@ public enum OutboundHTTPError: Error, Sendable, Equatable, CustomStringConvertib
 
 /// Sends one attempt of one request. The client adds retries, tracing and
 /// logging around it; tests replace it with `StubHTTPTransport`.
+///
+/// A conformance must not retry itself. It should enforce `timeout` on the
+/// attempt and throw ``OutboundHTTPError/timedOut(_:)`` or
+/// ``OutboundHTTPError/transport(_:)`` for failures worth retrying, and
+/// ``OutboundHTTPError/responseTooLarge(limit:)`` past `maxResponseBytes`.
+/// Any other error, `CancellationError` included, ends the call unretried.
+/// A non-2xx status is returned, not thrown.
 public protocol OutboundHTTPTransport: Sendable {
     func send(_ request: OutboundRequest, timeout: Duration, maxResponseBytes: Int) async throws
         -> OutboundResponse
@@ -102,15 +127,28 @@ public protocol OutboundHTTPTransport: Sendable {
 
 /// How the client behaves. `http-client.*` in configuration.
 public struct OutboundHTTPPolicy: Sendable, Equatable {
-    /// Per attempt.
+    /// Per attempt, from connecting until the response head arrives
+    /// (redirects included). With `AsyncHTTPTransport`, reading the body
+    /// is not under it: a body that keeps trickling in is bounded only by
+    /// ``OutboundHTTPPolicy/maxResponseBytes`` and AsyncHTTPClient's idle
+    /// read timeout. There is no budget across attempts either: a call can
+    /// take `maxAttempts` timeouts plus the backoffs between them, unless a
+    /// request deadline cuts it short.
     public var timeout: Duration
-    /// Attempts for a retryable failure, the first included.
+    /// Attempts for a retryable failure, the first included. Values below 1
+    /// are raised to 1.
     public var maxAttempts: Int
+    /// The wait after the first failed attempt; it doubles per attempt, up to
+    /// ``OutboundHTTPPolicy/backoffCap``, and each wait is jittered down to between half and all
+    /// of that.
     public var backoffBase: Duration
+    /// The longest backoff between attempts, before jitter.
     public var backoffCap: Duration
-    /// A `Retry-After` longer than this is not waited for; the error is
-    /// returned instead.
+    /// A `Retry-After` longer than this is not waited for; the response is
+    /// returned as it is, without another attempt.
     public var maxRetryAfter: Duration
+    /// The most response body read, in bytes; past it the call throws
+    /// ``OutboundHTTPError/responseTooLarge(limit:)``.
     public var maxResponseBytes: Int
     /// Statuses that mean "try again", for idempotent requests.
     public var retryStatuses: Set<Int>
@@ -130,6 +168,10 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
         self.retryStatuses = retryStatuses
     }
 
+    /// Reads `http-client.timeout-seconds`, `http-client.max-attempts` and
+    /// `http-client.max-response-bytes`; the rest keep their defaults.
+    /// Throws ``OutboundHTTPConfigurationError`` for a value that is not
+    /// positive.
     public init(configuration: Configuration) throws {
         func positive(_ key: String, _ fallback: Int) throws -> Int {
             let value = try configuration.getIfPresent(key, as: Int.self) ?? fallback
@@ -151,6 +193,7 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
     }
 }
 
+/// An `http-client.*` value that cannot be used, reported at startup.
 public struct OutboundHTTPConfigurationError: Error, Sendable, CustomStringConvertible {
     public let description: String
 }
@@ -209,6 +252,12 @@ public struct OutboundHTTPClient: Sendable {
 
     /// Sends `request`, retrying as the policy allows. A non-2xx status is a
     /// response, not an error. Use `decode` to demand success.
+    ///
+    /// When the attempts run out on a retryable status, the last response
+    /// is returned; on a timeout or connection failure, the last
+    /// ``OutboundHTTPError`` is thrown. A task cancelled during a backoff
+    /// wait ends with `CancellationError` instead of another attempt.
+    /// Every attempt carries the same headers, trace context included.
     public func send(_ request: OutboundRequest) async throws -> OutboundResponse {
         let host = request.url.host ?? "unknown"
         let tracer = self.tracer ?? InstrumentationSystem.tracer
@@ -274,6 +323,7 @@ public struct OutboundHTTPClient: Sendable {
         }
     }
 
+    /// GETs `url`. Retried as the policy allows.
     public func get(_ url: URL, headers: HTTPFields = HTTPFields()) async throws -> OutboundResponse {
         try await send(OutboundRequest(method: .get, url: url, headers: headers))
     }

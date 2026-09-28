@@ -31,14 +31,25 @@ public enum SessionConfigKey {
 }
 
 /// Loaded, validated settings — read once at composition, so a bad value
-/// fails startup rather than the first request that sets a cookie.
+/// fails startup rather than the first request that sets a cookie. The
+/// session cookie is always `HttpOnly`; nothing here turns that off.
 public struct SessionSettings: Sendable, Equatable {
+    /// The cookie's name before any `__Host-` prefix; see
+    /// ``effectiveCookieName``.
     public var cookieName: String
+    /// Idle timeout, sliding: every save — a write, or a read with less than
+    /// half of it left — pushes the store expiry and the cookie's `Max-Age`
+    /// out to a full `ttl` again. An active session never idles out; bound
+    /// sign-ins with ``authenticatedLifetime``.
     public var ttl: Duration
+    /// The cookie's `Secure` attribute.
     public var cookieSecure: Bool
     public var cookieSameSite: Cookie.SameSite
     public var cookiePath: String
+    /// The cookie's `Domain`; nil scopes it to the request's host only.
     public var cookieDomain: String?
+    /// The bound on `InMemorySessionStore`'s entries; ignored by any other
+    /// store.
     public var memoryMaxEntries: Int
     /// How long a signed-in principal lasts in a session, counted from the
     /// sign-in, however active the session stays. `ttl` is sliding — an

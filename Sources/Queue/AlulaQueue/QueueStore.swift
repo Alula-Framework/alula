@@ -119,9 +119,17 @@ public struct QueueCounts: Sendable, Equatable {
 ///
 /// Times are the application's clock, passed in, so a test can move them and
 /// every implementation agrees on what "now" meant.
+///
+/// A method that cannot reach its backing store throws. The worker treats a
+/// throw from `complete`, `retry` or `discard` as "not recorded": the job
+/// stays `running` until its lease expires, then runs again.
 public protocol QueueStore: Sendable {
+    /// Writes `job` as `available`, or returns ``EnqueueResult/duplicate(_:)``
+    /// with the live job it collides with on `kind` and `uniqueKey`.
     func enqueue(_ job: NewQueuedJob) async throws -> EnqueueResult
 
+    /// Atomically takes up to `limit` due jobs of these `kinds` on `queue`,
+    /// marking each `running` until `leaseUntil` at its next attempt.
     func claim(
         queue: String, kinds: Set<String>, limit: Int, now: Date, leaseUntil: Date
     ) async throws -> [ClaimedJob]
@@ -130,6 +138,7 @@ public protocol QueueStore: Sendable {
     /// attempt no longer matches are skipped: someone else holds them now.
     func extendLeases(_ jobs: [(id: QueuedJobID, attempt: Int)], until: Date) async throws
 
+    /// To `completed`, if still `running` at `attempt`. Returns whether it was.
     @discardableResult
     func complete(_ id: QueuedJobID, attempt: Int, at: Date) async throws -> Bool
 
@@ -141,10 +150,32 @@ public protocol QueueStore: Sendable {
     @discardableResult
     func discard(_ id: QueuedJobID, attempt: Int, at: Date, error: String) async throws -> Bool
 
+    /// Back to `available`, due at `runAt`, *with the attempt given back*:
+    /// the job was stopped at shutdown before it finished, which is not a
+    /// failure of the job, so it must not use up one of its attempts. The
+    /// next claim runs it at the same attempt number, even if that is its
+    /// last. Fenced like ``retry(_:attempt:runAt:error:)``: only if still
+    /// `running` at `attempt`.
+    ///
+    /// The default implementation calls ``retry(_:attempt:runAt:error:)``,
+    /// which keeps the attempt spent — a job handed back on its final
+    /// attempt is then discarded when next claimed. A store should
+    /// implement this by decrementing the attempt in the same write.
+    @discardableResult
+    func handBack(_ id: QueuedJobID, attempt: Int, runAt: Date, error: String) async throws -> Bool
+
     func counts(queue: String) async throws -> QueueCounts
 
     /// Deletes completed jobs finished before `completedBefore` and discarded
     /// ones discarded before `discardedBefore`. Returns how many went.
     @discardableResult
     func prune(completedBefore: Date, discardedBefore: Date) async throws -> Int
+}
+
+extension QueueStore {
+    public func handBack(_ id: QueuedJobID, attempt: Int, runAt: Date, error: String) async throws
+        -> Bool
+    {
+        try await retry(id, attempt: attempt, runAt: runAt, error: error)
+    }
 }

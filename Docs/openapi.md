@@ -97,6 +97,9 @@ application includes `AlulaOpenAPIModule`:
 The document is validated with `openapi-spec-validator` against the demo
 application in alula-cli.
 
+Middleware does not appear in it either: see
+[interactions.md](interactions.md#what-the-openapi-document-cannot-promise).
+
 ## Publishing
 
 In development and test it is served. Anywhere else it needs

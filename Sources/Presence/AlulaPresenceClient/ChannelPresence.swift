@@ -59,6 +59,11 @@ public actor ChannelPresence {
     }
 
     /// Stops consuming and finishes every observer stream.
+    ///
+    /// Does not leave the channel, and does not clear ``list``: it keeps
+    /// the last state seen, which goes stale as messages arriving while
+    /// stopped are not applied. ``start()`` may be called again; the list
+    /// is only trustworthy again after the next `alula:presence_state`.
     public func stop() {
         pump?.cancel()
         pump = nil
@@ -66,7 +71,9 @@ public actor ChannelPresence {
         observers.removeAll()
     }
 
-    /// The current presence list, sorted by key.
+    /// The current presence list, sorted by key: a snapshot of what the
+    /// messages applied so far say. Empty until the first
+    /// presence message is applied, and not cleared by ``stop()``.
     public var list: [PresenceEntry] { sync.list }
 
     /// Every change from now on. Multiple streams may be open; each sees

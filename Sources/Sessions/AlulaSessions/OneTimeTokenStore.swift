@@ -17,8 +17,16 @@ import Synchronization
 /// returned to exactly one caller and is gone for every other, even when two
 /// requests race with the same link. A store that gets and then deletes in two
 /// steps lets one link be redeemed twice.
+///
+/// Both methods throw when the store cannot answer, rather than reading as
+/// absent: `OneTimeTokens` passes the error through, so an outage is not
+/// reported to the user as an invalid link. Whether a `take` that threw
+/// consumed the record is the store's to say — a network store may have
+/// deleted it before the reply was lost — so treat the link as possibly
+/// spent.
 public protocol OneTimeTokenStore: Sendable {
-    /// Stores `record` under `key`, to be dropped once `ttl` has passed.
+    /// Stores `record` under `key`, replacing any record already there, to
+    /// be dropped once `ttl` has passed.
     func put(_ key: String, _ record: Data, ttl: Duration) async throws
 
     /// Removes the record under `key` and returns it, atomically — or nil
@@ -27,8 +35,15 @@ public protocol OneTimeTokenStore: Sendable {
 }
 
 /// A ``OneTimeTokenStore`` in memory: bounded, with lazy expiry. Right for
-/// one replica, development and tests.
+/// one replica, development and tests — not shared across instances, and
+/// lost on restart, so a link issued by one replica cannot be redeemed on
+/// another.
+///
+/// ``take(_:)`` is atomic under one lock. Past ``maxEntries``, expired
+/// records go first and then the soonest to expire: a link evicted that way
+/// simply stops working, with no error to anyone.
 public final class InMemoryOneTimeTokenStore: OneTimeTokenStore, Sendable {
+    /// The bound ``init(maxEntries:now:)`` uses when given none.
     public static let defaultMaxEntries = 100_000
 
     private struct Entry {
@@ -82,5 +97,7 @@ public final class InMemoryOneTimeTokenStore: OneTimeTokenStore, Sendable {
         }
     }
 
+    /// Records held, expired ones included until taken or swept —
+    /// introspection for tests.
     public var count: Int { entries.withLock { $0.count } }
 }

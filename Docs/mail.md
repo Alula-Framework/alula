@@ -14,7 +14,7 @@ request never waits on a mail server.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.57.0", traits: ["Web", "SMTP"]),
+         from: "0.59.0", traits: ["Web", "SMTP"]),
 ```
 
 ```swift
@@ -93,7 +93,7 @@ struct AppModule: AlulaModule {
 |---|---|
 | The message is malformed (no recipient, a line break in the subject) | `sendLater` throws at once |
 | The server refused the sender, a recipient or the message (5xx) | The job is discarded: kept as a dead letter with the reply |
-| Anything else: 4xx, timeouts, lost connections, bad credentials, TLS | Retried with backoff for about a day |
+| Anything else: 4xx, timeouts, lost connections, bad credentials, TLS | Retried with backoff for about twelve hours |
 
 Bad credentials count as transient on purpose. Fixing the configuration then
 delivers the mail that queued up in the meantime, rather than finding it all
@@ -110,7 +110,9 @@ discarded.
 - **STARTTLS or nothing.** `security: starttls` refuses a server that does
   not offer STARTTLS, and never falls back to plaintext. Credentials over
   `security: none` are a configuration error unless
-  `mail.smtp.allow-plaintext-auth: true`.
+  `mail.smtp.allow-plaintext-auth: true`, and settings built in code are
+  held to the same rule when the connection opens: without
+  `allowPlaintextAuth`, no credentials are sent and the send fails.
 - **No transport, no start.** Outside `dev` and `test`, `AlulaMailModule`
   without a transport fails composition. `mail.transport: log` logs mail on
   purpose, for a staging environment with no server.

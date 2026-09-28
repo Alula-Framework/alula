@@ -29,7 +29,7 @@ JWKS fetching/rotation, claim policy, and error hygiene.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.57.0", traits: ["Security"]),
+        from: "0.59.0", traits: ["Security"]),
 ],
 targets: [
     .executableTarget(
@@ -575,7 +575,9 @@ from, not a Swift reimplementation — the same posture as delegating JWT
 verification to JWTKit. Vendored into Alula's own tree rather than an
 external package dependency (`Sources/Security/CArgon2`, six files, copied
 verbatim); `needsRehash` says when a stored hash was made under
-weaker parameters than the app is configured with now, so raising the cost
+parameters other than the ones the app is configured with now — any
+difference in memory, iterations or parallelism, a lowered cost included,
+or a string it cannot parse — so raising the cost
 over time upgrades each account the next time its owner signs in rather
 than needing a migration that touches every row at once:
 

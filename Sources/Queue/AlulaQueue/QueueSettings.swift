@@ -18,11 +18,16 @@ import Foundation
 ///     only: mail, reports        # run just these queues here
 /// ```
 public struct QueueSettings: Sendable, Equatable {
+    /// Jobs one process runs at once on each queue, unless the queue has its
+    /// own in `perQueueConcurrency`.
     public var concurrency: Int
     public var perQueueConcurrency: [String: Int]
     public var pollInterval: Duration
     /// Renewed every third of itself while a job runs, so it bounds how long
-    /// a crashed worker's jobs wait, not how long a job may take.
+    /// a crashed worker's jobs wait, not how long a job may take. A worker that
+    /// cannot renew — its store unreachable for longer than this — keeps
+    /// running the job, and another worker may claim and run it too; only the
+    /// newer attempt's result is recorded.
     public var lease: Duration
     public var retainCompleted: Duration
     public var retainDiscarded: Duration

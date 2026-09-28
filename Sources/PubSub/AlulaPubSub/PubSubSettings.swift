@@ -12,9 +12,11 @@ import AlulaCore
 public enum PubSubBufferingPolicy: Sendable, Equatable, ConfigDecodable {
     /// BEAM-mailbox behavior: nothing is dropped, memory is the only limit.
     case unbounded
-    /// A memory ceiling; when full, the oldest pending message is dropped.
+    /// A memory ceiling; when full, the arriving message is dropped and the
+    /// oldest pending ones are kept.
     case bufferingOldest(Int)
-    /// A memory ceiling; when full, the newest message is dropped.
+    /// A memory ceiling; when full, the oldest pending message is evicted to
+    /// make room for the arriving one.
     case bufferingNewest(Int)
 
     public init?(configValue: String) {
@@ -50,6 +52,8 @@ public enum PubSubBufferingPolicy: Sendable, Equatable, ConfigDecodable {
 /// to mean "not configured, use the default" *and* "configured to wait
 /// indefinitely".
 public enum PubSubBroadcastTimeout: Sendable, Equatable, ConfigDecodable {
+    /// Give up on the remote hop after this long; the message is then not
+    /// delivered to other nodes. Five seconds when unset.
     case after(Duration)
     /// Wait for the adapter however long it takes. Local delivery has already
     /// happened; this only governs the remote hop.

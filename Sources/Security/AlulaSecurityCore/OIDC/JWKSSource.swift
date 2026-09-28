@@ -11,6 +11,14 @@ import Synchronization
 public protocol JWKSSource: Sendable {
     /// Fetches the current key set. Called by the cache on TTL expiry, on an
     /// unrecognized `kid`, and by the background maintenance service.
+    ///
+    /// Calls are single-flight, and those driven by requests are
+    /// cooldown-gated (`jwksRefreshCooldown`), so a stream of tokens cannot
+    /// make an implementation hammer the IdP. A throw is not
+    /// immediately fatal: the previously fetched set keeps verifying tokens
+    /// until it is `jwksMaxStaleAge` old, after which — or at once, when
+    /// nothing was ever fetched — validation fails closed with
+    /// ``TokenValidationError`` of kind `keySourceUnavailable`.
     func fetchKeys() async throws -> JWKS
 }
 

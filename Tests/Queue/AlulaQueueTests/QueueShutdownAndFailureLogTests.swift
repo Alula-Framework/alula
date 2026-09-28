@@ -106,6 +106,42 @@ struct QueueShutdownAndFailureLogTests {
             "back in the queue now, not running under a ten-minute lease, and not discarded")
     }
 
+    @Test("a job handed back on its last attempt runs again instead of being discarded")
+    func handedBackOnLastAttemptRunsAgain() async throws {
+        let store = InMemoryQueueStore()
+        let queue = JobQueue(store: store)
+        let started = AsyncStream<Void>.makeStream()
+        let service = try #require(
+            try AlulaQueueWorkerModule(
+                configuration: Configuration(values: ["queue.lease-seconds": "600"]), queue: queue,
+                handlers: [
+                    .handle(Greet.self, timeout: nil) { _, _ in
+                        started.continuation.yield()
+                        try await Task.sleep(for: .seconds(30))
+                    }
+                ]
+            ).service)
+        let shutdown = ShutdownDeadline(timeout: .seconds(1))
+        let group = ServiceGroup(
+            configuration: .init(services: [service], logger: Logger(label: "test")))
+        let running = Task {
+            try await ShutdownDeadline.$current.withValue(shutdown) { try await group.run() }
+        }
+        try await queue.enqueue(Greet(name: "only-once"), options: EnqueueOptions(maxAttempts: 1))
+        var iterator = started.stream.makeAsyncIterator()
+        _ = await iterator.next()
+
+        shutdown.begin(at: .now)
+        await group.triggerGracefulShutdown()
+        try await running.value
+
+        #expect(try await store.counts(queue: "default") == QueueCounts(available: 1))
+        let next = try await store.claim(
+            queue: "default", kinds: ["Greet"], limit: 1, now: .distantFuture,
+            leaseUntil: .distantFuture)
+        #expect(next.map(\.attempt) == [1], "its one attempt was given back, not spent")
+    }
+
     @Test("with no deadline, shutdown still waits for running jobs")
     func noDeadlineWaits() async throws {
         let store = InMemoryQueueStore()

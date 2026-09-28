@@ -186,8 +186,8 @@ wrong. It does all of the following:
   rehashed under NFC the moment it matches. Accounts upgrade themselves as
   they sign in, and nobody is locked out. Unknown accounts get the same
   second check, so the extra work can't reveal which accounts exist.
-- **Strengthens hashes over time.** A hash made under weaker parameters is
-  replaced after a successful sign-in, the only moment the plaintext is
+- **Strengthens hashes over time.** A hash made under parameters other than the
+  configured ones — usually weaker, but any difference counts — is replaced after a successful sign-in, the only moment the plaintext is
   available.
 - **Fails closed.** If the credential store or the throttle is down,
   sign-in answers `503`. It doesn't let everyone in, and it doesn't

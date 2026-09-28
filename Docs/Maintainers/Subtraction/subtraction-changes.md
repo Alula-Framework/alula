@@ -196,3 +196,25 @@ ten modules, what each gives a test, and the trait each needs, with a note on
 when to list one module directly. New sections cover rate limiting, Queue and
 Mail, the Scheduler, outbound HTTP and APNs, which the page had not
 mentioned. The existing sections are kept.
+
+### `// alula:module-registered` (R18)
+
+The directive is gone from the generator, and so is the manifest's
+`Component.isModuleRegistered` field.
+
+- **Why it existed:** `Authentication` and `RequireAuthentication` were
+  `@Middleware` for the generated `init`, which made them components in every
+  application that links AlulaSecurityCore. `Authentication` needs an
+  `any TokenValidator` only a security module provides, so composing it
+  failed without one. The directive kept both out of the graph.
+- **Capability:** kept, in Swift. Both are plain `Middleware` conformers with
+  hand-written initializers, and `AlulaSecurityModule` builds them as before.
+  A type with no registrable macro is never scanned, so it is neither a graph
+  node nor a bridge conformer. Public API: `Authentication(validator:
+  authenticatedLifetime:now:)` and `RequireAuthentication()` are unchanged;
+  the macro's `init(validator:)` is covered by the defaulted parameters.
+- **Consumers:** none outside alula carried the comment, and alula-cli does
+  not read `isModuleRegistered`. A leftover comment is now inert, and a test
+  pins that.
+- **Docs:** `Docs/core.md`'s "Types their own module registers" is now
+  "Types their own module builds", showing the plain-conformer pattern.

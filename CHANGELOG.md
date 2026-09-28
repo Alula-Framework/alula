@@ -92,6 +92,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.product(name: "AlulaChannelsProtocol", package: "alula")` from your
   manifest, and `import AlulaChannels` or `import AlulaChannelsClient` where
   you imported `AlulaChannelsProtocol`.
+- **The `// alula:module-registered` directive.** It kept a registrable type
+  out of every application's graph, and its only users were `Authentication`
+  and `RequireAuthentication`. Those are now plain `Middleware` conformers
+  with hand-written initializers, which `AlulaSecurityModule` builds as
+  before; `Authentication(validator:authenticatedLifetime:now:)` and
+  `RequireAuthentication()` are unchanged, and `Authentication(validator:)`
+  still compiles. The generated manifest's `Component.isModuleRegistered`
+  field is gone with it. **Migration:** a type of your own that carried the
+  comment drops its registrable macro (`@Service`, `@Middleware`, …), gets an
+  `init`, and is constructed by the module that decides whether it exists;
+  the comment is now an ordinary comment and can be deleted.
 
 ### Changed
 

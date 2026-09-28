@@ -212,52 +212,46 @@ struct GeneratorTests {
                 """)
     }
 
-    // MARK: - Module-registered types (registration gating)
+    // MARK: - Module-built types (no directive)
 
-    @Test("a `alula:module-registered` type is scanned but not registered")
-    func moduleRegisteredTypeIsNotEmitted() throws {
+    /// `// alula:module-registered` used to exclude a registrable type from
+    /// the graph. Its two users, `Authentication` and `RequireAuthentication`,
+    /// are now plain `Middleware` conformers their module constructs — so the
+    /// comment is an ordinary comment, and a type carrying one is a
+    /// component like any other.
+    @Test("a `// alula:module-registered` comment no longer excludes a component")
+    func moduleRegisteredCommentIsInert() throws {
         let result = try generate([
             "Sources.swift": """
             import AlulaCore
-            @Service final class Ordinary: Sendable { init() {} }
-            // alula:module-registered — its own module registers it.
-            @Service final class Gated: Sendable { init() {} }
+            // alula:module-registered — once a directive, now a comment.
+            @Service final class Formerly: Sendable { init() {} }
             """
         ])
         #expect(result.exitCode == 0)
-        // Ordinary is a graph node — the graph builds it.
-        #expect(result.generated.contains("let ordinary: Ordinary"))
-        #expect(
-            !result.generated.contains("let gated: Gated"),
-            "a module-registered type is not a graph node — its own module builds it")
-        // Named rather than silently dropped: the scanned manifest still
-        // carries it, flagged, so "why is my type not built here" is
-        // answerable by reading the generated file.
-        #expect(result.generated.contains("Gated"))
-        #expect(result.generated.contains("isModuleRegistered: true"))
+        #expect(result.generated.contains("let formerly: Formerly"))
+        #expect(!result.generated.contains("isModuleRegistered"))
     }
 
-    /// The hazard the marker exists for, in miniature: composition builds every
-    /// singleton eagerly, so building a type whose dependency only a module
-    /// provides breaks any app that merely links the package. A bridge to it
-    /// would assert the same thing, so it must not be generated either.
-    @Test("a module-registered type is not used as an existential bridge conformer")
-    func moduleRegisteredTypeIsNotBridged() throws {
+    /// The replacement, in miniature: a type a module builds by hand has no
+    /// registrable macro, so the scan never sees it — not as a graph node, and
+    /// not as a bridge conformer for a protocol it happens to satisfy.
+    @Test("a plain conformer a module builds is neither a node nor a bridge")
+    func moduleBuiltConformerIsNotScanned() throws {
         let result = try generate([
             "Sources.swift": """
-            import AlulaCore
+            import AlulaWeb
             protocol Validator {}
-            // alula:module-registered
-            @Service struct GatedValidator: Validator {}
-            @Service final class Consumer: Sendable {
-                @Inject var validator: (any Validator)
+            public struct Authentication: Middleware, Validator, Sendable {
+                let validator: any Validator
+                public init(validator: any Validator) { self.validator = validator }
             }
+            @Service struct Other: Sendable {}
             """
         ])
         #expect(result.exitCode == 0)
-        #expect(
-            !result.generated.contains("container.register((any Validator).self"),
-            "bridging to a conditionally-present type reintroduces the freeze failure")
+        #expect(result.generated.contains("let other: Other"))
+        #expect(!result.generated.contains("Authentication"))
     }
 
     @Test("registration order is deterministic across runs")
@@ -756,23 +750,6 @@ struct GeneratorTests {
         // this test stayed green. Don't "restore" the old spelling.
         #expect(
             result.generated.contains("try (pager ?? Pager(_alulaConfiguration: configuration))"))
-    }
-
-    @Test("a module-registered component is left out of the graph")
-    func moduleRegisteredIsExcluded() throws {
-        // Same reason the composition root leaves it out: whether it exists in
-        // an application is a runtime question its own module answers.
-        let result = try generate([
-            "Sources.swift": """
-            import AlulaWeb
-            // alula:module-registered
-            @Middleware struct Authentication: Sendable {}
-            @Service struct Other: Sendable {}
-            """
-        ])
-        #expect(result.exitCode == 0)
-        #expect(result.generated.contains("let other: Other"))
-        #expect(!result.generated.contains("let authentication: Authentication"))
     }
 
     @Test("a hand-registered dependency becomes a required graph input, not a container resolve")
@@ -2475,8 +2452,8 @@ struct GeneratorTests {
         #expect(
             String(result.generated[start..<end]) == """
                     public static let components: [Component] = [
-                        Component(typeName: "UserController", stereotype: "controller", dependencies: ["UserRepository"], isModuleRegistered: false, module: "AppModule"),
-                        Component(typeName: "UserRepository", stereotype: "repository", dependencies: [], isModuleRegistered: false, module: "AppModule"),
+                        Component(typeName: "UserController", stereotype: "controller", dependencies: ["UserRepository"], module: "AppModule"),
+                        Component(typeName: "UserRepository", stereotype: "repository", dependencies: [], module: "AppModule"),
                     ]
                 """)
     }
@@ -2505,26 +2482,6 @@ struct GeneratorTests {
         // `@Service` is unavailable (renamed to `@Service`): the compiler
         // rejects it with a fix-it, so the scan does not pick it up.
         #expect(!result.generated.contains(#"typeName: "E""#))
-    }
-
-    @Test("a module-registered component is listed, and flagged")
-    func moduleRegisteredComponentIsFlagged() throws {
-        // It is not built by the composition root — that is what the marker means —
-        // but it is still part of the graph, and a composition function has
-        // to know it exists to order anything that depends on it.
-        let result = try generate([
-            "Sources.swift": """
-            import AlulaWeb
-            // alula:module-registered
-            @Middleware struct Authentication: Sendable {}
-            """
-        ])
-        #expect(result.exitCode == 0)
-        #expect(!result.generated.contains("try Authentication._alulaRegister"))
-        #expect(
-            result.generated.contains(
-                #"typeName: "Authentication", stereotype: "middleware", dependencies: [], isModuleRegistered: true"#
-            ))
     }
 
     @Test("a type-level qualifier: is a build error naming the migration")

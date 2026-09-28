@@ -105,17 +105,6 @@ struct ScannedComponent {
 
     /// As `injectPropertyNames`, for the acknowledged edges.
     let acknowledgedPropertyNames: [String]
-    /// Carries a `alula:module-registered` marker: the type is registrable
-    /// (it has the macro) but its *existence in an application* is a runtime
-    /// question its own module answers — so the composition root must not
-    /// build it.
-    ///
-    /// Without this the scan registers every annotated type in every app that
-    /// merely links the package. `Authentication` is the worked example: it
-    /// injects `(any TokenValidator)`, which only a security module provides,
-    /// and composition eagerly builds every singleton — so an app that linked
-    /// AlulaSecurityCore without including a security module failed to boot.
-    let isModuleRegistered: Bool
     let configValues: [ScannedConfigValue]
     let file: String
     let line: Int
@@ -221,9 +210,7 @@ struct ScannedPipelineLane {
     ///
     /// Nearly always a `AlulaModule`, and that is the point: the call runs
     /// only if the application includes that module, so a lane the scan sees
-    /// is not necessarily a lane the composed application gets. The same
-    /// conditional-inclusion fact `alula:module-registered` exists to record
-    /// for components.
+    /// is not necessarily a lane the composed application gets.
     let declaredIn: String?
     let module: String
     let file: String
@@ -707,7 +694,7 @@ final class ComponentVisitor: SyntaxVisitor {
             name: node.name.text, attributes: node.attributes,
             modifiers: node.modifiers, members: node.memberBlock,
             inheritanceClause: node.inheritanceClause, position: node.position,
-            leadingTrivia: node.leadingTrivia.description, nameToken: node.name,
+            nameToken: node.name,
             isClass: true)
         return .skipChildren
     }
@@ -717,7 +704,7 @@ final class ComponentVisitor: SyntaxVisitor {
             name: node.name.text, attributes: node.attributes,
             modifiers: node.modifiers, members: node.memberBlock,
             inheritanceClause: node.inheritanceClause, position: node.position,
-            leadingTrivia: node.leadingTrivia.description, nameToken: node.name)
+            nameToken: node.name)
         return .skipChildren
     }
 
@@ -785,7 +772,6 @@ final class ComponentVisitor: SyntaxVisitor {
         members: MemberBlockSyntax,
         inheritanceClause: InheritanceClauseSyntax?,
         position: AbsolutePosition,
-        leadingTrivia: String,
         nameToken: TokenSyntax? = nil,
         isClass: Bool = false
     ) {
@@ -922,7 +908,6 @@ final class ComponentVisitor: SyntaxVisitor {
                 acknowledgedTypeNames: acknowledged,
                 dependencyOrder: dependencyOrder,
                 acknowledgedPropertyNames: acknowledgedNames,
-            isModuleRegistered: leadingTrivia.contains("alula:module-registered"),
                 configValues: configValues,
                 file: file,
                 line: location.line,
@@ -1440,13 +1425,8 @@ func synthesizeBridges() -> [SynthesizedBridge] {
     for base in demands.keys.sorted() {
         guard !suppressed.contains(base) else { continue }
         let demand = demands[base]!
-        // Module-registered types are not bridge candidates: a bridge
-        // resolving one asserts it exists, and whether it exists is exactly
-        // the runtime question its module answers. Bridging to it would
-        // reintroduce the eager-construction failure the marker exists to prevent.
         let conformers = components.filter { component in
-            !component.isModuleRegistered
-                && component.conformanceNames.contains { baseName($0) == base }
+            component.conformanceNames.contains { baseName($0) == base }
         }
         switch conformers.count {
         case 0:
@@ -1761,9 +1741,7 @@ diagnoseUndeclaredLanes()
 /// The composition root includes the same set at bootstrap; this is that walk
 /// over the scanned edges, against roots read from the `modules:` argument in
 /// the application's own source. It is what makes "does this subsystem exist in
-/// this app" a build-time question instead of a runtime one — the assumption
-/// behind
-/// `alula:module-registered`, and the thing D11 removes the need for.
+/// this app" a build-time question instead of a runtime one (D11).
 ///
 /// Empty when the target names no bootstrap list, which is the ordinary case
 /// for a library: it includes nothing because it starts nothing.
@@ -2233,16 +2211,14 @@ func escaped(_ text: String) -> String {
 let sorted = components.sorted {
     ($0.module, $0.typeName) < ($1.module, $1.typeName)
 }
-// Registrable, but registered by their own module rather than by this scan:
-// their presence in an app is a runtime question (a configuration gate, an
-// optional subsystem) that no build-time scan can answer. Kept in `sorted`
-// for validation and conformance analysis; excluded from the emitted calls.
-let (moduleRegistered, autoRegistered) = (
-    sorted.filter(\.isModuleRegistered), sorted.filter { !$0.isModuleRegistered }
-)
 let dependencyModules = Set(sorted.map(\.module)).subtracting([manifest.targetModuleName]).sorted()
 
-let graphRegistrable = components.filter { !$0.isModuleRegistered }
+// A framework type whose existence depends on a module being included —
+// `Authentication`, which needs the `any TokenValidator` only a security
+// module provides — is not a registrable component at all: it is a plain
+// conformer its module constructs. So every scanned component is a graph
+// candidate, and there is no directive to exclude one.
+let graphRegistrable = components
 // A controller is constructed per request by its route terminal, not
 // held for the process (DECISIONS.md D24) — so it is not
 // a graph node. Unless something else injects it, in which case the
@@ -2290,8 +2266,7 @@ let graphBindings: [String: String] = Dictionary(
 var out = """
     // AUTO-GENERATED by alula-registration-gen — do not edit.
     // Target: \(manifest.targetModuleName)
-    // Components: \(autoRegistered.count), existential bridges: \(bridges.count)
-    // Module-registered (not registered here): \(moduleRegistered.count)
+    // Components: \(sorted.count), existential bridges: \(bridges.count)
 
     import AlulaCore
 
@@ -2373,9 +2348,6 @@ var emittedComponentDescriptors = false
 // configuration sites.
 @MainActor
 func emitAlulaGraph(into out: inout String) {
-    // Module-registered types are excluded for the same reason the component
-    // list excludes them: whether they exist in an application is a runtime
-    // question their own module answers.
     guard !graphRegistrable.isEmpty else { return }
     let registrable = graphRegistrable
     let nodes = graphNodes
@@ -3637,10 +3609,6 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
     out += "        /// `@Inject` types, in declaration order — the edges a\n"
     out += "        /// composition function orders construction by.\n"
     out += "        public let dependencies: [String]\n"
-    out += "        /// Provided by its own module rather than built by the\n"
-    out += "        /// composition root, because whether it exists in an\n"
-    out += "        /// application is a runtime question.\n"
-    out += "        public let isModuleRegistered: Bool\n"
     out += "        public let module: String\n"
     out += "    }\n"
     out += "\n"
@@ -3658,7 +3626,6 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
         out += "typeName: \"\(escaped(qualified))\", "
         out += "stereotype: \"\(stereotype(forAttribute: component.attributeName))\", "
         out += "dependencies: [\(dependencies)], "
-        out += "isModuleRegistered: \(component.isModuleRegistered), "
         out += "module: \"\(escaped(component.module))\"),\n"
     }
     out += "    ]\n"

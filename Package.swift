@@ -135,6 +135,11 @@ let package = Package(
         // Not gated on Web: a worker sending pushes needs no HTTP server.
         .library(name: "AlulaAPNS", targets: ["AlulaAPNS"]),
         .library(name: "AlulaAPNSTesting", targets: ["AlulaAPNSTesting"]),
+
+        // MARK: Testing
+        // One import for every testing module the enabled traits allow. The
+        // individual `*Testing` products above stay for lean builds.
+        .library(name: "AlulaTesting", targets: ["AlulaTesting"]),
     ],
     traits: [
         // Opt-in: a consumer names what it wants, and resolves nothing else.
@@ -779,7 +784,32 @@ let package = Package(
             path: "Sources/Push/AlulaAPNSTesting"
         ),
 
+        // MARK: Testing umbrella
+
+        // Re-exports every testing module. Each dependency is gated on the
+        // trait its module needs, matching the `#if` around its re-export, so
+        // a `traits: []` consumer resolves nothing from Web, HTTPClient or
+        // APNS through this.
+        .target(
+            name: "AlulaTesting",
+            dependencies: [
+                "AlulaMailTesting", "AlulaPubSubTesting", "AlulaQueueTesting",
+                "AlulaRateLimitTesting", "AlulaSchedulerTesting", "AlulaSessionsTesting",
+                .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaChannelsTesting", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaHTTPClientTesting", condition: .when(traits: ["HTTPClient"])),
+                .target(name: "AlulaAPNSTesting", condition: .when(traits: ["APNS"])),
+            ],
+            path: "Sources/Testing/AlulaTesting"
+        ),
+
         // MARK: Tests
+
+        .testTarget(
+            name: "AlulaTestingTests",
+            dependencies: ["AlulaTesting"],
+            path: "Tests/Testing/AlulaTestingTests"
+        ),
 
         .testTarget(
             name: "AlulaOpenAPITests",

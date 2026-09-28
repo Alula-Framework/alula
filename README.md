@@ -38,7 +38,7 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
 | `AlulaChannelsTransport` | A WebSocket for `AlulaChannelsClient`, with the handshake headers a server needs — a session cookie, a bearer token. Requires the `Web` trait. |
-| `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
+| `AlulaTesting` | Test support behind one import: re-exports every `*Testing` module the enabled traits allow — Web, Channels, Sessions, rate limiting, Queue, Mail, PubSub, the Scheduler, the HTTP client and APNs. In-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Each `*Testing` module is also its own product. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
 Per-product documentation lives in [Docs/](Docs/README.md), indexed by concept
 rather than by target, and

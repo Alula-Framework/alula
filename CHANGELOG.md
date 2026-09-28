@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`AlulaTesting`: every testing module behind one import.** List
+  `.product(name: "AlulaTesting", package: "alula")` in a test target and
+  `import AlulaTesting` to get `TestClient`, `RecordingSessionStore`,
+  `QueueTestHarness`, `RecordingMailTransport` and the rest. Each module is
+  re-exported only when the trait it needs is on (`Web` for Web and Channels
+  testing, `HTTPClient`, `APNS`), and its dependency is gated the same way,
+  so a `traits: []` package resolves nothing extra through it. The individual
+  `*Testing` products stay for builds that want only one. `Docs/testing.md`
+  now opens its module section with it, and covers the Queue, Mail, rate
+  limiting, Scheduler, HTTP client and APNs testing modules it did not
+  mention.
+
 ### Fixed
 
 - **`web.request-timeout-seconds: inf` is a configuration error, not a crash

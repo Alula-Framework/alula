@@ -168,3 +168,23 @@ list `AlulaCore` next to `AlulaWeb`.
   does exactly that. Pages whose snippet lists `AlulaCore` without `AlulaWeb`
   (scheduler, pubsub, apns, core) are unchanged.
 - **Templates:** they live in alula-cli and are changed there.
+
+### `AlulaTesting` umbrella (R26)
+
+A new `AlulaTesting` product and target (`Sources/Testing/AlulaTesting`),
+whose one file `@_exported import`s the testing modules.
+
+- **Capability:** nothing removed. All ten `*Testing` products stay for lean
+  or single-seam builds; the umbrella is only compiled when a package lists
+  it.
+- **Gating:** Mail, PubSub, Queue, RateLimit, Scheduler and Sessions testing
+  are re-exported unconditionally. Web and Channels testing sit behind
+  `#if Web`, HTTPClient testing behind `#if HTTPClient`, APNS testing behind
+  `#if APNS`. Each matching dependency has the same `.when(traits:)`
+  condition. A scratch `traits: []` consumer listing `AlulaTesting` built,
+  ran its test, and resolved the same 7 packages as the lean consumer.
+- **Coverage:** `AlulaTestingTests` imports only `AlulaTesting` and touches a
+  type from every re-exported module, so CI compiles the umbrella. A one-page
+  DocC catalog is in the docs job's target list.
+- **alula-data's** testing modules are not included: they are another
+  package's.

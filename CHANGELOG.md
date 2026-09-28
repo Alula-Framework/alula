@@ -22,6 +22,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The composer considers only initializers it can call.** It collected
+  every initializer a module declared, `private` ones included, and asked the
+  graph for their parameters. `ActuatorModule`'s new private designated
+  initializer takes a `Bool`, which `AlulaTelemetryModule` provides twice, so
+  every application failed with ALU-DI-1002 before this release shipped. A
+  module from another package now contributes only its `public`
+  initializers; one in the application's own target, its non-private ones.
 - **An undeclared environment no longer logs mail instead of sending it.**
   With no mail transport, `AlulaMailModule` fell back to logging mail —
   bodies, and so reset links, included — whenever the environment resolved

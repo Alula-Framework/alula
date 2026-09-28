@@ -1186,6 +1186,47 @@ struct GeneratorTests {
         #expect(result.generated.components(separatedBy: "import Stack\n").count == 2, "once")
     }
 
+    @Test("a dependency module's private and internal initializers are not composition candidates")
+    func uncallableInitializersIgnored() throws {
+        // ActuatorModule gained a private designated init taking a `Bool`,
+        // and the composer asked the graph for one: two telemetry properties
+        // provide `Bool`, so every application failed with ALU-DI-1002. The
+        // composition root lives in the application; it can call only public
+        // initializers of a module from another package.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import AlulaCore
+                import Kit
+                @main struct Main {
+                static func main() async {
+                await Alula.run(configuration: Configuration.load(), modules: [KitModule.self, FlagsModule.self])
+                }
+                }
+                """
+            ],
+            dependencyModules: [
+                "Kit": [
+                    "Kit.swift": """
+                    import AlulaCore
+                    public struct FlagsModule: AlulaModule {
+                    public let metricsEnabled: Bool
+                    public let tracingEnabled: Bool
+                    public init() { metricsEnabled = true; tracingEnabled = true }
+                    }
+                    public struct KitModule: AlulaModule {
+                    public init() { self.init(declared: true) }
+                    init(internalOnly: Bool) { self.init(declared: internalOnly) }
+                    private init(declared: Bool) {}
+                    }
+                    """
+                ]
+            ])
+        #expect(result.exitCode == 0, "\(result.diagnostics)")
+        #expect(!result.diagnostics.contains("[ALU-DI-1002]"), "\(result.diagnostics)")
+        #expect(result.generated.contains("KitModule()"), "\(result.generated)")
+    }
+
     @Test("a module's property is wired into another module's parameter")
     func composerWiresProvidedProperties() throws {
         // The adapter shape: the provider declares no dependency on the

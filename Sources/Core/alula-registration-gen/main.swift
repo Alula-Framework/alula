@@ -301,7 +301,34 @@ final class ModuleVisitor: SyntaxVisitor {
     var configPrefix: (text: String?, file: String, line: Int)?
     private var typeStack: [String] = []
 
-    init(module: String, file: String, tree: SourceFileSyntax) {
+    /// Whether the generated composition root, which lives in the
+    /// application's target, can call an initializer with these modifiers.
+    /// `private` and `fileprivate` never; `internal` (no modifier) only on a
+    /// module declared in that target. Counting an uncallable initializer
+    /// made the composer ask the graph for its parameters: ActuatorModule's
+    /// private designated init took a `Bool`, which two telemetry properties
+    /// provide, and every application failed with ALU-DI-1002.
+    private func isCallableFromCompositionRoot(_ modifiers: DeclModifierListSyntax) -> Bool {
+        let kinds = modifiers.map(\.name.tokenKind)
+        if kinds.contains(.keyword(.private)) || kinds.contains(.keyword(.fileprivate)) {
+            return false
+        }
+        if kinds.contains(.keyword(.public)) || kinds.contains(.keyword(.open)) {
+            return true
+        }
+        // `internal` or `package`: treated as callable only from the same
+        // module. A `package` init is also reachable from a sibling target
+        // of the same package; if an application ever relies on that, this
+        // is the line to widen.
+        return isApplicationModule
+    }
+
+    /// Whether this is the application target the composition root is
+    /// generated into.
+    let isApplicationModule: Bool
+
+    init(module: String, file: String, tree: SourceFileSyntax, isApplicationModule: Bool) {
+        self.isApplicationModule = isApplicationModule
         self.module = module
         self.file = file
         self.converter = SourceLocationConverter(fileName: file, tree: tree)
@@ -399,7 +426,9 @@ final class ModuleVisitor: SyntaxVisitor {
         // components declares what it needs instead.
         var initializers: [(labels: [String], types: [String], defaulted: [Bool], throws: Bool)] = []
         for member in members.members {
-            guard let initializer = member.decl.as(InitializerDeclSyntax.self) else { continue }
+            guard let initializer = member.decl.as(InitializerDeclSyntax.self),
+                  isCallableFromCompositionRoot(initializer.modifiers)
+            else { continue }
             let parameters = initializer.signature.parameterClause.parameters
             initializers.append(
                 (
@@ -1101,7 +1130,9 @@ for module in manifest.modules {
         if source.contains(".lane") || source.contains("AlulaModule")
             || source.contains("Configuration.load")
         {
-            let moduleScan = ModuleVisitor(module: module.name, file: file, tree: tree)
+            let moduleScan = ModuleVisitor(
+                module: module.name, file: file, tree: tree,
+                isApplicationModule: module.name == manifest.targetModuleName)
             moduleScan.walk(tree)
             lanes.append(contentsOf: moduleScan.lanes)
             moduleGraph.append(contentsOf: moduleScan.modules)

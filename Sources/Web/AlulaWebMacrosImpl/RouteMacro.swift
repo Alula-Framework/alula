@@ -33,8 +33,8 @@ public struct RouteMacro: PeerMacro {
         // not exist, and the first anyone knows is a 404 that no diagnostic
         // ever hinted at.
         //
-        // That is precisely the failure class GAPS.md's "@Scheduler shipped
-        // inert, and every check passed" postmortem describes. It is covered:
+        // That is precisely the failure class of `@Scheduler` shipping inert
+        // while every check passed (CHANGELOG.md, 0.2.1). It is covered:
         // `ControllerMacroFixtureTests.mappingOutsideControllerIsDiagnosed`
         // asserts both halves — the attribute stripped with no route emitted,
         // *and* this diagnostic raised. That fixture was itself deleted for

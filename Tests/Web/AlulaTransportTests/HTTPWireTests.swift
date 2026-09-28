@@ -341,7 +341,7 @@ struct IdleTimeoutTests {
 
     @Test("a half-sent request is closed rather than held")
     func halfSentRequestIsClosed() async throws {
-        // The slowloris shape, and the gap GAPS.md recorded: a client that
+        // The slowloris shape, and the gap closed in 0.11.0: a client that
         // sends a request head and stops held a connection until the OS gave
         // up, roughly four minutes, with nothing bounding it.
         try await withRunningServer(idleTimeout: .seconds(1)) { port in

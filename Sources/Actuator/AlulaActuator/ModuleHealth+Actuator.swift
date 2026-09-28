@@ -84,7 +84,7 @@ extension Stereotype {
     /// entirely, present only in `alulaComponentDescriptors()`. Caught by
     /// booting Aluladeck and looking for "Settings" on its own actuator
     /// page rather than by any test, which is exactly the class of gap this
-    /// project's own `GAPS.md` describes: a suite can pass entirely above
+    /// project's `@Scheduler` fix in 0.2.1 describes: a suite can pass entirely above
     /// the layer that's broken.
     static var actuatorSectionOrder: [Stereotype] {
         [.controller, .middleware, .service, .repository, .settings, .component]

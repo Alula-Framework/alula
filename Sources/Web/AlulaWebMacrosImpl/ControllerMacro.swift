@@ -161,7 +161,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
     /// The whole registration lives here — path, kind, lanes, body mode, body
     /// decoding, return encoding, upgrade shaping — parameterised by *how* the
     /// controller is obtained and by nothing else. That parameter is the seam
-    /// COMPOSITION-MIGRATION.md §2.1a needs: `alulaRoutes` passes a closure
+    /// per-request construction needs (DECISIONS.md D24): `alulaRoutes` passes a closure
     /// that constructs the controller per request from a `AlulaGraph`, so a
     /// per-request controller stays per request and nothing else has to move —
     /// in particular the handler thunk stays in

@@ -34,11 +34,10 @@ import TelemetryCore
 // as an app component of its own.
 @Middleware
 public struct Authentication: Sendable, SessionReading {
-    // Parenthesized: the macro's generated `init(_alula:)` resolves this by
-    // appending `.self` to the type text, and `any TokenValidator.self`
-    // (unparenthesized) parses as a lookup for a nested type named `self`
-    // inside the TokenValidator protocol, not as that existential's
-    // metatype.
+    // The parentheses are historical and harmless: the container-era
+    // `init(_alula:)` needed them, and it is gone. The macros parenthesize an
+    // `any` type themselves where `.self` would otherwise bind wrongly, and
+    // composition ignores parentheses when it matches a provider's type.
     // alula:hand-registered — the validator is registered by
     // AlulaSecurityModule (or the application's own module), never scanned.
     @Inject var validator: (any TokenValidator)

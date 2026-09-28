@@ -39,8 +39,8 @@ struct ActuatorController {
     ///
     /// A better answer than the container's, and available before the process
     /// starts: what the build found is what the graph constructs. It does not
-    /// carry anything registered through the imperative escape hatch, which is
-    /// the deliberate trade — see COMPOSITION-MIGRATION.md §2.9.
+    /// carry anything a module builds by hand without declaring it, which is
+    /// the deliberate trade — see DECISIONS.md D26.
     let components: [ComponentDescriptor]
 
     /// Module health is genuinely runtime state, so it still comes from the

@@ -114,6 +114,8 @@ enabled trait reaches.
 | --- | --- |
 | `Web` | HTTP, WebSockets, SSE, Channels, Presence, actuator — Hummingbird, NIO, the TLS stack. Implies `Telemetry`. |
 | `Security` | `AlulaSecurityCore` — JWTKit, AsyncHTTPClient, the Argon2 reference implementation. Implies `Web`. |
+| `HTTPClient` | `AlulaHTTPClient`, the outbound client with timeouts, safe retries and trace propagation — AsyncHTTPClient, NIO, swift-distributed-tracing. Implies nothing; calling out needs no HTTP server. |
+| `SMTP` | `AlulaMailSMTP`, the SMTP transport for `AlulaMail` (STARTTLS or implicit TLS, AUTH PLAIN/LOGIN) — NIO and NIOSSL. Implies nothing. `AlulaMail` itself needs no trait. |
 | `APNS` | `AlulaAPNS` — JWTKit, AsyncHTTPClient. Implies `Telemetry` and nothing else; a push-sending worker needs no HTTP server. |
 | `Telemetry` | `AlulaTelemetryBridges` — swift-telemetry, swift-metrics and swift-distributed-tracing. |
 

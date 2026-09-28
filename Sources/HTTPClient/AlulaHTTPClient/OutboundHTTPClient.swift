@@ -175,11 +175,9 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
     /// positive.
     public init(configuration: Configuration) throws {
         func positive(_ key: String, _ fallback: Int) throws -> Int {
-            let value = try configuration.getIfPresent(key, as: Int.self) ?? fallback
-            guard value > 0 else {
-                throw OutboundHTTPConfigurationError(description: "\(key) must be positive")
-            }
-            return value
+            try configuration.positive(
+                key, orThrow: { OutboundHTTPConfigurationError(description: $0.description) })
+                ?? fallback
         }
         self.init(
             timeout: .seconds(try positive("http-client.timeout-seconds", 30)),

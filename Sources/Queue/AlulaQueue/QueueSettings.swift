@@ -56,9 +56,9 @@ public struct QueueSettings: Sendable, Equatable {
     /// handlers name, since configuration cannot be enumerated.
     public init(configuration: Configuration, queues: Set<String> = []) throws {
         func positive(_ key: String, _ fallback: Int) throws -> Int {
-            let value = try configuration.getIfPresent(key, as: Int.self) ?? fallback
-            guard value > 0 else { throw QueueConfigurationError(key: key, value: "\(value)") }
-            return value
+            try configuration.positive(
+                key, orThrow: { QueueConfigurationError(key: $0.key, value: $0.value) })
+                ?? fallback
         }
         let concurrency = try positive("queue.concurrency", 10)
         var perQueue: [String: Int] = [:]

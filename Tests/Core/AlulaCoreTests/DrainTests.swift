@@ -91,4 +91,18 @@ struct DrainTests {
                 configuration: Configuration(values: ["lifecycle.shutdown-timeout-seconds": "0"]))
         }
     }
+
+    /// Finite but huge passed the check and trapped converting to
+    /// milliseconds; `nan` and `inf` are refused by the same bound.
+    @Test(
+        "a drain or timeout too large to be a duration is refused, not a crash",
+        arguments: [
+            ("lifecycle.drain-seconds", "1e300"), ("lifecycle.shutdown-timeout-seconds", "1e300"),
+            ("lifecycle.drain-seconds", "inf"), ("lifecycle.shutdown-timeout-seconds", "nan"),
+        ])
+    func refusesHuge(key: String, value: String) {
+        #expect(throws: (any Error).self) {
+            try LifecycleSettings(configuration: Configuration(values: [key: value]))
+        }
+    }
 }

@@ -110,6 +110,9 @@ struct RouterTests {
         ("channels.heartbeat-timeout-seconds", "0"),
         ("channels.heartbeat-check-interval-seconds", "nan"),
         ("channels.write-timeout-seconds", "inf"),
+        // Finite, and still a trap converting to a Duration.
+        ("channels.heartbeat-timeout-seconds", "1e300"),
+        ("channels.write-timeout-seconds", "1e300"),
     ])
     func malformedIntervals(key: String, value: String) {
         #expect(throws: (any Error).self) {

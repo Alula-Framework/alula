@@ -493,7 +493,7 @@ let package = Package(
         .target(
             name: "AlulaPresence",
             dependencies: [
-                "AlulaPresenceProtocol", "AlulaCore", "AlulaPubSub",
+                "AlulaPresenceProtocol", "AlulaCore", "AlulaPubSub", "AlulaSupport",
                 .target(name: "AlulaChannels", condition: .when(traits: ["Web"])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),

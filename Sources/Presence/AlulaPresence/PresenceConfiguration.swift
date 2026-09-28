@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaSupport
 import struct Foundation.UUID
 
 /// Presence's runtime settings, read once at bootstrap from the app
@@ -111,36 +112,36 @@ public struct PresenceConfiguration: Sendable, Equatable {
         // malformed value, and these are deployment settings — an
         // environment variable of `5s` stopped the process at boot instead
         // of failing it with the key named.
-        let heartbeat = try configuration.getIfPresent(
-            "presence.heartbeat-interval-seconds", formerly: ["alula.presence.heartbeat-interval-seconds"], as: Double.self) ?? 5.0
-        let explicitDownAfter = try configuration.getIfPresent(
-            "presence.down-after-seconds", formerly: ["alula.presence.down-after-seconds"], as: Double.self)
-        let downAfter = explicitDownAfter ?? 15.0
-        let permdown = try configuration.getIfPresent(
-            "presence.permdown-after-seconds", formerly: ["alula.presence.permdown-after-seconds"], as: Double.self) ?? 300.0
-        let sweep = try configuration.getIfPresent("presence.sweep-interval-seconds", formerly: ["alula.presence.sweep-interval-seconds"], as: Double.self)
-        let fallback = try configuration.getIfPresent(
-            "presence.membership-fallback-after-seconds", formerly: ["alula.presence.membership-fallback-after-seconds"], as: Double.self)
-
+        //
         // Finite as well as positive: `inf` parses as a Double, passes `> 0`,
         // and traps when it becomes a Duration.
-        let intervals = [heartbeat, downAfter, permdown] + [sweep].compactMap { $0 }
-        guard intervals.allSatisfy({ $0 > 0 && $0.isFinite }), fallback?.isFinite ?? true else {
-            throw PresenceConfigurationError.nonPositiveInterval
+        let invalid = { (_: NonPositiveConfigValue) in PresenceConfigurationError.nonPositiveInterval }
+        func interval(_ name: String) throws -> Duration? {
+            try configuration.positiveSeconds(
+                "presence.\(name)", formerly: ["alula.presence.\(name)"], orThrow: invalid)
         }
+        let heartbeat = try interval("heartbeat-interval-seconds") ?? .seconds(5)
+        let explicitDownAfter = try interval("down-after-seconds")
+        let downAfter = explicitDownAfter ?? .seconds(15)
+        let permdown = try interval("permdown-after-seconds") ?? .seconds(300)
+        let sweep = try interval("sweep-interval-seconds")
+        // An explicit 0 means "trust the monitor completely".
+        let fallback = try configuration.secondsOrDisabled(
+            "presence.membership-fallback-after-seconds",
+            formerly: ["alula.presence.membership-fallback-after-seconds"], orThrow: invalid)
+
         guard downAfter > heartbeat else {
             throw PresenceConfigurationError.downAfterNotAboveHeartbeat(
-                heartbeat: heartbeat, downAfter: downAfter
+                heartbeat: heartbeat.inSeconds, downAfter: downAfter.inSeconds
             )
         }
         self.init(
             nodeName: nodeName,
-            heartbeatInterval: .seconds(heartbeat),
-            downAfter: .seconds(downAfter),
-            permdownAfter: .seconds(permdown),
-            sweepInterval: sweep.map { .seconds($0) },
-            // An explicit 0 means "trust the monitor completely".
-            membershipFallbackAfter: fallback.map { $0 > 0 ? .seconds($0) : nil },
+            heartbeatInterval: heartbeat,
+            downAfter: downAfter,
+            permdownAfter: permdown,
+            sweepInterval: sweep,
+            membershipFallbackAfter: fallback,
             maxEntriesPerFrame: try configuration.getIfPresent(
                 "presence.max-entries-per-frame", formerly: ["alula.presence.max-entries-per-frame"], as: Int.self)
                 .map { $0 > 0 ? $0 : nil } ?? 10_000

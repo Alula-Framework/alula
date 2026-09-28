@@ -111,12 +111,10 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
             try securityHeaders ?? SecurityHeaders(configuration: configuration)
         let resolvedWebSocketOrigins =
             try webSocketOrigins ?? WebSocketOrigins(configuration: configuration)
-        let requestTimeout = try configuration.getIfPresent(
-            "web.request-timeout-seconds", as: Double.self)
-        if let requestTimeout, !(requestTimeout > 0) {
-            throw WebConfigurationError(
-                "web.request-timeout-seconds must be positive; it is \(requestTimeout)")
-        }
+        // Positive and finite: `inf` used to pass `!(v > 0)` and trap
+        // converting to milliseconds below.
+        let requestTimeout = try configuration.positiveSeconds(
+            "web.request-timeout-seconds", orThrow: { WebConfigurationError($0.description) })
         self.configuration = configuration
         self.coders = resolvedCoders
         self.errorMapper = resolvedMapper
@@ -135,7 +133,7 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
                 trustedProxies: resolvedTrustedProxies,
                 securityHeaders: resolvedSecurityHeaders,
                 webSocketOrigins: resolvedWebSocketOrigins,
-                requestTimeout: requestTimeout.map { .milliseconds(Int64($0 * 1000)) }),
+                requestTimeout: requestTimeout),
             logger: Logger(label: "alula.web"))
     }
 

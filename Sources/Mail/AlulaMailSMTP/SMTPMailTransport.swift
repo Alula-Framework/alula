@@ -117,23 +117,17 @@ public struct SMTPSettings: Sendable, Equatable {
             throw SMTPConfigurationError(
                 "mail.smtp.security must be starttls, tls or none; it is \(rawSecurity)")
         }
-        let timeout = try configuration.getIfPresent("mail.smtp.timeout-seconds", as: Int.self) ?? 30
-        guard timeout > 0 else {
-            throw SMTPConfigurationError("mail.smtp.timeout-seconds must be positive")
+        func positive(_ key: String, _ fallback: Int) throws -> Int {
+            try configuration.positive(key, orThrow: { SMTPConfigurationError($0.description) })
+                ?? fallback
         }
+        let timeout = try positive("mail.smtp.timeout-seconds", 30)
         let poolSize = try configuration.getIfPresent("mail.smtp.pool-size", as: Int.self) ?? 4
         guard poolSize >= 0 else {
             throw SMTPConfigurationError("mail.smtp.pool-size must be 0 or more; it is \(poolSize)")
         }
-        let idle = try configuration.getIfPresent("mail.smtp.idle-seconds", as: Int.self) ?? 30
-        guard idle > 0 else {
-            throw SMTPConfigurationError("mail.smtp.idle-seconds must be positive")
-        }
-        let perConnection =
-            try configuration.getIfPresent("mail.smtp.messages-per-connection", as: Int.self) ?? 100
-        guard perConnection > 0 else {
-            throw SMTPConfigurationError("mail.smtp.messages-per-connection must be positive")
-        }
+        let idle = try positive("mail.smtp.idle-seconds", 30)
+        let perConnection = try positive("mail.smtp.messages-per-connection", 100)
         self.init(
             host: host, port: try configuration.getIfPresent("mail.smtp.port", as: Int.self),
             security: security,

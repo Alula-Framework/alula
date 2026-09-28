@@ -142,4 +142,65 @@ struct ScheduledDiagnosticTests {
             """,
             .invalidScheduledMethod, "can only be attached to a method")
     }
+
+    // @Scheduler had its own copy of the @Inject scan, which skipped a static
+    // property silently. It shares @Component's now, diagnostic included.
+    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    func staticInject() {
+        expectDiagnostic(
+            """
+            @Scheduler
+            struct Jobs {
+                @Inject static var clock: Clock
+                @Scheduled("0 0 3 * * *")
+                func run() {}
+            }
+            """,
+            .invalidInjectionTarget, "a static property has no instance to belong to")
+    }
+
+    // A `package` scheduler's generated members used to be internal: its
+    // access rule mapped only `public`/`open`, where every other registration
+    // macro mirrors `package` too. Internal members cannot be reached from
+    // another module of the same package, which is where the composition
+    // root may live. This pins the corrected expansion.
+    @Test("a package @Scheduler gets package members")
+    func packageAccess() {
+        assertMacroExpansion(
+            """
+            @Scheduler
+            package struct Jobs {
+                @Inject var clock: Clock
+                @Scheduled(every: .minutes(5))
+                func run() {}
+            }
+            """,
+            expandedSource: """
+                package struct Jobs {
+                    @Inject var clock: Clock
+                    func run() {}
+
+                    package init(clock: Clock) {
+                        self.clock = clock
+                    }
+
+                    package static func _alulaScheduledJobs(
+                        _ make: @escaping @Sendable () -> Self
+                    ) -> [AlulaScheduler.ScheduledJobRegistration] {
+                        [
+                            AlulaScheduler.ScheduledJobRegistration(
+                                name: String(reflecting: Self.self) + ".run",
+                                trigger: AlulaScheduler.JobTrigger.interval(.minutes(5), initialDelay: .seconds(0)),
+                                scope: .once,
+                                overlap: .skip
+                            ) {
+                                let component = make()
+                                component.run()
+                            },
+                        ]
+                    }
+                }
+                """,
+            macroSpecs: testMacros)
+    }
 }

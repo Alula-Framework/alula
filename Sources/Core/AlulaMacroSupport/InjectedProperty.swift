@@ -8,9 +8,9 @@ import SwiftSyntaxBuilder
 /// carrying a comment saying it mirrored the others. `@Component`,
 /// `@Controller` and `@Middleware` all expand to the same shape, so the
 /// property model, the parenthesisation rule and the initializers generated
-/// from them belong in one place. The collection functions stay per-macro:
-/// they differ in the diagnostics they emit, which is the part that should
-/// name the attribute the author actually wrote.
+/// from them belong in one place — as does collecting them, in
+/// InjectionScanning.swift, where the diagnostics that name the attribute
+/// the author wrote take it as a parameter.
 public struct InjectedProperty {
     public enum Kind {
         /// Wired by type. It carried a `qualifier:` until 0.20.0, which the

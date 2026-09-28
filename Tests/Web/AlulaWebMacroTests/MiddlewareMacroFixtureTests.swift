@@ -198,4 +198,39 @@ struct MiddlewareMacroDiagnosticTests {
             macroSpecs: testMacros
         )
     }
+
+    // The static-property check used to live only in @Component's copy of the
+    // collection code; @Middleware collected a static @Inject like any other
+    // and the generated initializer then assigned to it — an error inside the
+    // expansion. One collection function now, one diagnostic, one code.
+    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    func staticInjectIsRejected() {
+        assertMacroExpansion(
+            """
+            @Middleware
+            struct Timing {
+                @Inject static var clock: Clock
+                func handle(_ context: RequestContext, next: Next) async throws -> Response { try await next(context) }
+            }
+            """,
+            expandedSource: """
+                struct Timing {
+                    static var clock: Clock
+                    func handle(_ context: RequestContext, next: Next) async throws -> Response { try await next(context) }
+
+                    init() {
+                    }
+                }
+
+                extension Timing: AlulaWeb.Middleware {
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec.coded(.invalidInjectionTarget,
+                    message: "Injection is per-instance: the generated initializer assigns the properties, and a static property has no instance to belong to. Make it an instance property, or set it explicitly where it is used.",
+                    line: 3, column: 5)
+            ],
+            macroSpecs: testMacros
+        )
+    }
 }

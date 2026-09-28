@@ -314,26 +314,6 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         return nil
     }
 
-    private static func firstArgumentSource(of attribute: AttributeSyntax) -> String? {
-        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
-            let first = arguments.first, first.label == nil
-        else { return nil }
-        let text = first.expression.trimmedDescription
-        return text == "nil" ? nil : text
-    }
-
-    private static func labeledArgumentSource(of attribute: AttributeSyntax, label: String)
-        -> String?
-    {
-        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
-            return nil
-        }
-        for argument in arguments where argument.label?.text == label {
-            return argument.expression.trimmedDescription
-        }
-        return nil
-    }
-
     /// The namespace argument: `@Settings("auth")`'s single unlabeled string
     /// literal. A non-literal expression can't feed the compile-time
     /// alula.yaml check the build plugin runs for required keys, so it is
@@ -410,25 +390,5 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         if let structDecl = declaration.as(StructDeclSyntax.self) { return structDecl.name.text }
         if let classDecl = declaration.as(ClassDeclSyntax.self) { return classDecl.name.text }
         return "Settings"
-    }
-
-    private static func registrationAccess(for declaration: some DeclGroupSyntax) -> String {
-        let modifiers: DeclModifierListSyntax
-        if let classDecl = declaration.as(ClassDeclSyntax.self) {
-            modifiers = classDecl.modifiers
-        } else if let structDecl = declaration.as(StructDeclSyntax.self) {
-            modifiers = structDecl.modifiers
-        } else {
-            return ""
-        }
-        for modifier in modifiers {
-            switch modifier.name.tokenKind {
-            case .keyword(.public), .keyword(.package):
-                return "\(modifier.name.text) "
-            default:
-                continue
-            }
-        }
-        return ""
     }
 }

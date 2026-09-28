@@ -53,15 +53,17 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
             jobValueLines.append(contentsOf: valueLines(for: job))
         }
 
-        let access = declaration.modifiers.contains {
-            $0.name.tokenKind == .keyword(.public) || $0.name.tokenKind == .keyword(.open)
-        } ? "public " : ""
+        // Mirrors the type's access, as every registration macro does: a
+        // `package` scheduler gets `package` members. This once mapped only
+        // `public`/`open`, so a `package` scheduler's members were internal
+        // and unreachable from another module of its own package.
+        let access = registrationAccess(for: declaration)
 
         // A @Scheduler type is an ordinary component: it injects what its
         // jobs need, exactly as @Controller and @Component do. Without the
         // generated initializer, @Inject in a scheduler would not compile
         // — which the compiled doc snippet caught.
-        let properties = Injection.scan(declaration.memberBlock.members)
+        let properties = collectInjectedProperties(from: declaration, in: context)
 
         // The jobs as values, built from a component the caller supplies —
         // the composition root fills `make` with the component the graph
@@ -77,22 +79,9 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
             }
             """
         // Constructor injection, through the same generator @Component,
-        // @Controller and @Middleware use — the shared macro-support target
-        // this file's Injection helper anticipated and declined to build.
+        // @Controller and @Middleware use.
         let parameterInit = parameterizedInitializer(
-            properties: properties.map {
-                InjectedProperty(
-                    name: $0.name, typeText: $0.typeText,
-                    kind: {
-                        switch $0.kind {
-                        case .inject: return .inject
-                        case .configValue(let key, let defaultValue):
-                            return .configValue(key: key, defaultValue: defaultValue)
-                        }
-                    }($0),
-                    node: $0.node)
-            },
-            access: access, declaration: declaration)
+            properties: properties, access: access, declaration: declaration)
         return [parameterInit, jobValues].compactMap { $0 }
     }
 

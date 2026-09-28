@@ -22,13 +22,11 @@ import SwiftSyntaxMacros
 /// paths.
 ///
 /// The injection half (`@Inject`/`@ConfigValue` handling, attachment and
-/// storage validation) deliberately mirrors ComponentMacro line for line —
-/// same diagnostics, same generated shapes — so a controller author's mental
-/// model transfers from components unchanged. The authoritative expansions
+/// storage validation) is ComponentMacro's own, shared through
+/// AlulaMacroSupport — same diagnostics, same generated shapes — so a
+/// controller author's mental model transfers from components unchanged. The authoritative expansions
 /// are the fixtures in AlulaWebMacroTests.
 public struct ControllerMacro: MemberMacro, ExtensionMacro {
-
-    // MARK: - Injected-property model (mirrors ComponentMacro)
 
     // MARK: - MemberMacro
 
@@ -38,13 +36,18 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard validateAttachmentTarget(declaration, in: context) != nil else { return [] }
+        guard
+            validateFinalClassOrStruct(
+                declaration, displayName: "@Controller", code: .unsupportedControllerDeclaration,
+                in: context)
+        else { return [] }
 
         let properties = collectInjectedProperties(from: declaration, in: context)
         guard validateDistinctInjectedTypes(properties, in: context) else { return [] }
-        guard validateNonInjectedStorage(declaration, injected: properties, in: context) else {
-            return []
-        }
+        guard
+            validateNonInjectedStorage(
+                declaration, injected: properties, displayName: "@Controller", in: context)
+        else { return [] }
 
         let basePath = RouteScanning.basePath(
             of: node, diagnostics: MacroRouteDiagnostics(context: context))
@@ -402,210 +405,4 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
     /// the macro declaration's doc comment). Returns `""` for "no base path":
     /// omitted, explicit `nil`, empty string, and bare `"/"` are all the
     /// identity element for `RouteScanning.combinePaths`.
-
-    // MARK: - Validation (mirrors ComponentMacro)
-
-    /// Final class or struct only, same rule and reasoning as `@Component`.
-    /// Returns the declared type name for use in route sources.
-    private static func validateAttachmentTarget(
-        _ declaration: some DeclGroupSyntax,
-        in context: some MacroExpansionContext
-    ) -> String? {
-        if let classDecl = declaration.as(ClassDeclSyntax.self) {
-            let isFinal = classDecl.modifiers.contains { $0.name.tokenKind == .keyword(.final) }
-            if !isFinal {
-                context.diagnose(
-                    .unsupportedControllerDeclaration,
-                    "@Controller requires a final class (or a struct). Mark '\(classDecl.name.text)' final.",
-                    at: classDecl.name,
-                    fixIts: [.insertFinal(into: classDecl)]
-                )
-                return nil
-            }
-            return classDecl.name.text
-        }
-        if let structDecl = declaration.as(StructDeclSyntax.self) {
-            return structDecl.name.text
-        }
-        context.diagnose(
-            .unsupportedControllerDeclaration,
-            "@Controller can only be attached to a final class or a struct.",
-            at: declaration
-        )
-        return nil
-    }
-
-    /// Two `@Inject` properties of the same type are a compile error. Mirrors
-    /// `ComponentMacro`, including why: the qualified pair that used to be
-    /// permitted here was never actually wired as two registrations, and the
-    /// property-level qualifier that spelled it went in 0.20.0.
-    private static func validateDistinctInjectedTypes(
-        _ properties: [InjectedProperty],
-        in context: some MacroExpansionContext
-    ) -> Bool {
-        // Keyed by type *and* named provider. `@Inject(from:)` is what makes
-        // two properties of one type distinguishable, so two naming different
-        // modules are fine; two naming the same one, or neither, are not.
-        var seen: Set<String> = []
-        var valid = true
-        for property in properties {
-            guard case .inject = property.kind else { continue }
-            let key = "\(property.typeText)|\(property.providerText ?? "")"
-            if !seen.insert(key).inserted {
-                let sameProvider = property.providerText != nil
-                context.diagnose(
-                    .indistinguishableInjections,
-                    sameProvider
-                        ? "Two @Inject properties of type '\(property.typeText)' naming the same provider. Composition wires by type, so nothing distinguishes them."
-                        : "Two @Inject properties of type '\(property.typeText)'. Composition wires by type, so nothing distinguishes them. Name the provider on one of them — @Inject(from: SomeModule.self) — or give them distinct types.",
-                    at: property.node
-                )
-                valid = false
-            }
-        }
-        return valid
-    }
-
-    private static func validateNonInjectedStorage(
-        _ declaration: some DeclGroupSyntax,
-        injected: [InjectedProperty],
-        in context: some MacroExpansionContext
-    ) -> Bool {
-        let injectedNames = Set(injected.map(\.name))
-        var valid = true
-        for member in declaration.memberBlock.members {
-            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
-            let isTypeLevel = variable.modifiers.contains {
-                $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class)
-            }
-            if isTypeLevel { continue }
-            let isVar = variable.bindingSpecifier.tokenKind == .keyword(.var)
-            for binding in variable.bindings {
-                guard binding.accessorBlock == nil,
-                    binding.initializer == nil,
-                    let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                    !injectedNames.contains(pattern.identifier.text),
-                    !variable.carriesInjectionAttribute
-                else { continue }
-                if isVar, let type = binding.typeAnnotation?.type,
-                    type.is(OptionalTypeSyntax.self)
-                        || type.as(IdentifierTypeSyntax.self)?.name.text == "Optional"
-                {
-                    continue
-                }
-                context.diagnose(
-                    .uninitializedStoredProperty,
-                    "Stored property '\(pattern.identifier.text)' of a @Controller type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
-                    at: variable
-                )
-                valid = false
-            }
-        }
-        return valid
-    }
-
-    // MARK: - Collection (mirrors ComponentMacro)
-
-    private static func collectInjectedProperties(
-        from declaration: some DeclGroupSyntax,
-        in context: some MacroExpansionContext
-    ) -> [InjectedProperty] {
-        var properties: [InjectedProperty] = []
-        for member in declaration.memberBlock.members {
-            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
-            guard let kind = injectionKind(of: variable, in: context) else { continue }
-            guard let binding = variable.bindings.first,
-                let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
-            else { continue }
-            guard let typeAnnotation = binding.typeAnnotation else {
-                context.diagnose(
-                    .untypedInjection,
-                    "@Inject/@ConfigValue properties need an explicit type annotation — injection resolves by static type.",
-                    at: variable
-                )
-                continue
-            }
-            properties.append(
-                InjectedProperty(
-                    name: pattern.identifier.text,
-                    typeText: typeAnnotation.type.trimmedDescription,
-                    kind: kind,
-                    node: variable
-                )
-            )
-        }
-        return properties
-    }
-
-    private static func injectionKind(
-        of variable: VariableDeclSyntax,
-        in context: some MacroExpansionContext
-    ) -> InjectedProperty.Kind? {
-        for attribute in variable.attributes {
-            guard let attr = attribute.as(AttributeSyntax.self),
-                let name = attr.attributeName.as(IdentifierTypeSyntax.self)?.name.text
-            else { continue }
-            switch name {
-            case "Inject":
-                return .inject
-            case "ConfigValue":
-                guard let key = firstArgumentSource(of: attr) else {
-                    context.diagnose(
-                        .configValueWithoutKey,
-                        "@ConfigValue requires a key, e.g. @ConfigValue(\"server.port\").",
-                        at: attr
-                    )
-                    return nil
-                }
-                return .configValue(
-                    key: key, defaultValue: labeledArgumentSource(of: attr, label: "default"))
-            default:
-                continue
-            }
-        }
-        return nil
-    }
-
-    private static func firstArgumentSource(of attribute: AttributeSyntax) -> String? {
-        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
-            let first = arguments.first, first.label == nil
-        else { return nil }
-        let text = first.expression.trimmedDescription
-        return text == "nil" ? nil : text
-    }
-
-    private static func labeledArgumentSource(of attribute: AttributeSyntax, label: String)
-        -> String?
-    {
-        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self) else {
-            return nil
-        }
-        for argument in arguments where argument.label?.text == label {
-            return argument.expression.trimmedDescription
-        }
-        return nil
-    }
-
-    /// The generated initializer and route factories mirror the type's own
-    /// access level so the generated cross-module composition root can build
-    /// and register it (Alula Core P-1).
-    private static func registrationAccess(for declaration: some DeclGroupSyntax) -> String {
-        let modifiers: DeclModifierListSyntax
-        if let classDecl = declaration.as(ClassDeclSyntax.self) {
-            modifiers = classDecl.modifiers
-        } else if let structDecl = declaration.as(StructDeclSyntax.self) {
-            modifiers = structDecl.modifiers
-        } else {
-            return ""
-        }
-        for modifier in modifiers {
-            switch modifier.name.tokenKind {
-            case .keyword(.public), .keyword(.package):
-                return "\(modifier.name.text) "
-            default:
-                continue
-            }
-        }
-        return ""
-    }
 }

@@ -1060,4 +1060,33 @@ struct ControllerMacroFixtureTests {
             macroSpecs: testMacros
         )
     }
+
+    // Same check, same code as @Component's (CodedDiagnosticTests in
+    // AlulaCoreMacroTests). @Controller's copy of the collection code lacked
+    // it, so a static @Inject reached the generated initializer.
+    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    func staticInjectIsRejected() {
+        assertMacroExpansion(
+            """
+            @Controller
+            struct Health {
+                @Inject static var clock: Clock
+            }
+            """,
+            expandedSource: """
+                struct Health {
+                    @Inject static var clock: Clock
+
+                    init() {
+                    }
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec.coded(.invalidInjectionTarget,
+                    message: "Injection is per-instance: the generated initializer assigns the properties, and a static property has no instance to belong to. Make it an instance property, or set it explicitly where it is used.",
+                    line: 3, column: 5)
+            ],
+            macroSpecs: testMacros
+        )
+    }
 }

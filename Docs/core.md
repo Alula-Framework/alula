@@ -150,42 +150,40 @@ checks the graph before anything runs:
 - **Existential bridges** are synthesized: a protocol with exactly one
   conformer is resolvable as `any Protocol` without hand-written glue.
 
-A component that is registered by hand rather than scanned is acknowledged
-with a comment, so the check does not have to choose between false positives
-and silence:
+A dependency a module provides as a value — `PostgresDataModule`'s
+`PostgresDataSource`, a security module's `any TokenValidator` — needs no
+annotation: the scan sees the modules too, and wires it from whichever
+included module provides it. An existential a module provides wins over any
+scanned conformer. (Earlier releases asked for a `// alula:hand-registered`
+comment here; it is now an ordinary comment and can be deleted.)
 
 ```swift
-// alula:hand-registered
-@Inject var external: SomethingFromAnotherLibrary
+@Inject var pool: PostgresDataSource
 ```
 
-### Types their own module registers
+### Types their own module builds
 
 The scan covers your target *and every Alula-based package it links*. That is
-usually what you want, but some types must not be registered just because a
-package is linked: whether they should exist at all is a runtime question —
-a configuration gate, or an optional subsystem the app may not have included.
+usually what you want, but some types must not become components just because
+a package is linked: whether they exist at all depends on a module being
+included.
 
-Mark those with `alula:module-registered`, above the declaration:
+Write those as plain conformers with a hand-written initializer, and have the
+module construct them. No registrable macro means the scan never sees them:
+they are not graph nodes, and never an existential bridge conformer.
+`Authentication` is the worked example:
 
 ```swift
-// alula:module-registered — AlulaSecurityModule registers this.
-@Middleware
-public struct Authentication: Sendable {
-    @Inject var validator: (any TokenValidator)
+// Not @Middleware: AlulaSecurityModule builds it.
+public struct Authentication: Middleware, Sendable {
+    let validator: any TokenValidator
+    public init(validator: any TokenValidator) { self.validator = validator }
 }
 ```
 
-The type is still scanned — its dependencies are still checked, and `@Inject`
-of it still resolves without a warning — but the composition root does not
-build it as a graph node of its own, and it is never chosen as an existential
-bridge conformer. Its module provides it instead. The generated file names
-every type it skipped for this reason, so nothing disappears silently.
-
 Why it matters: a component is built eagerly, at composition. `Authentication`
-injects `(any TokenValidator)`, which only a security module provides, so
-without the marker any app that merely *linked* the security package could not
-compose and never booted.
+needs an `any TokenValidator`, which only a security module provides, so as a
+component any app that merely *linked* the security package could not compose.
 
 > The plugin is a `BuildToolPlugin` and runs under SwiftPM. Xcode projects do
 > not run it, so an Xcode-only target needs its registrations written by hand.

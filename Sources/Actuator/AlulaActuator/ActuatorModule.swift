@@ -267,7 +267,7 @@ public struct ActuatorModule: AlulaModule {
     ///
     /// §2.9a's case: whether these exist at all is decided by `ALULA_ENV` at
     /// bootstrap, so no build-time scan can answer it — which is why they
-    /// carried `alula:hand-registered` markers when they were imperative
+    /// once needed a marker comment when they were imperative
     /// `registerRoute` calls. As values the gate is an ordinary `if`, and the
     /// composition root collects them like any other contribution.
     ///

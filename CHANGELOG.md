@@ -92,9 +92,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.product(name: "AlulaChannelsProtocol", package: "alula")` from your
   manifest, and `import AlulaChannels` or `import AlulaChannelsClient` where
   you imported `AlulaChannelsProtocol`.
+- **The `// alula:module-registered` directive.** It kept a registrable type
+  out of every application's graph, and its only users were `Authentication`
+  and `RequireAuthentication`. Those are now plain `Middleware` conformers
+  with hand-written initializers, which `AlulaSecurityModule` builds as
+  before; `Authentication(validator:authenticatedLifetime:now:)` and
+  `RequireAuthentication()` are unchanged, and `Authentication(validator:)`
+  still compiles. The generated manifest's `Component.isModuleRegistered`
+  field is gone with it. **Migration:** a type of your own that carried the
+  comment drops its registrable macro (`@Service`, `@Middleware`, …), gets an
+  `init`, and is constructed by the module that decides whether it exists;
+  the comment is now an ordinary comment and can be deleted.
+- **The `// alula:undocumented-response` directive.** It silenced the opt-in
+  ALU-OAPI-3002 for one route and had no users. The control is the
+  whole-application switch, `openapi.warn-undocumented-responses`, which
+  stays; with it on, a deliberate redirect or download is listed like any
+  other `Response` route, since the document cannot describe it either.
+  **Migration:** delete the comment.
 
 ### Changed
 
+- **`// alula:hand-registered` is an ordinary comment; delete it.** The build
+  now infers what it said, "a module provides this", from the modules it can
+  see. In an application target the comment changed nothing for a concrete
+  type a module holds (`PostgresDataSource`, `ChannelSockets`), or for an
+  existential no scanned component conforms to (`any TokenValidator`,
+  `any PubSub`). Where it did change something, the build now decides the
+  same way on its own, or better:
+  - **An existential an included module provides is taken from the module**,
+    even when a scanned component also conforms. Before, without the comment,
+    the one conformer was bridged in and the module's value silently ignored,
+    and two conformers warned ALU-DI-1010 although the module had settled
+    it. An application that relied on that bridge while a module also
+    provided the existential now gets the module's value; inject the concrete
+    type to keep the conformer.
+  - **An optional `@Inject` is always ALU-DI-1008.** With the comment the
+    check was skipped, and the generated graph declared `let pool?: Pool?`,
+    which does not compile.
+  - **In a library target, ALU-DI-1009 counts every module the scan sees** —
+    in the library or a package it links — instead of none, so a type such a
+    module provides no longer warns. That warning was the comment's last
+    job; a type no scanned module provides still warns, and the fix is to
+    have one provide it.
+  **Migration:** delete the comment. No known consumer needs a replacement:
+  every site in alula-cli's templates, Fledge and Relay is in an
+  application target and a concrete type or unconflicted existential.
 - **The OpenAPI document is off when `ALULA_ENV` is unset** — the actuator
   dashboard's rule, now shared. OpenAPI read an unset `ALULA_ENV` as `dev`
   and served the document; Actuator read it as "not declared" and withheld

@@ -1,5 +1,5 @@
-Library.swift:5:23: warning: [ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Service
+Library.swift:5:23: warning: [ALU-DI-1009] `UserRepository` injects `DataSource`, which no scanned @Service or module provides
     If nothing supplies it, composition fails.
-    help: make `DataSource` a @Service, or have a module hold it; if it is supplied some other way,
-          acknowledge the property with a `// alula:hand-registered` comment.
+    help: make `DataSource` a @Service, or have a module provide it — one this library declares,
+          or one in a package it links.
     docs: https://github.com/Alula-Framework/alula/blob/main/Diagnostics/ALU-DI-1009.md

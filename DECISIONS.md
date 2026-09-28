@@ -33,7 +33,10 @@ nobody set, two routes on one path — depending on what the build can see.
   `StartupDiagnostic`, `nil` by default.
 - **OpenAPI gaps are warnings only when the document is served**, and a
   deliberate `Response` is acknowledged with `// alula:undocumented-response`,
-  so the warning cannot become permanent noise.
+  so the warning cannot become permanent noise. *(Superseded: ALU-OAPI-3002
+  later became opt-in through `openapi.warn-undocumented-responses`, which is
+  what keeps it from being noise, and the per-route comment, never used, was
+  removed in the subtraction pass, R20.)*
 - **Two `TokenValidator` providers is ALU-SEC-6002**, not ALU-DI-1002: the
   generic help (`defaultProviders`) would switch an authentication method off.
 

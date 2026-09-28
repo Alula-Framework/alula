@@ -85,14 +85,8 @@ application includes `AlulaOpenAPIModule`:
     warn-undocumented-responses: true
   ```
 
-  A handler that deliberately answers with a redirect or a file says so with
-  a comment above it, and the warning stays quiet:
-
-  ```swift
-  // alula:undocumented-response — a PDF download.
-  @GetRoute("/:id/pdf")
-  func pdf(_ context: RequestContext, id: String) async throws -> Response
-  ```
+  With it on, every such route is listed, a deliberate redirect or download
+  included: the document cannot describe those either.
 
 The document is validated with `openapi-spec-validator` against the demo
 application in alula-cli.

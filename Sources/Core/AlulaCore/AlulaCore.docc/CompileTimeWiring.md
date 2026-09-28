@@ -25,7 +25,8 @@ line, and each code has a page saying why it is refused and how to fix it.
 <doc:Diagnostics> has the families and where the pages are.
 
 **Missing registrations.** An `@Inject` property whose type is not a
-scanned component is reported, naming the type.
+scanned component or a value an included module provides is a build error
+naming the type (a warning in a library target, which includes no modules).
 
 **Dependency cycles.** Reported with the cycle spelled out, so you can see
 which edge to break.
@@ -54,8 +55,8 @@ final class UserService: Sendable {
 ```
 
 Two conformers is genuine ambiguity, and the plugin declines to guess. Inject
-the concrete type, or provide the value yourself — the marker comment below
-says how.
+the concrete type, or have a module provide `any UserRepository` — see
+below.
 
 There is no qualifier to add. Both spellings of one were removed in 0.20.0:
 the type-level `@Service(qualifier:)`, which expanded to nothing, and the
@@ -68,22 +69,27 @@ provides a value, which answers "which of two modules" — a different question
 from "which of two conformers", where there is no module involved and the
 concrete type is still the answer.
 
-## Dependencies the scan can't see
+## Dependencies a module provides
 
-Not everything is a scanned component. A dependency provided some other way —
-a value a module holds and the composition root wires by type, or something
-supplied from outside the graph — is invisible to a source scanner.
-
-Acknowledge it, and the check stays quiet:
+Not everything is a scanned component. Most of an application's dependencies
+are values a module holds — `PostgresDataModule`'s `PostgresDataSource`, a
+security module's `any TokenValidator` — and the scan sees those modules too.
+Write the injection and nothing else:
 
 ```swift
-// alula:hand-registered
-@Inject var external: SomethingFromAnotherLibrary
+@Inject var pool: PostgresDataSource
 ```
 
-The comment goes on the **property**, not the type. It is deliberately a
-comment rather than an attribute: it is a note to the checker, not a change
-to the program.
+In an application the composer wires it from whichever included module
+provides it, and a type no included module provides is a build error
+(ALU-DI-1001). An existential a module provides is taken from the module even
+when a scanned component also conforms: the module's value is the deliberate
+choice. In a library, which includes nothing, any module the scan saw counts,
+and a type none provides is a warning (ALU-DI-1009).
+
+Earlier releases asked for a `// alula:hand-registered` comment on such a
+property. The build now infers what it said, so it is an ordinary comment and
+can be deleted.
 
 ## Limits worth knowing
 

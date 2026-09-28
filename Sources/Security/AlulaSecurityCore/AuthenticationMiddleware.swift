@@ -23,25 +23,18 @@ import TelemetryCore
 /// therefore conforms to `SessionReading`, and composition refuses a lane
 /// that runs it ahead of `Sessions`.
 ///
-/// `validator` arrives through the initializer like any other dependency —
-/// there is no longer a separate "explicit validator, for manual wiring or
-/// tests" entry point, because that entry point existed only to work around
-/// a closure's inability to hold one. `Authentication(validator: someMock)`
-/// is now the same call for both cases.
-// alula:module-registered — `AlulaSecurityModule` provides this, not the
-// application's scan. It injects `(any TokenValidator)`, which only a security
-// module supplies, so composing it into an app that includes no security
-// module could not succeed; the marker keeps the build's scan from treating it
-// as an app component of its own.
-@Middleware
-public struct Authentication: Sendable, SessionReading {
-    // The parentheses are historical and harmless: the container-era
-    // `init(_alula:)` needed them, and it is gone. The macros parenthesize an
-    // `any` type themselves where `.self` would otherwise bind wrongly, and
-    // composition ignores parentheses when it matches a provider's type.
-    // alula:hand-registered — the validator is registered by
-    // AlulaSecurityModule (or the application's own module), never scanned.
-    @Inject var validator: (any TokenValidator)
+/// `validator` arrives through the initializer, and
+/// `Authentication(validator: someMock)` is the same call for
+/// ``AlulaSecurityModule``, an application's own lane, and a test.
+///
+/// A plain `Middleware` conformer rather than a `@Middleware` component:
+/// ``AlulaSecurityModule`` builds it, and an application's composition never
+/// does. The `any TokenValidator` it needs exists only where a security
+/// module is included, so as a `@Middleware` type it would have been a graph
+/// node — and a missing root — in every application that merely links this
+/// library.
+public struct Authentication: Middleware, Sendable, SessionReading {
+    let validator: any TokenValidator
 
     /// How long a session-backed sign-in lasts from the moment it happened,
     /// however active the session. Nil checks nothing — what a bearer-only
@@ -49,8 +42,7 @@ public struct Authentication: Sendable, SessionReading {
     private var authenticatedLifetime: Duration? = nil
     private var now: @Sendable () -> Date = Date.init
 
-    /// For manual wiring or tests, where `@Inject` has nothing to
-    /// resolve from.
+    /// Builds the layer around a validator.
     ///
     /// - Parameters:
     ///   - validator: How a bearer token is checked.
@@ -182,12 +174,10 @@ extension RequestContext {
 /// Responses carry an RFC 6750 `WWW-Authenticate: Bearer` challenge;
 /// `error="invalid_token"` distinguishes a rejected credential from an
 /// absent one — and nothing more (design: no detail reaches the wire).
-// alula:module-registered — registered by `AlulaSecurityModule` alongside
-// `Authentication`. It has no dependencies of its own, so scanning it was
-// harmless; it travels with `Authentication` because the two are one
-// decision, and a half-registered pair is a confusing thing to debug.
-@Middleware
-public struct RequireAuthentication: Sendable {
+///
+/// A plain `Middleware` conformer, like ``Authentication``: the two are one
+/// decision, and ``AlulaSecurityModule`` builds them together.
+public struct RequireAuthentication: Middleware, Sendable {
     public init() {}
 
     public func handle(_ context: RequestContext, next: Next) async throws -> Response {

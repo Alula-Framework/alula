@@ -791,20 +791,26 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            An `@Inject` names a type that is neither a scanned `@Service` nor a value
-            any included module provides.
+            An `@Inject` in a library target names a type that is neither a scanned
+            `@Service` nor a value any scanned module provides — in the library itself or
+            in a package it links.
 
             ## Why Alula warns
 
-            It may be provided some other way the build cannot see — a value supplied
-            by hand at composition. If it is not, the application fails at startup
-            instead of at build time.
+            A library composes nothing, so the build cannot check its wiring the way it
+            checks an application's. It can still see every module in the scan; a type
+            none of them provides has no known source, and an application that uses the
+            component fails to build (ALU-DI-1001) unless it supplies one itself.
+
+            In an application target this warning never appears: the composer checks
+            every dependency against the modules the application includes, and reports a
+            missing one as ALU-DI-1001.
 
             ## Fixes
 
-            1. Make the type a `@Service`, or have a module hold it.
-            2. If it is supplied by hand on purpose, acknowledge it with a
-               `// alula:hand-registered` comment on the property.
+            1. Make the type a `@Service`.
+            2. Have a module provide it (`public let pool: DataSource`) — one the library
+               declares, or one in a package it links.
 
             ## Related
 
@@ -818,16 +824,16 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            An `@Inject` asks for an existential (`any Mailer`), and more than one
-            scanned component conforms, so no bridge from the protocol to a concrete
-            component was generated.
+            An `@Inject` asks for an existential (`any Mailer`), more than one scanned
+            component conforms, and no included module provides the existential itself,
+            so no bridge from the protocol to a concrete component was generated.
 
             ## Fixes
 
             1. Inject the concrete type you mean.
             2. Provide the existential from a module (`let mailer: any Mailer`), which
-               makes the choice explicit.
-            3. If you supply it by hand, acknowledge it with `// alula:hand-registered`.
+               makes the choice explicit: when an included module provides it, the build
+               uses that value and bridges to no conformer.
 
             ## Related
 
@@ -1390,20 +1396,23 @@ enum DiagnosticCatalog {
 
             A client generated from the document has nothing to decode the response
             into. Returning the `Codable` type the route sends lets Alula encode it and
-            describe it. Some routes legitimately answer with a redirect or a file; those
-            say so with a comment and the warning stays quiet.
+            describe it.
+
+            A route that legitimately answers with a redirect or a file is reported too:
+            the document cannot describe it either, and the list is what the switch asks
+            for. There is no per-route opt-out; the switch is the control.
 
             ## Fixes
 
             1. Return the type the route sends: `-> Report` rather than `-> Response`.
-            2. For a redirect, a download or another deliberately untyped answer, put `// alula:undocumented-response` above the handler.
+            2. For a redirect or a download, leave it: the warning is an accurate entry
+               in the list of routes the document describes only as "responds".
 
             ## Example
 
             ```swift
-            // alula:undocumented-response — a PDF download.
-            @GetRoute("/:id/pdf")
-            func pdf(_ context: RequestContext, id: String) async throws -> Response
+            @GetRoute("/:id")
+            func show(_ context: RequestContext, id: String) async throws -> Report
             ```
 
             ## Related

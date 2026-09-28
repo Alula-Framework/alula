@@ -4,7 +4,7 @@ import Synchronization
 ///
 /// This used to live on `Container` — the one genuinely-runtime thing it
 /// carried, mutated during the service phase while everything else it held was
-/// frozen. With the container gone (COMPOSITION-MIGRATION.md §9), health needs
+/// frozen. With the container gone (removed in 0.16.0), health needs
 /// an owner of its own: bootstrap creates one, seeds it with the module names,
 /// updates it as services run, and hands it to whatever reports it (Actuator).
 ///

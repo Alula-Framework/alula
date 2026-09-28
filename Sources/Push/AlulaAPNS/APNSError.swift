@@ -126,18 +126,6 @@ public struct APNSError: Error, Sendable, Equatable, CustomStringConvertible {
         return registeredAt <= since
     }
 
-    /// Replaced by ``deviceTokenProblem`` and
-    /// ``shouldForgetDeviceToken(registeredAt:)``. This returned true for
-    /// `BadDeviceToken` and `DeviceTokenNotForTopic` too, which are also what
-    /// every token returns under a misconfigured environment or topic — so
-    /// deleting on it could delete every stored token at once.
-    @available(
-        *, deprecated,
-        message:
-            "use shouldForgetDeviceToken(registeredAt:) or deviceTokenProblem; this also flagged tokens that fail only because the environment or topic is misconfigured"
-    )
-    public var deviceTokenIsInvalid: Bool { deviceTokenProblem != nil }
-
     /// How trying again could help — the policy stays the caller's.
     public enum RetryAdvice: Sendable, Equatable {
         /// It will fail the same way. Fix the request, the token or the

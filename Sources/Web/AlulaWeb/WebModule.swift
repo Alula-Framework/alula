@@ -25,7 +25,7 @@ import TelemetryCore
 /// (coders + error mapper). Route-table validation happens there, at
 /// composition; the service the module contributes reads that already-built
 /// dispatch. Nothing is collected from a container, and nothing is resolved
-/// per request (COMPOSITION-MIGRATION.md §9).
+/// per request (DECISIONS.md D20).
 public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unchecked Sendable {
 
     /// Reporting comes with the stack: `AlulaTelemetryModule` reports this

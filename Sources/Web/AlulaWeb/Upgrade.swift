@@ -42,14 +42,10 @@ public protocol WebSocketUpgradeHandler: Sendable {
     func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws
 }
 
-/// The pre-generalization name, from when WebSocket was the only upgrade
-/// kind and the generic name did not yet have to be shared.
 extension WebSocketUpgradeHandler {
+    /// No subprotocols: the handshake agrees none.
     public var subprotocols: [String] { [] }
 }
-
-@available(*, deprecated, renamed: "WebSocketUpgradeHandler")
-public typealias ConnectionUpgradeHandler = WebSocketUpgradeHandler
 
 /// One WebSocket frame, post protocol-handling: the transport owns
 /// fragmentation reassembly, masking, and the close handshake; the developer
@@ -212,11 +208,6 @@ public enum WebSocketError: Error, Sendable, Equatable, CustomStringConvertible 
     }
 }
 
-
-/// The pre-generalization name for ``WebSocketConnection``, from when it
-/// was the only upgraded-connection type Alula had.
-@available(*, deprecated, renamed: "WebSocketConnection")
-public typealias UpgradedConnection = WebSocketConnection
 
 /// Which protocol an upgrade route hands the connection to. One case today;
 /// WebTransport and other RFC 8441 `:protocol` kinds are additive cases. In

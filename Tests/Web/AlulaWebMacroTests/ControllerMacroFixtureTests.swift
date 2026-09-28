@@ -707,7 +707,7 @@ struct ControllerMacroFixtureTests {
         // looks like nothing to assert. The route simply did not exist —
         // @Controller's expansion is what reads these attributes, so without
         // it nothing is generated and nothing complains. Same failure class
-        // as GAPS.md's "@Scheduler shipped inert, and every check passed".
+        // as `@Scheduler` shipping inert while every check passed (CHANGELOG.md, 0.2.1).
         assertMacroExpansion(
             """
             struct NotAController {

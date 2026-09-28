@@ -15,7 +15,7 @@ import AlulaSchedulerTesting
 /// `isRunning` was therefore never true outside a test, `.skippedOverlap`
 /// was unreachable, and `.queue`'s documented "waits for the running job,
 /// then runs again" simply did not happen. That is the same shape as the
-/// `@Scheduler`-shipped-inert incident in GAPS.md, so these tests drive the
+/// `@Scheduler`-shipped-inert incident (CHANGELOG.md, 0.2.1), so these tests drive the
 /// real `run()` loop and never call `fire()` by hand.
 @Suite("Scheduler — overlap, through the real loop")
 struct OverlapPolicyTests {

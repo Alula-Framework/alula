@@ -4,6 +4,26 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **`ConnectionUpgradeHandler` and `UpgradedConnection`** (AlulaWeb), deprecated
+  since 0.4.0. Use `WebSocketUpgradeHandler` and `WebSocketConnection`, the
+  names the deprecations already pointed to.
+- **`APNSError.deviceTokenIsInvalid`**, deprecated since 0.33.0. Use
+  `shouldForgetDeviceToken(registeredAt:)` or `deviceTokenProblem`.
+
+### Changed
+
+- **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
+  open gaps, each re-checked against 0.59.0. The full historical file is at
+  `git show v0.59.0:GAPS.md`.
+- **Documentation:** the README's traits table lists `HTTPClient` and `SMTP`.
+  `AlulaModule.dependencies` says what it orders: construction follows value
+  flow, and `dependencies` breaks ties. Source comments that cited an
+  untracked migration spec now cite DECISIONS.md or give the reason inline.
+
 ## [0.59.0] - 2026-09-28
 
 ### Fixed

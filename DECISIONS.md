@@ -1,8 +1,11 @@
 # Decisions taken without asking
 
-Judgement calls made while executing `COMPOSITION-MIGRATION.md`'s work plan,
-each with the alternatives it was chosen over and what reversing it costs.
-Newest first. Nothing here is load-bearing on agreement — if a call reads
+Alula's design decision log: each judgement call made while building the
+framework, with the alternatives it was chosen over and what reversing it
+costs. It began as the log of the container-to-composition migration, which
+is where D1–D27 and their `§` references come from; those references point at
+that migration's plan, which is no longer kept in the repository. Newest
+first. Nothing here is load-bearing on agreement — if a call reads
 wrong, say so and it changes.
 
 ---

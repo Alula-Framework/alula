@@ -209,8 +209,8 @@ public final class AlulaOIDCModule: AlulaModule {
 ///
 /// Takes the validator it maintains. It used to hold a `Container` and
 /// resolve at `run()`, because `AlulaModule.service` is read before
-/// `freeze()` and the validator did not exist yet — the indirection
-/// COMPOSITION-MIGRATION.md §3 said would go away with composition.
+/// `freeze()` and the validator did not exist yet — an indirection that
+/// only a container needed.
 /// `AlulaOIDCModule` builds the validator in its own initializer, so there
 /// is nothing left to look up.
 final class JWKSMaintenanceService: Service {

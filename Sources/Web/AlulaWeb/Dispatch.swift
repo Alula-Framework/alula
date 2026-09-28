@@ -119,7 +119,7 @@ public enum DispatchBuilder {
     /// Builds dispatch from values.
     ///
     /// Every registry it needs is a list of contributions, and a contribution
-    /// is a value a module holds (COMPOSITION-MIGRATION.md D15). Lanes are
+    /// is a value a module holds (DECISIONS.md D15). Lanes are
     /// derived from the middleware rather than passed separately: a lane *is*
     /// the set of middleware naming it, and `MiddlewareRegistration.lane("x", [])`
     /// contributes a lane marker so an empty lane still counts as declared.

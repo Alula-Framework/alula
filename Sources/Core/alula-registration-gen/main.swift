@@ -202,7 +202,7 @@ struct SilentRouteDiagnostics: RouteDiagnostics {
 /// One `MiddlewareRegistration.lane(_:_:)` declaration.
 ///
 /// Lanes are the other half of what dispatch reads out of the composed
-/// application (COMPOSITION-MIGRATION.md §2.9): the middleware chain and its
+/// application (DECISIONS.md D20): the middleware chain and its
 /// declared lanes are values the composition root gathers, exactly the way
 /// routes are, so the manifest has to carry them too.
 struct ScannedPipelineLane {
@@ -804,7 +804,7 @@ final class ComponentVisitor: SyntaxVisitor {
         // (ConfigKeyNaming.kebabCase, shared rather than duplicated) so a
         // required key with no default can get the same compile-time
         // alula.yaml check @ConfigValue's explicit form already has.
-        // Routes, for the static manifest (COMPOSITION-MIGRATION.md §2.9).
+        // Routes, for the static manifest that tooling reads before the process runs.
         // Same parser the macro uses, so a path combined here and a path
         // combined in the expansion are combined by one implementation.
         if registrable.attributeName.as(IdentifierTypeSyntax.self)?.name.text == "Controller" {
@@ -1593,7 +1593,7 @@ detectCycles()
 // and shared. `.scoped` and `.transient` are gone — per-request state rides
 // `RequestContext`, and a per-operation resource is leased where the operation
 // is — so removing them removed the captive-dependency class of bug with them
-// (COMPOSITION-MIGRATION.md §2.2).
+// (removed in 0.15.0).
 //
 // A `scope:` argument therefore names a distinction that no longer exists —
 // and as of 0.20.0 the argument itself is gone from `@Component`, `@Service`
@@ -2240,21 +2240,18 @@ let dependencyModules = Set(sorted.map(\.module)).subtracting([manifest.targetMo
 
 let graphRegistrable = components.filter { !$0.isModuleRegistered }
 // A controller is constructed per request by its route terminal, not
-// held for the process — that is the whole point of §2.1a — so it is not
+// held for the process (DECISIONS.md D24) — so it is not
 // a graph node. Unless something else injects it, in which case the
 // graph has to build it like anything else.
 let graphDependedUpon = Set(
 graphRegistrable.flatMap { $0.injectTypeNames + $0.acknowledgedTypeNames }.map(baseName))
-// Left out of the graph, and each for its own reason:
+// Only a controller is left out of the graph, and only when nothing injects
+// it: its route terminal builds it per request.
 //
-// - a controller is built per request by its route terminal, which is
-//   the whole of §2.1a — unless something else injects it, in which case
-//   the graph does have to build it;
-// - `@Settings` calls `validate()` after construction and `@Scheduler`
-//   registers its jobs, both inside their own initializer. Projecting those
-//   would drop the extra, so they keep being built through their own init and
-//   arrive here as root parameters if anything depends on them.
-// `@Scheduler` only. `@Settings` was here too, and that made every
+// `@Scheduler` and `@Settings` were both left out once, to be built through
+// their own initializer. `@Scheduler` maps to the `component` stereotype
+// (DECISIONS.md D1), so that exclusion never matched and was removed.
+// `@Settings` was left out too, and that made every
 // application with one fail to compose: excluded from the graph, a settings
 // type arrived as a *root*, and roots are resolved from what modules provide —
 // no module provides a settings type, so the build said "no module in this
@@ -2271,10 +2268,8 @@ graphRegistrable.flatMap { $0.injectTypeNames + $0.acknowledgedTypeNames }.map(b
 // `@Settings`, GeneratorTests covers only its config-key check, and
 // SettingsIntegrationTests constructs it directly rather than through the
 // composer. The seam beside the seam, again.
-let containerConstructed: Set<String> = ["scheduler"]
 let graphNodes = graphRegistrable.filter { component in
     let kind = stereotype(forAttribute: component.attributeName)
-    if containerConstructed.contains(kind) { return false }
     return kind != "controller" || graphDependedUpon.contains(baseName(component.typeName))
 }
 
@@ -2700,7 +2695,7 @@ func emitAlulaGraph(into out: inout String) {
 // `modules:` stays the declaration — the list of subsystems, written by the
 // author and read by this generator — and this is what that list *means*
 // once a module can take what it needs: a module declares its inputs and
-// holds what it provides (COMPOSITION-MIGRATION.md D11).
+// holds what it provides (DECISIONS.md D11).
 //
 // There is no composer-less path to fall back to. `composedBy` has no default
 // and every entry point takes built instances; the type-based one went with
@@ -3509,7 +3504,7 @@ func emitComposer(into out: inout String) {
 // `AlulaRouteScan` parser `@Controller` expands with. This is the static,
 // build-time record of the routes — for tooling that reads them before the
 // process runs; the live route table is built from the `RouteRegistration`
-// values the composition root gathers (COMPOSITION-MIGRATION.md §2.9).
+// values the composition root gathers (DECISIONS.md D20).
 //
 // Emitted only when the target actually declares routes, so a target with no
 // controllers gets a generated file of exactly the shape it had before.
@@ -3626,7 +3621,7 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
 
     // The component list — every scanned component with its stereotype and
     // dependency edges. The edges are what the composition root is built from
-    // (COMPOSITION-MIGRATION.md §2.1).
+    // (DECISIONS.md D18).
     out += "\n"
     out += "    /// A registrable component, as scanned.\n"
     out += "    public struct Component: Sendable {\n"

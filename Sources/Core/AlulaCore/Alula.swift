@@ -26,7 +26,7 @@ public enum Alula {
 
     /// Assembles the application from module instances — already built by the
     /// composition root, in dependency order, each declaring what it needs in
-    /// its initializer and holding what it provides (COMPOSITION-MIGRATION.md
+    /// its initializer and holding what it provides (DECISIONS.md
     /// D11) — and returns the services its modules contribute, without running
     /// anything. There is no container, and no type-based overload: a value
     /// module cannot be built from its type.

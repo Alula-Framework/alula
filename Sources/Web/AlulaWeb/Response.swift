@@ -25,8 +25,8 @@ import HTTPTypes
 /// carrying the source (not its bytes) keeps that door open for a future
 /// transport even though today's writes chunks.
 ///
-/// Design delta, recorded in README: the doc sketches
-/// `case upgrade(handler: any ConnectionUpgradeHandler)`, but the handler's
+/// Design delta, recorded in Docs/web.md: the design sketched
+/// `case upgrade(handler: any WebSocketUpgradeHandler)`, but the handler's
 /// own contract takes the originating `RequestContext` — which a transport
 /// never has (§5.3). The case therefore carries an `UpgradeResponse` whose
 /// `run` closure was built by the router with the context already captured;

@@ -159,9 +159,9 @@ public macro Settings(_ namespace: String) =
 @attached(peer)
 public macro Secret() = #externalMacro(module: "AlulaCoreMacrosImpl", type: "SecretMacro")
 
-// `@Transactional` was removed in the composition migration. Transactions are
+// `@Transactional` was removed in 0.13.0. Transactions are
 // Hangar's: `repo.transaction { tx in ... }`, which additionally supports
 // isolation levels, savepoint nesting as designed behavior, and
 // serialization-failure retry — none of which the macro could express. The
 // macro's ambient coordinator was also the last framework-mandated task-local.
-// See COMPOSITION-MIGRATION.md §2.4.
+// CHANGELOG.md's 0.13.0 entry has the migration.

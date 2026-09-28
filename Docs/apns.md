@@ -155,8 +155,8 @@ application that deleted on them would lose every device it knows about to
 one configuration mistake. When they appear for every token at once, fix
 the configuration. When one token fails this way while others to the same
 topic succeed, that one token is bad, and forgetting it is right.
-`deviceTokenIsInvalid` treated all four reasons alike, so it's deprecated
-in favour of the two above.
+The old `deviceTokenIsInvalid` treated all four reasons alike, so it was
+removed in favour of the two above.
 
 `alula_apns_sends` counts every send by `outcome`, which is `delivered`
 or Apple's reason string. `alula_apns_provider_tokens_minted` counts each

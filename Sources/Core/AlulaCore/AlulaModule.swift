@@ -7,9 +7,11 @@ import ServiceLifecycle
 /// never via a side channel.
 public protocol AlulaModule {
     /// Modules that must be *included* when this one is — the composition root
-    /// pulls in prerequisites so naming one module names its stack. Not an
-    /// ordering constraint: construction order comes from the value flow the
-    /// generator resolves at build time.
+    /// pulls in prerequisites so naming one module names its stack. Not the
+    /// main ordering constraint: construction order comes from the value flow
+    /// the generator resolves at build time (a module taking another's
+    /// property is built after it). The dependencies-first order this list
+    /// gives only breaks ties between modules the value flow leaves unordered.
     static var dependencies: [any AlulaModule.Type] { get }
 
     /// Which module answers an unqualified `@Inject` when two provide the same
@@ -43,10 +45,11 @@ public protocol AlulaModule {
     ///
     /// `ServiceGroup` starts services in order and shuts them down in
     /// *reverse* order, so the array's order is a shutdown order read
-    /// backwards. Bootstrap builds that array from the module DAG, which
-    /// orders modules by `dependencies` — and nothing in the DAG says that
-    /// the HTTP server depends on the database pool, because it does not:
-    /// the *requests* do. So the order came from however the application
+    /// backwards. Bootstrap sorts that array by this phase first, and keeps
+    /// construction order within a phase. Construction order comes from value
+    /// flow, with `dependencies` breaking ties — and nothing in either says
+    /// that the HTTP server depends on the database pool, because it does not:
+    /// the *requests* do. Before phases, the order came from however the application
     /// happened to list its modules, and the shape every example uses —
     /// `modules: [AlulaWebModule<AlulaTransport>.self, AppModule.self]` —
     /// put the transport first, which made it shut down **last**: the pools

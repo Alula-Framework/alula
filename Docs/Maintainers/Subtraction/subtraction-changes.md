@@ -188,3 +188,11 @@ whose one file `@_exported import`s the testing modules.
   DocC catalog is in the docs job's target list.
 - **alula-data's** testing modules are not included: they are another
   package's.
+
+### `Docs/testing.md` module section (R27)
+
+"Testing the layers" now opens with `import AlulaTesting` and a table of the
+ten modules, what each gives a test, and the trait each needs, with a note on
+when to list one module directly. New sections cover rate limiting, Queue and
+Mail, the Scheduler, outbound HTTP and APNs, which the page had not
+mentioned. The existing sections are kept.

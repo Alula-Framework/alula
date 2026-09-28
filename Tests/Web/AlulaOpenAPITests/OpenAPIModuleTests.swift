@@ -65,5 +65,36 @@ struct OpenAPIModuleTests {
             document: document)
         #expect(enabled.routes.map(\.path) == ["/docs/api.json"])
     }
+
+    /// Loaded the way `Alula.run` loads it, with `ALULA_ENV` as given.
+    private func loaded(_ processEnvironment: [String: String]) throws -> Configuration {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alula-openapi-env-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try "app:\n  name: t\n".write(
+            to: directory.appendingPathComponent("alula.yaml"), atomically: true, encoding: .utf8)
+        return try Configuration.load(from: directory, processEnvironment: processEnvironment)
+    }
+
+    @Test("an unset ALULA_ENV is not development: off, the actuator dashboard's rule")
+    func unsetEnvironmentIsOff() throws {
+        // `alula dev` sets no ALULA_ENV, and neither does a production box
+        // that forgot it. The second must not publish its API description.
+        #expect(try AlulaOpenAPIModule(configuration: loaded([:]), document: document).routes.isEmpty)
+        #expect(
+            try AlulaOpenAPIModule(configuration: loaded(["ALULA_ENV": "dev"]), document: document)
+                .routes.map(\.path) == ["/openapi.json"])
+        #expect(
+            try AlulaOpenAPIModule(configuration: loaded(["ALULA_ENV": "local"]), document: document)
+                .routes.map(\.path) == ["/openapi.json"])
+        #expect(
+            try AlulaOpenAPIModule(configuration: loaded(["ALULA_ENV": "prod"]), document: document)
+                .routes.isEmpty)
+        #expect(
+            try AlulaOpenAPIModule(
+                configuration: loaded(["ALULA_ENV": "production"]), document: document
+            ).routes.isEmpty)
+    }
 }
 #endif

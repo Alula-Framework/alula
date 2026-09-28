@@ -98,6 +98,22 @@ public struct AlulaEnvironment: RawRepresentable, Sendable, Hashable, Codable {
     }
 }
 
+extension AlulaEnvironment {
+    /// The names that count as development: `dev`, `development`, `test`
+    /// and `local`, in any case.
+    ///
+    /// An allowlist, so a name nobody anticipated — `production`, `prd`,
+    /// `qa` — is *not* development. This alone does not decide whether a
+    /// developer-facing surface is published; see
+    /// `Configuration.isExplicitlyDevelopment(processEnvironment:)`, which
+    /// also requires the environment to have been stated.
+    public var isDevelopment: Bool {
+        Self.developmentNames.contains(rawValue.lowercased())
+    }
+
+    static let developmentNames: Set<String> = ["dev", "development", "test", "local"]
+}
+
 extension AlulaEnvironment: CustomStringConvertible {
     public var description: String { rawValue }
 }

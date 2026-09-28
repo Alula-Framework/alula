@@ -58,6 +58,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The OpenAPI document is off when `ALULA_ENV` is unset** — the actuator
+  dashboard's rule, now shared. OpenAPI read an unset `ALULA_ENV` as `dev`
+  and served the document; Actuator read it as "not declared" and withheld
+  the dashboard, so `alula dev` (which sets no `ALULA_ENV`) got one and not
+  the other, and a production box that forgot the variable published its
+  whole API description. Both now ask
+  `Configuration.isExplicitlyDevelopment()`: the environment was *stated*
+  (`ALULA_ENV` set, or named in code via `Configuration.load(environment:)` /
+  `Configuration(sources:environment:)`) and is `dev`, `development`, `test`
+  or `local`, in any case. `Configuration.declaredEnvironment()` and
+  `AlulaEnvironment.isDevelopment` are new. An unset `ALULA_ENV` still loads
+  `alula-dev.yaml`; only what it publishes changed. OpenAPI also now accepts
+  `development` and `local`, and Actuator's composition initializer honors an
+  environment named in code. **Migration:** a development machine that relied
+  on the unset default sets `ALULA_ENV=dev`, or `openapi.enabled: true` in
+  `alula-dev.yaml`.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

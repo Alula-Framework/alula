@@ -20,8 +20,10 @@ type, with component schemas for the structs and string enums they name.
 There is nothing to annotate and nothing that can drift, because the document
 comes from the same scan that builds the route table.
 
-It is served in development and test. Anywhere else, set
-`openapi.enabled: true` to publish it.
+It is served when `ALULA_ENV` names a development environment (`dev`,
+`development`, `test`, `local`) — an unset `ALULA_ENV` does not count, the
+actuator dashboard's rule. Anywhere else, set `openapi.enabled: true` to
+publish it.
 
 ## Topics
 

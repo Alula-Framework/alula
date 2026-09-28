@@ -127,8 +127,13 @@ extension Configuration {
             providers.append(environmentLayer)
         }
         providers.append(base)
+        // `active` is `dev` when nothing named it — right for choosing an
+        // overlay file, but not a statement that this is a development box.
+        let stated = environment != nil
+            || !(processEnvironment[prefix.environmentVariable] ?? "").isEmpty
         return Configuration(
-            providers: providers, environment: active, prefix: prefix,
+            providers: providers, environment: active,
+            environmentOrigin: stated ? .declared : .defaulted, prefix: prefix,
             accessReporter: accessReporter
         )
     }

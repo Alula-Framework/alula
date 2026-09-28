@@ -125,7 +125,11 @@ not `dev`: everywhere else an unset variable means development
 ([config](config.md)), but the question here is whether to publish an
 unauthenticated description of your topology, and "nobody set the variable"
 is not an answer worth acting on. Set `ALULA_ENV=dev` (or
-`ALULA_ACTUATOR_EXPOSURE=full`) to get the dashboard.
+`ALULA_ACTUATOR_EXPOSURE=full`) to get the dashboard. The OpenAPI document
+follows the same rule, from the same helper
+(`Configuration.isExplicitlyDevelopment()`), so the two never disagree about
+one process; an environment named in code (`Configuration.load(environment:)`)
+counts as stated for both.
 **Everywhere else the default is `health_only`** — an orchestrator needs a
 probe in production, and an all-or-nothing gate left production with none.
 

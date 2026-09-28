@@ -31,7 +31,7 @@ openapi:
   title: Orders API         # default: app.name
   version: 1.4.0            # default: 0.0.0
   description: Orders and fulfilment.
-  enabled: true             # default: dev and test only
+  enabled: true             # default: only when ALULA_ENV names a development environment
 ```
 
 ## What it describes
@@ -102,8 +102,15 @@ Middleware does not appear in it either: see
 
 ## Publishing
 
-In development and test it is served. Anywhere else it needs
-`openapi.enabled: true`. A full description of every route and payload is
+It is served when `ALULA_ENV` names a development environment — `dev`,
+`development`, `test` or `local`, in any case — or when code named one
+(`Configuration.load(environment: .dev)`). Anywhere else it needs
+`openapi.enabled: true`. **An unset `ALULA_ENV` does not count**, though it
+selects the `dev` overlay: a production box that forgot the variable must not
+start describing itself, and `alula dev` does not set it either — set
+`ALULA_ENV=dev` in your shell, or `openapi.enabled: true` in
+`alula-dev.yaml`. This is the actuator dashboard's rule, and both read it from
+one place, `Configuration.isExplicitlyDevelopment()`. A full description of every route and payload is
 as useful to someone probing the service as to its clients, so publishing it
 should be a decision. To serve it behind authentication, put the path under a
 lane in front of the module's route.

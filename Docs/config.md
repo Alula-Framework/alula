@@ -158,6 +158,14 @@ here.
 
 `ALULA_ENV` selects the overlay. Unset means `dev`.
 
+That default picks the overlay file and nothing more. Surfaces meant only for
+developers — the [OpenAPI document](openapi.md#publishing) and the
+[actuator dashboard](actuator.md#access-gating) — are published by default only
+when the environment was *stated* as a development one (`dev`, `development`,
+`test`, `local`): `ALULA_ENV` set, or an environment named in code.
+`configuration.isExplicitlyDevelopment()` is that rule, and
+`configuration.declaredEnvironment()` the stated environment or `nil`.
+
 ```swift
 AlulaEnvironment.current()      // ALULA_ENV=staging → .staging
 ```

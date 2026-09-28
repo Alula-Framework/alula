@@ -56,7 +56,7 @@ struct IntegrationTests {
     func noLongRunningService() throws {
         let app = try Alula.assemble(
             configuration: Configuration(),
-            modules: [ActuatorModule()]
+            modules: [try ActuatorModule(configuration: Configuration())]
         )
         #expect(app.services.isEmpty)
     }

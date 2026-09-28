@@ -146,8 +146,23 @@ The dashboard is open unless configured otherwise, so `full` anywhere
 reachable wants `actuator.dashboard-pipelines` (below). `health_only` is safe
 to expose: it answers `200`/`UP` or `503` and discloses nothing else.
 
-For tests and embedders, `ActuatorModule(environment:)` bypasses the
-`ALULA_ENV` read — construct it directly with the environment you want.
+### Constructing it by hand
+
+Two initializers, and the composition root uses the first:
+
+- `ActuatorModule(configuration:components:health:healthChecks:logger:)`
+  reads everything — the stated environment, `ALULA_ACTUATOR_EXPOSURE`,
+  `actuator.format`, `actuator.dashboard-*` and the build info. Outside a
+  composition, `try ActuatorModule(configuration: configuration)` is the
+  whole call.
+- `ActuatorModule(environment:exposure:components:health:healthChecks:format:dashboardAccess:logger:)`
+  takes all of it in code, for tests and embedders. Naming the environment
+  counts as declaring it; `exposure`, when given, bypasses both the
+  allowlist and `ALULA_ACTUATOR_EXPOSURE`.
+
+`ActuatorModule()` and `ActuatorModule(processEnvironment:)` are gone:
+the first ignored `actuator.format` and the dashboard settings, which was
+easy to miss. Replace them with `try ActuatorModule(configuration:)`.
 
 ## JSON contract
 

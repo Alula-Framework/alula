@@ -81,18 +81,16 @@ public struct ActuatorModule: AlulaModule {
 
     let environment: AlulaEnvironment
 
-    /// Bootstrap path: the environment comes from `ALULA_ENV`. Kept for
-    /// callers that construct the module bare; the composition root uses
-    /// ``init(configuration:components:health:healthChecks:logger:)``.
-    public init() {
-        self.init(processEnvironment: ProcessInfo.processInfo.environment)
-    }
-
-    /// The shape the composition root uses: the environment the
-    /// configuration states (`ALULA_ENV`, or one named in code), the
-    /// `actuator.*` settings, scanned components from the generated
-    /// `alulaComponentDescriptors()`, health from the shared registry. Throws
-    /// on a malformed `actuator.format`.
+    /// The shape the composition root uses, and the one to reach for by hand:
+    /// the environment the configuration states (`ALULA_ENV`, or one named in
+    /// code), every `actuator.*` setting — `actuator.format`,
+    /// `actuator.dashboard-pipelines`, `actuator.dashboard-roles`, the build
+    /// info — scanned components from the generated
+    /// `alulaComponentDescriptors()`, and health from the shared registry.
+    /// Throws on a malformed `actuator.*` value.
+    ///
+    /// Outside a composition, `try ActuatorModule(configuration: configuration)`
+    /// is the whole call.
     public init(
         configuration: Configuration,
         components: [ComponentDescriptor] = [],
@@ -134,52 +132,17 @@ public struct ActuatorModule: AlulaModule {
             logger: logger)
     }
 
-    /// The same path with the process environment injected. Uses the default
-    /// `.ssr` format; the composer init above reads `actuator.format`.
-    public init(
-        processEnvironment: [String: String],
-        components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry(),
-        healthChecks: [HealthCheck] = [],
-        dashboardAccess: ActuatorDashboardAccess = .open,
-        logger: Logger = Logger(label: "alula.actuator")
-    ) {
-        let declared = Configuration().declaredEnvironment(processEnvironment: processEnvironment)
-        self.init(
-            environment: declared ?? .dev, isEnvironmentDeclared: declared != nil,
-            exposure: nil, processEnvironment: processEnvironment,
-            components: components, health: health, healthChecks: healthChecks,
-            format: .ssr, buildInfo: ActuatorBuildInfo(),
-            dashboardAccess: dashboardAccess, logger: logger)
-    }
-
-    /// Explicit-environment initializer — the test seam (construct the module
-    /// directly with a known environment), and an escape hatch for embedders
-    /// that resolve the environment some other way.
+    /// Everything stated in code, nothing read from configuration — for tests,
+    /// and for embedders that resolve these some other way.
+    ///
+    /// Naming the environment is a declaration, the same as setting
+    /// `ALULA_ENV`. With `exposure` nil it is resolved from `environment` and
+    /// `ALULA_ACTUATOR_EXPOSURE`, as the configuration path resolves it; given,
+    /// it bypasses both. `format` and `dashboardAccess` are what
+    /// `actuator.format` and `actuator.dashboard-*` would have said.
     public init(
         environment: AlulaEnvironment,
-        components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry(),
-        healthChecks: [HealthCheck] = [],
-        dashboardAccess: ActuatorDashboardAccess = .open,
-        logger: Logger = Logger(label: "alula.actuator")
-    ) {
-        // Naming the environment in code is a declaration, the same as
-        // setting ALULA_ENV.
-        self.init(
-            environment: environment, isEnvironmentDeclared: true, exposure: nil,
-            processEnvironment: ProcessInfo.processInfo.environment,
-            components: components, health: health, healthChecks: healthChecks,
-            format: .ssr, buildInfo: ActuatorBuildInfo(),
-            dashboardAccess: dashboardAccess, logger: logger)
-    }
-
-    /// Explicit exposure, bypassing both the environment allowlist and
-    /// `ALULA_ACTUATOR_EXPOSURE` — the seam tests use instead of mutating
-    /// the real process environment.
-    public init(
-        environment: AlulaEnvironment,
-        exposure: ActuatorExposure,
+        exposure: ActuatorExposure? = nil,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
         healthChecks: [HealthCheck] = [],
@@ -189,13 +152,13 @@ public struct ActuatorModule: AlulaModule {
     ) {
         self.init(
             environment: environment, isEnvironmentDeclared: true, exposure: exposure,
-            processEnvironment: [:],
+            processEnvironment: exposure == nil ? ProcessInfo.processInfo.environment : [:],
             components: components, health: health, healthChecks: healthChecks,
             format: format, buildInfo: ActuatorBuildInfo(),
             dashboardAccess: dashboardAccess, logger: logger)
     }
 
-    /// Every public initializer ends here.
+    /// Both public initializers end here.
     private init(
         environment: AlulaEnvironment,
         isEnvironmentDeclared: Bool,

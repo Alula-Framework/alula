@@ -5,18 +5,18 @@ what production is allowed to see.
 
 ## Overview
 
-Registering the module adds exactly four routes:
+Registering the module adds at most five routes:
 
 ```
 GET /actuator/health        every module running?
 GET /actuator/health/live   is the process wedged — restart it?
 GET /actuator/health/ready  can it serve traffic yet?
 GET /actuator               the dashboard: modules and registered components
+GET /actuator/info          which build is running (beside the dashboard)
 ```
 
-That is the whole surface. There is no `/actuator/info`, `/actuator/beans`,
-`/actuator/routes` or `/actuator/config` — this page listed all four for
-several releases and none of them ever existed. There are no metrics either,
+That is the whole surface. There is no `/actuator/beans`, `/actuator/routes`
+or `/actuator/config`. There are no metrics either,
 by decision rather than omission: see `Docs/actuator.md` for why, and reach
 for a metrics library when you want metrics.
 
@@ -42,6 +42,15 @@ authentication in front of it, and ``ActuatorDashboardAccess`` does that from
 configuration: `actuator.dashboard-pipelines: authenticated` requires a
 signed-in principal, and `actuator.dashboard-roles` requires a role. The
 health routes are never gated.
+
+## Constructing the module
+
+The composition root calls
+``ActuatorModule/init(configuration:components:health:healthChecks:logger:)``,
+which reads the stated environment and every `actuator.*` setting; outside a
+composition, `try ActuatorModule(configuration: configuration)` is the whole
+call. ``ActuatorModule/init(environment:exposure:components:health:healthChecks:format:dashboardAccess:logger:)``
+takes the same decisions in code, for tests and embedders.
 
 ## Health is composed from modules
 

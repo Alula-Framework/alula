@@ -74,6 +74,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   environment named in code. **Migration:** a development machine that relied
   on the unset default sets `ALULA_ENV=dev`, or `openapi.enabled: true` in
   `alula-dev.yaml`.
+- **Breaking: `ActuatorModule` has two public initializers, not five.**
+  `init(configuration:components:health:healthChecks:logger:)` is the one the
+  composition root calls and the only one that read `actuator.format`,
+  `actuator.dashboard-*` and the build info; `init()` and
+  `init(processEnvironment:…)` silently used SSR, an open dashboard and a
+  private health registry. They are removed. `init(environment:…)` and
+  `init(environment:exposure:…)` are merged into one,
+  `init(environment:exposure:components:health:healthChecks:format:dashboardAccess:logger:)`,
+  with `exposure` optional. Generated compositions are unaffected.
+  **Migration:** `ActuatorModule()` → `try ActuatorModule(configuration: configuration)`;
+  `ActuatorModule(processEnvironment: env)` → `try ActuatorModule(configuration:)`
+  with the environment loaded into the configuration
+  (`Configuration.load(environment:)`); `ActuatorModule(environment:…)` and
+  `ActuatorModule(environment:exposure:…)` compile unchanged.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

@@ -107,7 +107,7 @@ struct GatingTests {
         // unauthenticated topology dashboard — while Docs/actuator.md claimed
         // getting the environment wrong "costs you a dashboard instead of
         // leaking one".
-        let actuator = ActuatorModule(processEnvironment: [:])
+        let actuator = try ActuatorModule(configuration: Configuration(), processEnvironment: [:])
         let client = try TestClient(routes: actuator.routes)
         #expect(await client.get("/actuator").status == .notFound)
         #expect(await client.get("/actuator/health").status == .ok)
@@ -115,7 +115,8 @@ struct GatingTests {
 
     @Test("declaring dev explicitly still gets the dashboard")
     func declaredDevGetsDashboard() async throws {
-        let actuator = ActuatorModule(processEnvironment: ["ALULA_ENV": "dev"])
+        let actuator = try ActuatorModule(
+            configuration: Configuration(), processEnvironment: ["ALULA_ENV": "dev"])
         let client = try TestClient(routes: actuator.routes)
         #expect(await client.get("/actuator").status == .ok)
     }

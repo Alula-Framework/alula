@@ -257,6 +257,7 @@ func diagnosticCode(for error: any Error) -> DiagnosticCode? {
         case .missingKey: return .missingConfigKey
         case .decodingFailed: return .invalidConfigValue
         case .providerFailed, .unrepresentableValue: return .configSourceFailed
+        case .renamedKey: return .renamedConfigKey
         }
     case let load as ConfigLoadError:
         switch load {

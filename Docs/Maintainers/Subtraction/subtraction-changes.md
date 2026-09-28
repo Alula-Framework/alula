@@ -196,3 +196,37 @@ ten modules, what each gives a test, and the trait each needs, with a note on
 when to list one module directly. New sections cover rate limiting, Queue and
 Mail, the Scheduler, outbound HTTP and APNs, which the page had not
 mentioned. The existing sections are kept.
+### Old config-key spellings (R14)
+
+A renamed key's old spelling is refused at startup with ALU-CONFIG-5014,
+which names the old key, the new key and the layer that sets it. Nothing
+reads the old spelling any more, and nothing falls back to it.
+
+- **Mechanism:** `Configuration.getIfPresent(_:formerly:as:)` stays public
+  (R15) and changes meaning: a former spelling present in any layer throws
+  `ConfigError.renamedKey(formerKey:currentKey:provider:)`, whether or not the
+  current key is set too. The `positive`, `positiveSeconds` and
+  `secondsOrDisabled` helpers pass `formerly:` through it. OIDC's hand-written
+  snake_case fallback in `OIDCSecurityConfiguration.setting` now uses it too,
+  with each key's snake_case spelling as its former one. That makes one
+  mechanism for the 14 call sites.
+- **Environment variables:** the variable layer turns every character other
+  than a letter or digit into `_`, so `pubsub.node_id` and `pubsub.node-id`
+  are both `ALULA_PUBSUB_NODE_ID`. A layer that answers the former spelling
+  with the same value as the current one cannot tell them apart and is read,
+  unless it holds keys literally (Alula's YAML files, `YAMLConfigSource`,
+  `TestConfigSource`). An old spelling in `alula.yaml` is always refused.
+  `ALULA_ALULA_PRESENCE_*` and `ALULA_ALULA_CHANNELS_*` spell only the old
+  keys and are refused.
+- **Code:** ALU-CONFIG-5014, "A configuration key under a spelling Alula no
+  longer reads", with its page. `Alula.run` reports it like the other
+  startup configuration errors.
+- **Tests:** the alula tests that used old spellings now use the new ones.
+  New tests cover a refusal for each family, the refusal when both keys are
+  set, the folded variable being read, a YAML `node_id` refused with
+  `ALULA_PUBSUB_NODE_ID` set, and an `ALULA_ALULA_*` variable refused.
+- **Outside alula:** alula-data's `Docs/data-postgres.md:261` names
+  `alula.channels.write-timeout-seconds`. Relay's `docs/OPERATIONS.md` and
+  `docs/ISSUES.md` name the snake_case `jwks_*` and `pubsub.node_id` keys, as
+  history. No configuration file in alula-data, alula-cli, fledge or relay
+  uses an old spelling.

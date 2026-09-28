@@ -89,17 +89,29 @@ struct RouterTests {
         #expect(configuration.heartbeatCheckInterval == .milliseconds(50))
     }
 
-    @Test("channels.* keys are read, and the alula.channels.* spellings they replaced still are")
+    @Test("channels.* keys are read")
     func keySpellings() throws {
         let current = try ChannelsConfiguration(configuration: .init(values: [
             "channels.heartbeat-timeout-seconds": "30", "channels.max-topics-per-socket": "8",
         ]))
         #expect(current.heartbeatTimeout == .seconds(30))
         #expect(current.maxTopicsPerSocket == 8)
-        let former = try ChannelsConfiguration(configuration: .init(values: [
-            "alula.channels.heartbeat-timeout-seconds": "20",
-        ]))
-        #expect(former.heartbeatTimeout == .seconds(20))
+    }
+
+    @Test("each alula.channels.* spelling is refused, naming the channels.* key", arguments: [
+        "heartbeat-timeout-seconds", "heartbeat-check-interval-seconds", "outbound-buffer-size",
+        "write-timeout-seconds", "max-concurrent-envelopes", "outbound-overflow",
+        "max-topics-per-socket",
+    ])
+    func formerSpellingsAreRefused(name: String) {
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "alula.channels.\(name)", currentKey: "channels.\(name)",
+            provider: "TestConfigSource")
+        ) {
+            _ = try ChannelsConfiguration(configuration: .init(values: [
+                "alula.channels.\(name)": "20",
+            ]))
+        }
     }
 
     /// These trapped at boot: `get(_:default:)` on a malformed value, and

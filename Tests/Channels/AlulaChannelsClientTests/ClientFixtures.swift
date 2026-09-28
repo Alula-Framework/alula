@@ -65,8 +65,8 @@ struct ClientHarness {
         transportDecorator: (any ChannelClientTransport) -> any ChannelClientTransport = { $0 }
     ) throws {
         let configuration = Configuration(values: [
-            "alula.channels.heartbeat-timeout-seconds": "\(heartbeatTimeoutSeconds)",
-            "alula.channels.heartbeat-check-interval-seconds": "0.03",
+            "channels.heartbeat-timeout-seconds": "\(heartbeatTimeoutSeconds)",
+            "channels.heartbeat-check-interval-seconds": "0.03",
         ])
         let pubsub = try AlulaPubSubModule(configuration: configuration)
         let fixture = ClientFixtureModule()

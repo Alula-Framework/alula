@@ -50,6 +50,16 @@ public enum ConfigError: Error, CustomStringConvertible, Sendable, Equatable, Ha
     /// value.
     case providerFailed(key: String, provider: String, reason: String)
 
+    /// A provider sets a key under a spelling that was renamed: `formerKey`
+    /// is what it says, `currentKey` is what Alula reads now.
+    ///
+    /// Thrown by `Configuration.getIfPresent(_:formerly:as:)` whenever a
+    /// former spelling is present, whether or not the current one is set
+    /// too. The old spelling is refused rather than read: reading both left
+    /// a deployment with two names for one setting, and dropping the old one
+    /// silently would put the setting back to its default without a word.
+    case renamedKey(formerKey: String, currentKey: String, provider: String)
+
     public var description: String {
         switch self {
         case .missingKey(let key, let environment, let prefix):
@@ -79,6 +89,13 @@ public enum ConfigError: Error, CustomStringConvertible, Sendable, Equatable, Ha
             which has no single raw-string value. Resolution stopped here rather than \
             falling through to a lower-precedence layer. Read it through \
             Configuration.reader and request the array type directly.
+            """
+        case .renamedKey(let formerKey, let currentKey, let provider):
+            return """
+            Configuration key '\(formerKey)' is set in \(provider), but it was renamed \
+            '\(currentKey)' and the old spelling is no longer read. Rename it to \
+            '\(currentKey)'; Alula stops here rather than start without the value \
+            you set.
             """
         }
     }

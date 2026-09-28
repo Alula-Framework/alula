@@ -93,12 +93,12 @@ private func makeHandler(
     overflow: String, bufferSize: Int
 ) throws -> ChannelSocketHandler {
     let configuration = Configuration(values: [
-        "alula.channels.outbound-buffer-size": "\(bufferSize)",
-        "alula.channels.outbound-overflow": overflow,
+        "channels.outbound-buffer-size": "\(bufferSize)",
+        "channels.outbound-overflow": overflow,
         // Long enough that the writer's own timeout cannot be what ends the
         // session — otherwise this suite would pass on the wrong close code.
-        "alula.channels.write-timeout-seconds": "30",
-        "alula.channels.heartbeat-timeout-seconds": "30",
+        "channels.write-timeout-seconds": "30",
+        "channels.heartbeat-timeout-seconds": "30",
     ])
     let pubsub = try AlulaPubSubModule(configuration: configuration)
     let channels = try AlulaChannelsModule(
@@ -107,7 +107,7 @@ private func makeHandler(
 }
 
 private func makeContext() -> RequestContext {
-    var logger = Logger(label: "alula.channels.overflow-test")
+    var logger = Logger(label: "channels.overflow-test")
     logger.logLevel = .critical
     return RequestContext(
         request: Request(method: .get, path: "/socket"), logger: logger)
@@ -157,10 +157,10 @@ struct OutboundOverflowTests {
         // visible rather than silent". Nothing asserted it ever moved.
         let box = SocketBox()
         let configuration = Configuration(values: [
-            "alula.channels.outbound-buffer-size": "2",
-            "alula.channels.outbound-overflow": "drop-oldest",
-            "alula.channels.write-timeout-seconds": "30",
-            "alula.channels.heartbeat-timeout-seconds": "30",
+            "channels.outbound-buffer-size": "2",
+            "channels.outbound-overflow": "drop-oldest",
+            "channels.write-timeout-seconds": "30",
+            "channels.heartbeat-timeout-seconds": "30",
         ])
         let pubsub = try AlulaPubSubModule(configuration: configuration)
         let channels = try AlulaChannelsModule(
@@ -232,13 +232,13 @@ struct OutboundOverflowTests {
         // outcome nobody would notice.
         let settings = try ChannelsConfiguration(
             configuration: Configuration(values: [
-                "alula.channels.outbound-overflow": "drop_oldest"  // wrong spelling
+                "channels.outbound-overflow": "drop_oldest"  // wrong spelling
             ]))
         #expect(settings.outboundOverflow == .closeSocket)
 
         let correct = try ChannelsConfiguration(
             configuration: Configuration(values: [
-                "alula.channels.outbound-overflow": "drop-oldest"
+                "channels.outbound-overflow": "drop-oldest"
             ]))
         #expect(correct.outboundOverflow == .dropOldest)
         #expect(ChannelsConfiguration().outboundOverflow == .closeSocket)

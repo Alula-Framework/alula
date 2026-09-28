@@ -1,4 +1,5 @@
 import AlulaCore
+import Foundation
 import Testing
 
 @testable import AlulaPubSub
@@ -65,7 +66,7 @@ struct PubSubSettingsTests {
     }
 
     /// Relay #33: the keys shipped snake_case, unlike every other Alula key.
-    @Test("kebab-case keys are read, and the snake_case ones they replaced still are")
+    @Test("kebab-case keys are read, and the snake_case ones they replaced are refused")
     func keySpellings() throws {
         let current = try PubSubSettings(configuration: Configuration(values: [
             "pubsub.node-id": "api-3", "pubsub.broadcast-timeout": "1s",
@@ -73,16 +74,65 @@ struct PubSubSettingsTests {
         #expect(current.nodeID == "api-3")
         #expect(current.broadcastTimeout == .after(.seconds(1)))
 
-        let former = try PubSubSettings(configuration: Configuration(values: [
-            "pubsub.node_id": "api-4", "pubsub.broadcast_timeout": "2s",
-        ]))
-        #expect(former.nodeID == "api-4")
-        #expect(former.broadcastTimeout == .after(.seconds(2)))
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "pubsub.node_id", currentKey: "pubsub.node-id", provider: "TestConfigSource")
+        ) {
+            try PubSubSettings(configuration: Configuration(values: ["pubsub.node_id": "api-4"]))
+        }
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "pubsub.broadcast_timeout", currentKey: "pubsub.broadcast-timeout",
+            provider: "TestConfigSource")
+        ) {
+            try PubSubSettings(configuration: Configuration(values: ["pubsub.broadcast_timeout": "2s"]))
+        }
+        // Setting the new key too does not make the old line harmless.
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "pubsub.node_id", currentKey: "pubsub.node-id", provider: "TestConfigSource")
+        ) {
+            try PubSubSettings(configuration: Configuration(values: [
+                "pubsub.node-id": "new", "pubsub.node_id": "old",
+            ]))
+        }
+    }
 
-        let both = try PubSubSettings(configuration: Configuration(values: [
-            "pubsub.node-id": "new", "pubsub.node_id": "old",
-        ]))
-        #expect(both.nodeID == "new", "the current spelling wins")
+    /// `node-id` and `node_id` are one environment variable: the refusal
+    /// must not fire for the new key's own spelling.
+    @Test("ALULA_PUBSUB_NODE_ID is the new key's variable, and is read")
+    func environmentVariableSpelling() throws {
+        let settings = try PubSubSettings(configuration: Configuration.load(
+            from: try yamlDirectory("pubsub:\n  buffering: unbounded\n"),
+            processEnvironment: [
+                "ALULA_PUBSUB_NODE_ID": "api-5", "ALULA_PUBSUB_BROADCAST_TIMEOUT": "3s",
+            ]))
+        #expect(settings.nodeID == "api-5")
+        #expect(settings.broadcastTimeout == .after(.seconds(3)))
+    }
+
+    @Test("a YAML node_id is refused even with ALULA_PUBSUB_NODE_ID set")
+    func yamlSnakeCaseIsRefused() throws {
+        let directory = try yamlDirectory("pubsub:\n  node_id: api-6\n")
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "pubsub.node_id", currentKey: "pubsub.node-id", provider: "alula.yaml")
+        ) {
+            try PubSubSettings(configuration: Configuration.load(
+                from: directory, processEnvironment: [:]))
+        }
+        // The variable wins resolution, but alula.yaml still has the line.
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "pubsub.node_id", currentKey: "pubsub.node-id", provider: "alula.yaml")
+        ) {
+            try PubSubSettings(configuration: Configuration.load(
+                from: directory, processEnvironment: ["ALULA_PUBSUB_NODE_ID": "api-7"]))
+        }
+    }
+
+    private func yamlDirectory(_ base: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pubsub-keys-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try base.write(
+            to: directory.appendingPathComponent("alula.yaml"), atomically: true, encoding: .utf8)
+        return directory
     }
 
     @Test("a bare number is rejected, as everywhere else a Duration is read")

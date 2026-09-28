@@ -34,29 +34,50 @@ struct ModuleTests {
         #expect(kebab.rolesClaims == ["my_roles"])
     }
 
-    @Test("the snake_case spelling that shipped keeps working")
-    func snakeCaseKeysStillWork() throws {
-        let snake = try OIDCSecurityConfiguration(
-            configuration: Configuration(values: [
-                "security.oidc.issuer": testIssuer,
-                "security.oidc.audience": testAudience,
-                "security.oidc.jwks_url": "https://idp.example.com/legacy",
-                "security.oidc.clock_skew_leeway": "90",
-            ]))
-        #expect(snake.jwksURL?.absoluteString == "https://idp.example.com/legacy")
-        #expect(snake.clockSkewLeeway == 90)
+    @Test("the snake_case spelling that shipped is refused, naming the kebab-case key")
+    func snakeCaseKeysAreRefused() {
+        #expect(
+            throws: ConfigError.renamedKey(
+                formerKey: "security.oidc.jwks_url", currentKey: "security.oidc.jwks-url",
+                provider: "TestConfigSource")
+        ) {
+            try OIDCSecurityConfiguration(
+                configuration: Configuration(values: [
+                    "security.oidc.issuer": testIssuer,
+                    "security.oidc.audience": testAudience,
+                    "security.oidc.jwks_url": "https://idp.example.com/legacy",
+                ]))
+        }
     }
 
-    @Test("kebab-case wins when both are set")
-    func kebabCaseIsCanonical() throws {
-        let both = try OIDCSecurityConfiguration(
-            configuration: Configuration(values: [
-                "security.oidc.issuer": testIssuer,
-                "security.oidc.audience": testAudience,
-                "security.oidc.jwks_max_stale": "111",
-                "security.oidc.jwks-max-stale": "222",
-            ]))
-        #expect(both.jwksMaxStaleAge == 222)
+    @Test("the snake_case spelling is refused even when the kebab-case one is set too")
+    func snakeCaseRefusedBesideKebabCase() {
+        #expect(
+            throws: ConfigError.renamedKey(
+                formerKey: "security.oidc.jwks_max_stale", currentKey: "security.oidc.jwks-max-stale",
+                provider: "TestConfigSource")
+        ) {
+            try OIDCSecurityConfiguration(
+                configuration: Configuration(values: [
+                    "security.oidc.issuer": testIssuer,
+                    "security.oidc.audience": testAudience,
+                    "security.oidc.jwks_max_stale": "111",
+                    "security.oidc.jwks-max-stale": "222",
+                ]))
+        }
+    }
+
+    @Test("ALULA_SECURITY_OIDC_JWKS_URL is the kebab-case key's own variable, and is read")
+    func environmentVariableIsTheNewKey() throws {
+        let configuration = Configuration(sources: [
+            EnvironmentVariablesSource(environment: [
+                "ALULA_SECURITY_OIDC_ISSUER": testIssuer,
+                "ALULA_SECURITY_OIDC_AUDIENCE": testAudience,
+                "ALULA_SECURITY_OIDC_JWKS_URL": "https://idp.example.com/keys",
+            ])
+        ])
+        let config = try OIDCSecurityConfiguration(configuration: configuration)
+        #expect(config.jwksURL?.absoluteString == "https://idp.example.com/keys")
     }
 
     @Test("the security module declares middleware and lanes, but no validator")
@@ -142,12 +163,12 @@ struct ModuleTests {
             configuration: Configuration(values: [
                 "security.oidc.issuer": "https://idp",
                 "security.oidc.audience": "app",
-                "security.oidc.jwks_url": "https://idp/keys",
-                "security.oidc.jwks_cache_ttl": "600",
-                "security.oidc.clock_skew_leeway": "5",
-                "security.oidc.jwks_refresh_cooldown": "120",
-                "security.oidc.roles_claim": "https://example.com/roles, groups",
-                "security.oidc.scopes_claim": "scope",
+                "security.oidc.jwks-url": "https://idp/keys",
+                "security.oidc.jwks-cache-ttl": "600",
+                "security.oidc.clock-skew-leeway": "5",
+                "security.oidc.jwks-refresh-cooldown": "120",
+                "security.oidc.roles-claim": "https://example.com/roles, groups",
+                "security.oidc.scopes-claim": "scope",
             ])
         )
         #expect(config.jwksURL == URL(string: "https://idp/keys"))

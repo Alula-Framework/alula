@@ -121,7 +121,7 @@ actor JWKSCache {
                 // Only while refreshes are actually failing. Reaching this
                 // path means no refresh was wanted — for `.ifStale`, that
                 // the TTL has not elapsed — so without the `lastFailureAt`
-                // check a `jwks_max_stale` lower than `jwks_cache_ttl`
+                // check a `jwks-max-stale` lower than `jwks-cache-ttl`
                 // refused every request for the window between them, with
                 // the IdP healthy, reporting it as the IdP being down.
                 if let fetchedAt, lastFailureAt != nil {

@@ -246,24 +246,81 @@ public struct Configuration: Sendable {
     }
 
     /// ``getIfPresent(_:as:fileID:line:)`` for a key that has been renamed:
-    /// the current spelling wins, and each former one is read in order when
-    /// it is absent, so a deployment that still sets the old key keeps
-    /// working.
+    /// the current spelling is read, and any former one is **refused**.
     ///
     /// ```swift
     /// let nodeID = try configuration.getIfPresent(
     ///     "pubsub.node-id", formerly: ["pubsub.node_id"], as: String.self)
     /// ```
+    ///
+    /// A former spelling is never read as a fallback. If any layer sets one,
+    /// this throws `ConfigError.renamedKey` naming both spellings, whether
+    /// or not the current one is set too, and
+    /// `Alula.run` reports it as ALU-CONFIG-5014. Reading both spellings left a
+    /// deployment with two names for one setting; dropping the old one
+    /// without a word would put the setting back to its default.
+    ///
+    /// The environment-variable layer is the one exception it has to make.
+    /// That layer turns every character other than a letter or digit into
+    /// `_`, so `pubsub.node_id` and `pubsub.node-id` are the same variable,
+    /// `ALULA_PUBSUB_NODE_ID`. A layer that answers the former spelling with
+    /// the same value it gives for the current one cannot tell them apart,
+    /// and the variable is the current key's own spelling, so it is read.
+    /// A spelling the variable layer does distinguish, such as
+    /// `alula.presence.node-name` (`ALULA_ALULA_PRESENCE_NODE_NAME`), is
+    /// refused there like anywhere else. The YAML files are always literal:
+    /// an old spelling in `alula.yaml` is refused even when the new one is
+    /// also set, to the same value.
+    ///
+    /// - Throws: `ConfigError.renamedKey` for a former spelling, and
+    ///   otherwise what ``getIfPresent(_:as:fileID:line:)`` throws.
     public func getIfPresent<T: ConfigDecodable>(
         _ key: String, formerly: [String], as type: T.Type = T.self,
         fileID: String = #fileID, line: UInt = #line
     ) throws -> T? {
-        for candidate in [key] + formerly {
-            if let value = try getIfPresent(candidate, as: type, fileID: fileID, line: line) {
-                return value
+        try refuseFormerSpellings(formerly, of: key)
+        return try getIfPresent(key, as: type, fileID: fileID, line: line)
+    }
+
+    /// Throws `ConfigError.renamedKey` for the first layer, highest
+    /// precedence first, that sets a former spelling.
+    private func refuseFormerSpellings(_ formerly: [String], of key: String) throws {
+        let current = AbsoluteConfigKey(Self.pathComponents(of: key))
+        for former in formerly where former != key {
+            let formerKey = AbsoluteConfigKey(Self.pathComponents(of: former))
+            for provider in providers {
+                // Only a value counts. A layer that cannot answer the old
+                // spelling is not setting it, and the current key's own read
+                // reports a failing layer.
+                guard case .resolved(_, let raw) = Self.lookup(of: provider, forKey: formerKey)
+                else { continue }
+                if !Self.holdsKeysLiterally(provider),
+                    case .resolved(_, let currentRaw) = Self.lookup(of: provider, forKey: current),
+                    currentRaw == raw
+                {
+                    continue  // One variable, both spellings: see the doc comment.
+                }
+                // The variable layer's own name is a wrapper type's; the
+                // variable is what an operator can find and rename.
+                let layer =
+                    provider.providerName.contains("EnvironmentVariables")
+                    ? "the environment variable \(prefix.variableName(for: former))"
+                    : provider.providerName
+                throw ConfigError.renamedKey(formerKey: former, currentKey: key, provider: layer)
             }
         }
-        return nil
+    }
+
+    /// Whether `provider` stores keys exactly as written, so that two
+    /// spellings are two entries. True for Alula's YAML layers and in-memory
+    /// test sources; false for the environment-variable layer, which folds
+    /// spellings together, and for any provider Alula cannot see into.
+    private static func holdsKeysLiterally(_ provider: any ConfigProvider) -> Bool {
+        if provider is AlulaYAMLProvider { return true }
+        if let bridged = provider as? ConfigSourceProvider {
+            return bridged.source is YAMLConfigSource || bridged.source is TestConfigSource
+        }
+        return false
     }
 
     // MARK: - Raw access

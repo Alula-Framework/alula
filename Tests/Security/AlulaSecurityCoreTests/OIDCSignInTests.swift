@@ -410,13 +410,13 @@ struct OIDCSignInTests {
 
     // MARK: Configuration
 
-    @Test("configuration is read from security.oidc, in either spelling")
+    @Test("configuration is read from security.oidc")
     func configuration() throws {
         let configuration = try OIDCSignInConfiguration(
             configuration: Configuration(values: [
                 "security.oidc.issuer": testIssuer,
                 "security.oidc.client-id": "my-app",
-                "security.oidc.client_secret": "s3cret",
+                "security.oidc.client-secret": "s3cret",
                 "security.oidc.redirect-uri": "https://app.example.com/auth/callback",
                 "security.oidc.sign-in-scopes": "openid email",
             ]))

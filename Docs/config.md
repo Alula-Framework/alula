@@ -214,14 +214,31 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 > it in framework code — so a malformed value they read is a coded
 > configuration error at startup rather than a crash.
 
-A key that has been renamed is read with `getIfPresent(_:formerly:as:)`: the
-current spelling wins, and each former one is tried in order when it is
-absent, so a deployment that still sets the old key keeps working:
+A key that has been renamed is read with `getIfPresent(_:formerly:as:)`. The
+current spelling is read, and a former one is **refused**: if any layer sets
+it, the start stops with
+[ALU-CONFIG-5014](../Diagnostics/ALU-CONFIG-5014.md), naming the old key and
+the new one, whether or not the new one is set too:
 
 ```swift
 let nodeID = try configuration.getIfPresent(
     "pubsub.node-id", formerly: ["pubsub.node_id"], as: String.self)
 ```
+
+A former spelling is never a silent fallback. Reading both left a deployment
+with two names for one setting, and ignoring the old one would put the
+setting back to its default without a word.
+
+The environment-variable layer needs one exception. It turns every character
+other than a letter or digit into `_`, so `pubsub.node_id` and
+`pubsub.node-id` are the same variable, `ALULA_PUBSUB_NODE_ID`, and that
+variable is the new key's own spelling. A layer that gives the old spelling
+the same value as the new one cannot tell them apart, so it is read. A
+rename the variables do tell apart, such as `alula.presence.node-name` to
+`presence.node-name` (`ALULA_ALULA_PRESENCE_NODE_NAME` to
+`ALULA_PRESENCE_NODE_NAME`), is refused there like anywhere else. The YAML
+files hold keys exactly as written, so an old spelling there is always
+refused.
 
 ### A provider that fails is not a provider that is empty
 

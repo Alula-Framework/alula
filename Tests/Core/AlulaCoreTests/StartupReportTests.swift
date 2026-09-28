@@ -51,6 +51,7 @@ struct StartupReportTests {
         #expect(report(ConfigLoadError.parseFailed(file: "alula.yaml", line: 3, column: 4, message: "bad")).contains("[ALU-CONFIG-5007]"))
         #expect(report(ConfigLoadError.unresolvedSubstitution(file: "alula.yaml", line: 2, key: "db.url", variable: "DB_URL")).contains("[ALU-CONFIG-5011]"))
         #expect(report(ConfigLoadError.preRenameConfiguration(variables: ["FLIGHT_ENV"], files: [])).contains("[ALU-CONFIG-5012]"))
+        #expect(report(ConfigError.renamedKey(formerKey: "pubsub.node_id", currentKey: "pubsub.node-id", provider: "alula.yaml")).contains("error: [ALU-CONFIG-5014] Configuration key 'pubsub.node_id' is set in alula.yaml, but it was renamed 'pubsub.node-id'"))
         let coded = report(ConfigError.missingKey(key: "mail.host", environment: nil))
         #expect(coded.hasPrefix("alula: could not start.\nerror: [ALU-CONFIG-5004]"))
         #expect(coded.contains("docs: https://"))

@@ -23,8 +23,8 @@ import Foundation
 /// | `scopes-claim`          | no       | `scope,scp`                          |
 /// | `allowed-algorithms`    | no       | every asymmetric algorithm JWTKit verifies |
 ///
-/// The snake_case spellings these keys shipped with (`jwks_url`) are still
-/// read; kebab-case wins when both are set.
+/// The snake_case spellings these keys shipped with (`jwks_url`) are
+/// refused at startup with ALU-CONFIG-5014, which names the kebab-case key.
 public struct OIDCSecurityConfiguration: Sendable {
     /// The IdP's issuer identifier; must equal the token's `iss` exactly.
     public var issuer: String
@@ -177,29 +177,21 @@ public struct OIDCSecurityConfiguration: Sendable {
         }
     }
 
-    /// Reads a `security.oidc.*` setting, accepting either spelling.
+    /// Reads a `security.oidc.*` setting by its kebab-case name, refusing
+    /// the snake_case spelling it shipped with.
     ///
-    /// Every other configuration namespace in Alula is kebab-case —
-    /// `channels.heartbeat-timeout-seconds`, `web.json.date-strategy`,
-    /// `presence.max-entries-per-frame`. These keys shipped
-    /// snake_case, following OIDC's own spec vocabulary (`jwks_uri`,
-    /// `client_id`), and the inconsistency is invisible until someone writes
-    /// `jwks-url` from habit and is handed the default instead of the value
-    /// they set. There is no way to catch that: `Configuration` cannot
-    /// enumerate its keys, so an unknown one cannot be refused the way an
-    /// unknown *value* is.
-    ///
-    /// So both work. Kebab-case is canonical and wins if both are set;
-    /// snake_case is what shipped and keeps working.
+    /// Every other configuration namespace in Alula is kebab-case. These
+    /// keys shipped snake_case, following OIDC's own spec vocabulary
+    /// (`jwks_uri`, `client_id`), and both spellings were read for a while.
+    /// Now `jwks_url` stops the start with ALU-CONFIG-5014 naming
+    /// `jwks-url`, so no deployment carries two names for one setting.
     static func setting<T: ConfigDecodable>(
         _ configuration: Configuration, _ name: String, as type: T.Type
     ) throws -> T? {
-        if let value = try configuration.getIfPresent("security.oidc.\(name)", as: type) {
-            return value
-        }
-        let legacy = name.replacingOccurrences(of: "-", with: "_")
-        guard legacy != name else { return nil }
-        return try configuration.getIfPresent("security.oidc.\(legacy)", as: type)
+        let key = "security.oidc.\(name)"
+        let former = "security.oidc.\(name.replacingOccurrences(of: "-", with: "_"))"
+        return try configuration.getIfPresent(
+            key, formerly: former == key ? [] : [former], as: type)
     }
 
     /// Reads the `security.oidc.*` keys from Alula Config.

@@ -125,7 +125,11 @@ not `dev`: everywhere else an unset variable means development
 ([config](config.md)), but the question here is whether to publish an
 unauthenticated description of your topology, and "nobody set the variable"
 is not an answer worth acting on. Set `ALULA_ENV=dev` (or
-`ALULA_ACTUATOR_EXPOSURE=full`) to get the dashboard.
+`ALULA_ACTUATOR_EXPOSURE=full`) to get the dashboard. The OpenAPI document
+follows the same rule, from the same helper
+(`Configuration.isExplicitlyDevelopment()`), so the two never disagree about
+one process; an environment named in code (`Configuration.load(environment:)`)
+counts as stated for both.
 **Everywhere else the default is `health_only`** — an orchestrator needs a
 probe in production, and an all-or-nothing gate left production with none.
 
@@ -142,8 +146,23 @@ The dashboard is open unless configured otherwise, so `full` anywhere
 reachable wants `actuator.dashboard-pipelines` (below). `health_only` is safe
 to expose: it answers `200`/`UP` or `503` and discloses nothing else.
 
-For tests and embedders, `ActuatorModule(environment:)` bypasses the
-`ALULA_ENV` read — construct it directly with the environment you want.
+### Constructing it by hand
+
+Two initializers, and the composition root uses the first:
+
+- `ActuatorModule(configuration:components:health:healthChecks:logger:)`
+  reads everything — the stated environment, `ALULA_ACTUATOR_EXPOSURE`,
+  `actuator.format`, `actuator.dashboard-*` and the build info. Outside a
+  composition, `try ActuatorModule(configuration: configuration)` is the
+  whole call.
+- `ActuatorModule(environment:exposure:components:health:healthChecks:format:dashboardAccess:logger:)`
+  takes all of it in code, for tests and embedders. Naming the environment
+  counts as declaring it; `exposure`, when given, bypasses both the
+  allowlist and `ALULA_ACTUATOR_EXPOSURE`.
+
+`ActuatorModule()` and `ActuatorModule(processEnvironment:)` are gone:
+the first ignored `actuator.format` and the dashboard settings, which was
+easy to miss. Replace them with `try ActuatorModule(configuration:)`.
 
 ## JSON contract
 

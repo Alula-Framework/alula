@@ -102,6 +102,14 @@ configuration.reader.stringArray(forKey: "cluster.hosts")   // ["alpha", "beta"]
 `AlulaEnvironment.current` reads `ALULA_ENV`. Unset means
 `AlulaEnvironment.dev`.
 
+That default picks the overlay file and nothing more. Whether this process is
+*declared* a development one — which decides whether the OpenAPI document and
+the actuator dashboard are published — is
+``Configuration/isExplicitlyDevelopment(processEnvironment:)``, and an unset
+variable is not a declaration: a production box that forgot it must not start
+describing itself. ``Configuration/declaredEnvironment(processEnvironment:)``
+gives the stated environment, or `nil`.
+
 Four environments ship with the package, but the type is extensible:
 
 ```swift

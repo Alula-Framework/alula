@@ -85,7 +85,7 @@ public struct OpenAPIDocument: Sendable {
 ///   path: /openapi.json       # default
 ///   title: Orders API         # default: app.name
 ///   version: 1.4.0            # default: 0.0.0
-///   enabled: true             # default: only in dev and test
+///   enabled: true             # default: only when ALULA_ENV names a development environment
 /// ```
 ///
 /// What the document knows comes from source:
@@ -99,17 +99,21 @@ public struct OpenAPIDocument: Sendable {
 /// `Response` is described as returning "a response", because the build
 /// cannot see what it will contain.
 ///
-/// Off outside development unless `openapi.enabled: true`. A description of
-/// every route and payload is useful to clients, and just as useful to anyone
-/// probing the service. Publishing it is a decision.
+/// Off unless `ALULA_ENV` names a development environment (`dev`,
+/// `development`, `test`, `local`) or `openapi.enabled: true` — an unset
+/// `ALULA_ENV` is not enough, the same rule as the actuator dashboard (see
+/// `Configuration.isExplicitlyDevelopment(processEnvironment:)`). A
+/// description of every route and payload is useful to clients, and just as
+/// useful to anyone probing the service. Publishing it is a decision.
 public struct AlulaOpenAPIModule: AlulaModule {
     public let routes: [RouteRegistration]
 
     public init(configuration: Configuration, document: OpenAPIDocument) throws {
-        let environment = configuration.environment ?? AlulaEnvironment.current()
+        // The actuator dashboard's rule: a stated development environment,
+        // not merely an unset one.
         let enabled =
             try configuration.getIfPresent("openapi.enabled", as: Bool.self)
-            ?? (environment == .dev || environment == .test)
+            ?? configuration.isExplicitlyDevelopment()
         guard enabled else {
             self.routes = []
             return

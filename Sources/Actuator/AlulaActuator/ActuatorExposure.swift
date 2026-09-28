@@ -29,9 +29,6 @@ public enum ActuatorExposure: String, Sendable, CaseIterable {
     /// requires authentication.
     case full
 
-    /// Environments that get the dashboard without being asked twice.
-    static let developmentEnvironments: Set<String> = ["dev", "development", "test", "local"]
-
     /// Resolves the exposure for `environment`, honoring an explicit
     /// `ALULA_ACTUATOR_EXPOSURE` override.
     ///
@@ -77,8 +74,9 @@ public enum ActuatorExposure: String, Sendable, CaseIterable {
         // answer, and a development machine that wants the dashboard says so
         // — `ALULA_ENV=dev`, or the override.
         guard isEnvironmentDeclared else { return .healthOnly }
-        return developmentEnvironments.contains(environment.rawValue.lowercased())
-            ? .full : .healthOnly
+        // `AlulaEnvironment.isDevelopment`: the allowlist OpenAPI's default
+        // shares, through `Configuration.isExplicitlyDevelopment`.
+        return environment.isDevelopment ? .full : .healthOnly
     }
 
     var publishesDashboard: Bool { self == .full }

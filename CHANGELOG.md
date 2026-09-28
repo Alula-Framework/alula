@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`.json(value, status:)` uses the application's configured encoder.** It
+  defaulted to `WebCoders.default`'s, so a handler that called it only to
+  answer `.created` silently lost `web.json.key-strategy`,
+  `web.json.date-strategy` and `pretty-print`, while returning the same value
+  honored them. Dispatch now binds the request's coders in a task-local,
+  `WebCoders.current`, which the default reads; outside a request it is still
+  `WebCoders.default`. `.problem(status:message:)` (and `.notFound`) default
+  to the configured `web.errors.format` the same way, which also covers the
+  CORS refusal, the WebSocket origin refusal and `Authentication`'s 401. The
+  binding reaches a time-limited route's task, a streaming or SSE producer
+  and a WebSocket handler. No signature changed; an explicit `encoder:` or
+  `render:` argument still wins.
 - **`web.request-timeout-seconds: inf` is a configuration error, not a crash
   at startup.** `inf` passed the "must be positive" check and then trapped
   converting to milliseconds; `nan` and a finite value too large for a
@@ -54,6 +66,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The OpenAPI document is off when `ALULA_ENV` is unset** — the actuator
+  dashboard's rule, now shared. OpenAPI read an unset `ALULA_ENV` as `dev`
+  and served the document; Actuator read it as "not declared" and withheld
+  the dashboard, so `alula dev` (which sets no `ALULA_ENV`) got one and not
+  the other, and a production box that forgot the variable published its
+  whole API description. Both now ask
+  `Configuration.isExplicitlyDevelopment()`: the environment was *stated*
+  (`ALULA_ENV` set, or named in code via `Configuration.load(environment:)` /
+  `Configuration(sources:environment:)`) and is `dev`, `development`, `test`
+  or `local`, in any case. `Configuration.declaredEnvironment()` and
+  `AlulaEnvironment.isDevelopment` are new. An unset `ALULA_ENV` still loads
+  `alula-dev.yaml`; only what it publishes changed. OpenAPI also now accepts
+  `development` and `local`, and Actuator's composition initializer honors an
+  environment named in code. **Migration:** a development machine that relied
+  on the unset default sets `ALULA_ENV=dev`, or `openapi.enabled: true` in
+  `alula-dev.yaml`.
+- **Breaking: `ActuatorModule` has two public initializers, not five.**
+  `init(configuration:components:health:healthChecks:logger:)` is the one the
+  composition root calls and the only one that read `actuator.format`,
+  `actuator.dashboard-*` and the build info; `init()` and
+  `init(processEnvironment:…)` silently used SSR, an open dashboard and a
+  private health registry. They are removed. `init(environment:…)` and
+  `init(environment:exposure:…)` are merged into one,
+  `init(environment:exposure:components:health:healthChecks:format:dashboardAccess:logger:)`,
+  with `exposure` optional. Generated compositions are unaffected.
+  **Migration:** `ActuatorModule()` → `try ActuatorModule(configuration: configuration)`;
+  `ActuatorModule(processEnvironment: env)` → `try ActuatorModule(configuration:)`
+  with the environment loaded into the configuration
+  (`Configuration.load(environment:)`); `ActuatorModule(environment:…)` and
+  `ActuatorModule(environment:exposure:…)` compile unchanged.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

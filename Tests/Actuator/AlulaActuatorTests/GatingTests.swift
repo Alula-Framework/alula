@@ -1,7 +1,8 @@
-import AlulaActuator
+@testable import AlulaActuator
 import AlulaCore
 import AlulaWeb
 import AlulaWebTesting
+import Foundation
 import HTTPTypes
 import Testing
 
@@ -106,7 +107,7 @@ struct GatingTests {
         // unauthenticated topology dashboard — while Docs/actuator.md claimed
         // getting the environment wrong "costs you a dashboard instead of
         // leaking one".
-        let actuator = ActuatorModule(processEnvironment: [:])
+        let actuator = try ActuatorModule(configuration: Configuration(), processEnvironment: [:])
         let client = try TestClient(routes: actuator.routes)
         #expect(await client.get("/actuator").status == .notFound)
         #expect(await client.get("/actuator/health").status == .ok)
@@ -114,7 +115,8 @@ struct GatingTests {
 
     @Test("declaring dev explicitly still gets the dashboard")
     func declaredDevGetsDashboard() async throws {
-        let actuator = ActuatorModule(processEnvironment: ["ALULA_ENV": "dev"])
+        let actuator = try ActuatorModule(
+            configuration: Configuration(), processEnvironment: ["ALULA_ENV": "dev"])
         let client = try TestClient(routes: actuator.routes)
         #expect(await client.get("/actuator").status == .ok)
     }
@@ -168,6 +170,40 @@ struct GatingTests {
     func disabledPublishesNothing() {
         let actuator = ActuatorModule(environment: .dev, exposure: .disabled)
         #expect(actuator.routes.isEmpty)
+    }
+
+    /// Loaded the way `Alula.run` loads it, with `ALULA_ENV` as given.
+    private func loaded(_ processEnvironment: [String: String]) throws -> Configuration {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alula-actuator-env-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try "app:\n  name: t\n".write(
+            to: directory.appendingPathComponent("alula.yaml"), atomically: true, encoding: .utf8)
+        return try Configuration.load(from: directory, processEnvironment: processEnvironment)
+    }
+
+    @Test("the composition path: unset and prod get health only, dev the dashboard — OpenAPI's rule")
+    func compositionPathSharesTheRule() async throws {
+        for (variables, dashboard) in [
+            ([:], false), (["ALULA_ENV": "dev"], true), (["ALULA_ENV": "test"], true),
+            (["ALULA_ENV": "prod"], false), (["ALULA_ENV": "production"], false),
+        ] as [([String: String], Bool)] {
+            let actuator = try ActuatorModule(
+                configuration: loaded(variables), processEnvironment: variables)
+            let client = try TestClient(routes: actuator.routes)
+            #expect(
+                await client.get("/actuator").status == (dashboard ? .ok : .notFound),
+                "\(variables)")
+            #expect(await client.get("/actuator/health").status == .ok)
+        }
+    }
+
+    @Test("an environment named in code counts, as it does for OpenAPI")
+    func namedInCodeCounts() async throws {
+        let actuator = try ActuatorModule(
+            configuration: Configuration(sources: [], environment: .dev), processEnvironment: [:])
+        #expect(try await TestClient(routes: actuator.routes).get("/actuator").status == .ok)
     }
 
 }

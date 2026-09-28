@@ -1,4 +1,4 @@
-import AlulaActuator
+@testable import AlulaActuator
 import AlulaCore
 import AlulaWeb
 import AlulaWebTesting
@@ -10,14 +10,12 @@ import Testing
 @Suite("Format configuration")
 struct ConfigTests {
 
-    /// The composer reads `actuator.format` from configuration and hands the
-    /// decoded format to the module; this mirrors that, then serves the
-    /// dashboard and reports the content type the format produced.
+    /// Builds the module the way the composition root does — from
+    /// configuration, which is where `actuator.format` is read — then serves
+    /// the dashboard and reports the content type the format produced.
     private func contentType(for values: [String: String]) async throws -> String? {
-        let configuration = Configuration(values: values)
-        let format =
-            try configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr
-        let actuator = ActuatorModule(environment: .dev, exposure: .full, format: format)
+        let configuration = Configuration(sources: [TestConfigSource(values)], environment: .dev)
+        let actuator = try ActuatorModule(configuration: configuration, processEnvironment: [:])
         let client = try TestClient(routes: actuator.routes)
         return await client.get("/actuator").headers[.contentType]
     }

@@ -877,7 +877,10 @@ coders.jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
 ```
 
 An application that provides its own keeps it; Alula only fills in the gap.
-A misspelled `web.*` value fails at startup naming the key, not on the first
+Every path to a response body uses them: a returned value, and
+`.json(value, status: .created)` and `.problem(status:message:)` too, whose
+defaults read the request's coders (`WebCoders.current`) — so setting a
+status never changes the encoding. A misspelled `web.*` value fails at startup naming the key, not on the first
 request that happens to encode something.
 
 ### HTTPS

@@ -80,8 +80,32 @@ public struct Configuration: Sendable {
         prefix: ConfigPrefix = .default,
         accessReporter: (any AccessReporter)? = nil
     ) {
+        self.init(
+            providers: providers, environment: environment,
+            environmentOrigin: environment == nil ? .unknown : .declared,
+            prefix: prefix, accessReporter: accessReporter)
+    }
+
+    /// Whether ``environment`` was stated or defaulted — what
+    /// ``declaredEnvironment(processEnvironment:)`` answers from. `load`
+    /// knows; a hand-assembled stack given an environment stated it, and one
+    /// given none leaves the question to the process environment.
+    enum EnvironmentOrigin: Sendable {
+        case declared, defaulted, unknown
+    }
+
+    let environmentOrigin: EnvironmentOrigin
+
+    init(
+        providers: [any ConfigProvider],
+        environment: AlulaEnvironment?,
+        environmentOrigin: EnvironmentOrigin,
+        prefix: ConfigPrefix,
+        accessReporter: (any AccessReporter)?
+    ) {
         self.providers = providers
         self.environment = environment
+        self.environmentOrigin = environmentOrigin
         self.prefix = prefix
         self.accessReporter = accessReporter
     }

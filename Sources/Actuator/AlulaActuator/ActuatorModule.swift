@@ -81,19 +81,16 @@ public struct ActuatorModule: AlulaModule {
 
     let environment: AlulaEnvironment
 
-    /// Bootstrap path: the environment comes from `ALULA_ENV`, read via
-    /// `AlulaEnvironment.current()`. This is the one sanctioned exception to
-    /// "modules read config, not environment" (Alula Config) — Actuator
-    /// legitimately needs the raw environment to decide whether it is
-    /// allowed to exist at all.
-    public init() {
-        self.init(processEnvironment: ProcessInfo.processInfo.environment)
-    }
-
-    /// The shape the composition root uses: ALULA_ENV for the environment,
-    /// `actuator.format` from configuration, scanned components from the
-    /// generated `alulaComponentDescriptors()`, health from the shared
-    /// registry. Throws on a malformed `actuator.format`.
+    /// The shape the composition root uses, and the one to reach for by hand:
+    /// the environment the configuration states (`ALULA_ENV`, or one named in
+    /// code), every `actuator.*` setting — `actuator.format`,
+    /// `actuator.dashboard-pipelines`, `actuator.dashboard-roles`, the build
+    /// info — scanned components from the generated
+    /// `alulaComponentDescriptors()`, and health from the shared registry.
+    /// Throws on a malformed `actuator.*` value.
+    ///
+    /// Outside a composition, `try ActuatorModule(configuration: configuration)`
+    /// is the whole call.
     public init(
         configuration: Configuration,
         components: [ComponentDescriptor] = [],
@@ -101,84 +98,51 @@ public struct ActuatorModule: AlulaModule {
         healthChecks: [HealthCheck] = [],
         logger: Logger = Logger(label: "alula.actuator")
     ) throws {
-        self.init(
+        try self.init(
+            configuration: configuration,
             processEnvironment: ProcessInfo.processInfo.environment,
-            components: components, health: health, healthChecks: healthChecks,
-            dashboardAccess: try ActuatorDashboardAccess(configuration: configuration),
-            logger: logger)
-        try installController(
-            format: configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr,
-            buildInfo: ActuatorBuildInfo(configuration: configuration))
+            components: components, health: health, healthChecks: healthChecks, logger: logger)
     }
 
-    /// The same path with the process environment injected — how a test asks
-    /// "what would an unset `ALULA_ENV` do" without mutating the real one.
-    /// Uses the default `.ssr` format; the composer init above reads
-    /// `actuator.format`.
-    public init(
+    /// The composition path with the process environment injected — how a
+    /// test asks "what would an unset `ALULA_ENV` do" without mutating the
+    /// real one.
+    init(
+        configuration: Configuration,
         processEnvironment: [String: String],
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
         healthChecks: [HealthCheck] = [],
-        dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "alula.actuator")
-    ) {
-        self.logger = logger
-        self.components = components
-        self.health = health
-        self.healthChecks = healthChecks
-        self.dashboardAccess = dashboardAccess
-        self.environment = .current(from: processEnvironment)
-        self.exposureOverride = nil
-        // An unset ALULA_ENV resolves to `dev`, which is in the dashboard
-        // allowlist — so a production deployment that never set it used to
-        // serve the full unauthenticated dashboard. Whether the environment
-        // was *stated* is a different question from what it resolved to, and
-        // it is the one the gate needs.
-        self.isEnvironmentDeclared = processEnvironment["ALULA_ENV"].map { !$0.isEmpty } ?? false
-        self.routes = Self.makeRoutes(
-            exposure: try? ActuatorExposure.resolve(
-                environment: environment, isEnvironmentDeclared: isEnvironmentDeclared),
-            controller: controller, dashboardAccess: dashboardAccess)
-        installController(format: .ssr)
-        announceExposure()
+    ) throws {
+        // The shared rule (`Configuration.isExplicitlyDevelopment`), which
+        // OpenAPI uses too: an unset ALULA_ENV resolves to `dev` for the
+        // overlay, but it is not a declaration, and the dashboard needs one.
+        let declared = configuration.declaredEnvironment(processEnvironment: processEnvironment)
+        let dashboardAccess = try ActuatorDashboardAccess(configuration: configuration)
+        let format = try configuration.getIfPresent("actuator.format", as: ActuatorFormat.self) ?? .ssr
+        let buildInfo = try ActuatorBuildInfo(configuration: configuration)
+        self.init(
+            environment: declared ?? configuration.environment ?? .dev,
+            isEnvironmentDeclared: declared != nil,
+            exposure: nil,
+            processEnvironment: processEnvironment,
+            components: components, health: health, healthChecks: healthChecks,
+            format: format, buildInfo: buildInfo, dashboardAccess: dashboardAccess,
+            logger: logger)
     }
 
-    /// Explicit-environment initializer — the test seam (construct the module
-    /// directly with a known environment), and an escape hatch for embedders
-    /// that resolve the environment some other way.
+    /// Everything stated in code, nothing read from configuration — for tests,
+    /// and for embedders that resolve these some other way.
+    ///
+    /// Naming the environment is a declaration, the same as setting
+    /// `ALULA_ENV`. With `exposure` nil it is resolved from `environment` and
+    /// `ALULA_ACTUATOR_EXPOSURE`, as the configuration path resolves it; given,
+    /// it bypasses both. `format` and `dashboardAccess` are what
+    /// `actuator.format` and `actuator.dashboard-*` would have said.
     public init(
         environment: AlulaEnvironment,
-        components: [ComponentDescriptor] = [],
-        health: ModuleHealthRegistry = ModuleHealthRegistry(),
-        healthChecks: [HealthCheck] = [],
-        dashboardAccess: ActuatorDashboardAccess = .open,
-        logger: Logger = Logger(label: "alula.actuator")
-    ) {
-        self.logger = logger
-        self.components = components
-        self.health = health
-        self.healthChecks = healthChecks
-        self.dashboardAccess = dashboardAccess
-        self.environment = environment
-        self.exposureOverride = nil
-        // Naming the environment in code is a declaration, the same as
-        // setting ALULA_ENV.
-        self.isEnvironmentDeclared = true
-        self.routes = Self.makeRoutes(
-            exposure: try? ActuatorExposure.resolve(
-                environment: environment, isEnvironmentDeclared: true),
-            controller: controller, dashboardAccess: dashboardAccess)
-        installController(format: .ssr)
-        announceExposure()
-    }
-
-    /// Explicit exposure, bypassing both the environment allowlist and
-    /// `ALULA_ACTUATOR_EXPOSURE` — the seam tests use instead of mutating
-    /// the real process environment.
-    public init(
-        environment: AlulaEnvironment,
-        exposure: ActuatorExposure,
+        exposure: ActuatorExposure? = nil,
         components: [ComponentDescriptor] = [],
         health: ModuleHealthRegistry = ModuleHealthRegistry(),
         healthChecks: [HealthCheck] = [],
@@ -186,23 +150,49 @@ public struct ActuatorModule: AlulaModule {
         dashboardAccess: ActuatorDashboardAccess = .open,
         logger: Logger = Logger(label: "alula.actuator")
     ) {
+        self.init(
+            environment: environment, isEnvironmentDeclared: true, exposure: exposure,
+            processEnvironment: exposure == nil ? ProcessInfo.processInfo.environment : [:],
+            components: components, health: health, healthChecks: healthChecks,
+            format: format, buildInfo: ActuatorBuildInfo(),
+            dashboardAccess: dashboardAccess, logger: logger)
+    }
+
+    /// Both public initializers end here.
+    private init(
+        environment: AlulaEnvironment,
+        isEnvironmentDeclared: Bool,
+        exposure: ActuatorExposure?,
+        processEnvironment: [String: String],
+        components: [ComponentDescriptor],
+        health: ModuleHealthRegistry,
+        healthChecks: [HealthCheck],
+        format: ActuatorFormat,
+        buildInfo: ActuatorBuildInfo,
+        dashboardAccess: ActuatorDashboardAccess,
+        logger: Logger
+    ) {
         self.logger = logger
         self.components = components
         self.health = health
         self.healthChecks = healthChecks
         self.dashboardAccess = dashboardAccess
         self.environment = environment
-        self.exposureOverride = exposure
-        self.isEnvironmentDeclared = true
+        let resolved = Result<ActuatorExposure, any Error> {
+            try exposure
+                ?? ActuatorExposure.resolve(
+                    environment: environment, isEnvironmentDeclared: isEnvironmentDeclared,
+                    processEnvironment: processEnvironment)
+        }
+        self.resolvedExposure = resolved
         self.routes = Self.makeRoutes(
-            exposure: exposure, controller: controller, dashboardAccess: dashboardAccess)
-        installController(format: format)
+            exposure: try? resolved.get(),
+            controller: controller, dashboardAccess: dashboardAccess)
+        installController(format: format, buildInfo: buildInfo)
         announceExposure()
     }
 
-    private let exposureOverride: ActuatorExposure?
     private let dashboardAccess: ActuatorDashboardAccess
-    private let isEnvironmentDeclared: Bool
     private let logger: Logger
 
     /// Says, once, which exposure this process resolved to.
@@ -213,9 +203,7 @@ public struct ActuatorModule: AlulaModule {
     /// failure-detection mode at startup for the same reason — so nobody
     /// discovers the distinction from a bug report.
     ///
-    /// Called from the *root* initializers only. `init(configuration:)`
-    /// delegates to one of them and then calls `installController` a second
-    /// time to apply the format, so announcing from there would log twice.
+    /// Called once, from the initializer every other one delegates to.
     private func announceExposure() {
         guard let exposure = try? resolvedExposure.get() else {
             // A malformed ALULA_ACTUATOR_EXPOSURE. Composition surfaces it
@@ -238,9 +226,7 @@ public struct ActuatorModule: AlulaModule {
                 "actuator publishing health probes only; no topology is disclosed",
                 metadata: metadata)
         case .full:
-            let isDevelopment = ActuatorExposure.developmentEnvironments
-                .contains(environment.rawValue.lowercased())
-            if isDevelopment {
+            if environment.isDevelopment {
                 logger.info(
                     "actuator dashboard published; environment is a development one",
                     metadata: metadata)
@@ -271,17 +257,11 @@ public struct ActuatorModule: AlulaModule {
     }
 
     /// Resolved once, when the module is built, so `routes` can be a stored
-    /// value — and kept as a `Result` because `AlulaModule` requires a
-    /// non-throwing `init()`. A malformed `ALULA_ACTUATOR_EXPOSURE` still
-    /// fails bootstrap: composition surfaces it, and nothing serves before
-    /// every module is built.
-    private var resolvedExposure: Result<ActuatorExposure, any Error> {
-        Result {
-            try exposureOverride
-                ?? ActuatorExposure.resolve(
-                    environment: environment, isEnvironmentDeclared: isEnvironmentDeclared)
-        }
-    }
+    /// value — and kept as a `Result` so the non-throwing initializers can
+    /// hold it. A malformed `ALULA_ACTUATOR_EXPOSURE` still fails bootstrap:
+    /// composition surfaces it, and nothing serves before every module is
+    /// built.
+    private let resolvedExposure: Result<ActuatorExposure, any Error>
 
     /// The actuator's endpoints, as values.
     ///
@@ -377,9 +357,7 @@ public struct ActuatorModule: AlulaModule {
     /// `format` is read once here (the "read at bootstrap" semantics the
     /// freeze()-time factory used to give it). A malformed `actuator.format`
     /// throws, failing composition.
-    private func installController(
-        format: ActuatorFormat, buildInfo: ActuatorBuildInfo = ActuatorBuildInfo()
-    ) {
+    private func installController(format: ActuatorFormat, buildInfo: ActuatorBuildInfo) {
         guard let exposure = try? resolvedExposure.get(), exposure.publishesHealth else { return }
         var controller = ActuatorController(
             components: components + Self.ownComponents,

@@ -1,3 +1,4 @@
+import AlulaSupport
 import AlulaCore
 import Foundation
 
@@ -25,9 +26,9 @@ public enum JobTrigger: Sendable, Equatable {
             // `.milliseconds(500)` became a zero-length period — a firing
             // every time round the loop with no sleep in between — and
             // `.milliseconds(1500)` fired every second.
-            let seconds = period.alulaSeconds
+            let seconds = period.inSeconds
             let base = lastCompletion ?? date.addingTimeInterval(
-                initialDelay.alulaSeconds - seconds)
+                initialDelay.inSeconds - seconds)
             return base.addingTimeInterval(seconds)
         }
     }

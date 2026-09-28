@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 
 /// A unit of background work: the data a handler needs, and nothing else.
@@ -80,12 +81,12 @@ public struct RetryPolicy: Sendable, Equatable {
     /// applied by `delay(after:using:)`.
     public func baseDelay(after attempt: Int) -> Duration {
         let exponent = min(max(attempt - 1, 0), 40)
-        let seconds = min(base.queueSeconds * pow(2, Double(exponent)), cap.queueSeconds)
+        let seconds = min(base.inSeconds * pow(2, Double(exponent)), cap.inSeconds)
         return .milliseconds(Int64(seconds * 1000))
     }
 
     func delay(after attempt: Int, using random: inout some RandomNumberGenerator) -> Duration {
-        let base = baseDelay(after: attempt).queueSeconds
+        let base = baseDelay(after: attempt).inSeconds
         let spread = base * jitter
         let seconds = spread > 0 ? base + Double.random(in: -spread...spread, using: &random) : base
         return .milliseconds(Int64(max(seconds, 0) * 1000))
@@ -99,11 +100,4 @@ public struct DiscardJob: Error, Sendable, CustomStringConvertible {
     public let reason: String
     public init(_ reason: String) { self.reason = reason }
     public var description: String { reason }
-}
-
-extension Duration {
-    var queueSeconds: Double {
-        let (seconds, attoseconds) = components
-        return Double(seconds) + Double(attoseconds) / 1e18
-    }
 }

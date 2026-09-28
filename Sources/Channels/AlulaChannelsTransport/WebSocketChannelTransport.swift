@@ -1,3 +1,4 @@
+import AlulaSupportFoundation
 import AlulaChannelsClient
 import Foundation
 import HTTPTypes
@@ -109,10 +110,9 @@ public struct WebSocketChannelTransportError: Error, Sendable, CustomStringConve
     public let url: URL
     public let reason: String
 
+    /// Names the URL without its query or credentials: this is what lands
+    /// in a log line.
     public var description: String {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.query = nil
-        return
-            "could not open a WebSocket to \(components?.string ?? url.absoluteString): \(reason)"
+        "could not open a WebSocket to \(url.redactedForLog): \(reason)"
     }
 }

@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaSupport
 import HTTPTypes
 
 /// The rest of the pipeline, as seen from inside a middleware: call it to
@@ -142,8 +143,9 @@ public func errorResponse(for error: any Error, context: RequestContext) -> Resp
         context.logger.debug("request refused: \(String(describing: error))")
         var response = render(.serviceUnavailable, "Service Unavailable")
         if let retryAfter = unavailable.retryAfter {
-            let seconds = max(1, Int((Double(retryAfter.components.seconds)
-                + Double(retryAfter.components.attoseconds) / 1e18).rounded(.up)))
+            // Rounded up, and never 0: a 503 that says "now" invites a
+            // client to hammer a dependency that is down.
+            let seconds = max(1, retryAfter.wholeSecondsRoundedUp)
             response = response.settingHeader(.retryAfter, "\(seconds)")
         }
         return response

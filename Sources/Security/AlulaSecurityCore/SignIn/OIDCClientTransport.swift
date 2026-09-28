@@ -1,3 +1,4 @@
+import AlulaSupportFoundation
 import AsyncHTTPClient
 import Foundation
 import NIOCore
@@ -105,13 +106,10 @@ struct AsyncHTTPFormPoster: HTTPFormPosting {
         request.headers.add(name: "Content-Type", value: "application/x-www-form-urlencoded")
         request.headers.add(name: "Accept", value: "application/json")
         if let basicAuthorization {
-            // RFC 6749 §2.3.1: each half is form-encoded before the pair is
-            // base64'd — a secret containing ':' or '%' is otherwise misread.
-            let pair =
-                FormEncoding.encode(basicAuthorization.user) + ":"
-                + FormEncoding.encode(basicAuthorization.password)
             request.headers.add(
-                name: "Authorization", value: "Basic " + Data(pair.utf8).base64EncodedString())
+                name: "Authorization",
+                value: FormEncoding.basicAuthorization(
+                    user: basicAuthorization.user, password: basicAuthorization.password))
         }
         request.body = .bytes(ByteBuffer(string: FormEncoding.encode(fields)))
         let response = try await HTTPClient.shared.execute(request, timeout: TimeAmount(timeout))
@@ -139,25 +137,5 @@ struct AsyncHTTPFormPoster: HTTPFormPosting {
         }
         let body = try await response.body.collect(upTo: Self.maxResponseBytes)
         return (Int(response.status.code), Data(buffer: body))
-    }
-}
-
-/// `application/x-www-form-urlencoded`, as RFC 6749 and the WHATWG URL
-/// standard write it: unreserved characters as-is, everything else
-/// percent-encoded.
-enum FormEncoding {
-    private static let unreserved: CharacterSet = {
-        var set = CharacterSet.alphanumerics.intersection(
-            CharacterSet(charactersIn: Unicode.Scalar(0)...Unicode.Scalar(127)))
-        set.insert(charactersIn: "-._~")
-        return set
-    }()
-
-    static func encode(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
-    }
-
-    static func encode(_ fields: [(String, String)]) -> String {
-        fields.map { "\(encode($0.0))=\(encode($0.1))" }.joined(separator: "&")
     }
 }

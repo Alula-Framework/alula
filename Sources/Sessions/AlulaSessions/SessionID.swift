@@ -1,3 +1,5 @@
+import AlulaSupport
+
 /// The key a session is stored under, and the value its cookie carries.
 ///
 /// 256 bits from the system's cryptographic generator, spelled as 43
@@ -28,16 +30,7 @@ public struct SessionID: Hashable, Sendable {
     /// A fresh id from `SystemRandomNumberGenerator`, which is
     /// cryptographically secure on every platform Swift ships on.
     public static func generate() -> SessionID {
-        var generator = SystemRandomNumberGenerator()
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(byteCount)
-        for _ in 0..<(byteCount / 8) {
-            let word = UInt64.random(in: .min ... .max, using: &generator)
-            for shift in stride(from: 56, through: 0, by: -8) {
-                bytes.append(UInt8(truncatingIfNeeded: word >> UInt64(shift)))
-            }
-        }
-        return SessionID(unchecked: base64url(bytes))
+        SessionID(unchecked: SecureRandom.token(byteCount: byteCount))
     }
 
     /// Parses a cookie value. `nil` for anything that is not the exact shape
@@ -60,34 +53,6 @@ public struct SessionID: Hashable, Sendable {
         default:
             return false
         }
-    }
-
-    private static let alphabet = Array(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".utf8)
-
-    /// Unpadded base64url. Hand-rolled rather than Foundation's
-    /// `base64EncodedString` plus two replacements and a trim: it is eleven
-    /// lines, runs once per new session, and keeps this target free of
-    /// Foundation.
-    private static func base64url(_ bytes: [UInt8]) -> String {
-        var output: [UInt8] = []
-        output.reserveCapacity(encodedLength)
-        var index = 0
-        while index < bytes.count {
-            let first = bytes[index]
-            let second = index + 1 < bytes.count ? bytes[index + 1] : 0
-            let third = index + 2 < bytes.count ? bytes[index + 2] : 0
-            output.append(alphabet[Int(first >> 2)])
-            output.append(alphabet[Int((first & 0x03) << 4 | second >> 4)])
-            if index + 1 < bytes.count {
-                output.append(alphabet[Int((second & 0x0F) << 2 | third >> 6)])
-            }
-            if index + 2 < bytes.count {
-                output.append(alphabet[Int(third & 0x3F)])
-            }
-            index += 3
-        }
-        return String(decoding: output, as: UTF8.self)
     }
 }
 

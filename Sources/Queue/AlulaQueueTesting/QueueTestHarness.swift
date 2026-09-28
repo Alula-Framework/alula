@@ -1,3 +1,4 @@
+import AlulaSupport
 import AlulaQueue
 import Foundation
 import Synchronization
@@ -49,10 +50,7 @@ public final class QueueTestHarness: Sendable {
     public var now: Date { clock.now }
 
     public func advance(by duration: Duration) {
-        let (seconds, attoseconds) = duration.components
-        clock.value.withLock {
-            $0 = $0.addingTimeInterval(Double(seconds) + Double(attoseconds) / 1e18)
-        }
+        clock.value.withLock { $0 = $0.addingTimeInterval(duration.inSeconds) }
     }
 
     /// Runs every due job, one at a time, until none is due. Returns each

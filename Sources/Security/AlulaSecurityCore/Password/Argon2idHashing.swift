@@ -1,3 +1,4 @@
+import AlulaSupport
 import CArgon2
 
 /// ``PasswordHashing`` over Argon2id, the OWASP-recommended default and the
@@ -143,13 +144,7 @@ public struct Argon2idHashing: PasswordHashing {
     /// `SystemRandomNumberGenerator`, the same source `SessionID.generate()`
     /// uses: cryptographically secure on every platform Swift ships on.
     private static func randomSalt(count: Int) -> [UInt8] {
-        var generator = SystemRandomNumberGenerator()
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(count)
-        for _ in 0..<count {
-            bytes.append(UInt8.random(in: .min ... .max, using: &generator))
-        }
-        return bytes
+        SecureRandom.bytes(count)
     }
 
     private static func errorMessage(_ code: Int32) -> String {

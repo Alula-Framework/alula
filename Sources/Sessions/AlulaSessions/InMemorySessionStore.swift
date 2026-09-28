@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Synchronization
 
@@ -64,9 +65,11 @@ public final class InMemorySessionStore: OwnerIndexedSessionStore, Sendable {
         let now = now()
         entries.withLock { entries in
             entries[id] = Entry(
-                data: record, expiresAt: now.addingTimeInterval(ttl.timeInterval), lastAccess: now,
+                data: record, expiresAt: now.addingTimeInterval(ttl.inSeconds), lastAccess: now,
                 owner: owner)
-            enforceBound(&entries, now: now)
+            BoundedEviction.enforce(
+                &entries, maxEntries: maxEntries, isExpired: { $0.expiresAt <= now },
+                order: \.lastAccess)
         }
     }
 
@@ -90,21 +93,5 @@ public final class InMemorySessionStore: OwnerIndexedSessionStore, Sendable {
     /// introspection for tests.
     public var count: Int {
         entries.withLock { $0.count }
-    }
-
-    /// Runs under the lock. Expired entries go first; if that is not enough,
-    /// the least recently loaded go in a batch of a sixteenth of the bound,
-    /// so the O(n log n) sort is paid once per batch.
-    private func enforceBound(_ entries: inout [SessionID: Entry], now: Date) {
-        guard entries.count > maxEntries else { return }
-        for (id, entry) in entries where entry.expiresAt <= now {
-            entries.removeValue(forKey: id)
-        }
-        guard entries.count > maxEntries else { return }
-        let excess = entries.count - maxEntries + max(1, maxEntries / 16)
-        let oldest = entries.sorted { $0.value.lastAccess < $1.value.lastAccess }.prefix(excess)
-        for (id, _) in oldest {
-            entries.removeValue(forKey: id)
-        }
     }
 }

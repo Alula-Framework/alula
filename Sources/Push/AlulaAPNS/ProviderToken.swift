@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import JWTKit
 import Synchronization
@@ -56,7 +57,7 @@ final class ProviderTokenSource: Sendable {
     func token() async throws -> String {
         let now = now()
         if let cached = cached.withLock({ $0 }),
-            now.timeIntervalSince(cached.issuedAt) < Self.lifetime.timeIntervalValue
+            now.timeIntervalSince(cached.issuedAt) < Self.lifetime.inSeconds
         {
             return cached.token
         }
@@ -74,11 +75,5 @@ final class ProviderTokenSource: Sendable {
     /// Drops the cached token, so the next ``token()`` mints.
     func invalidate() {
         cached.withLock { $0 = nil }
-    }
-}
-
-extension Duration {
-    var timeIntervalValue: TimeInterval {
-        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }

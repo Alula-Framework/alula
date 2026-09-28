@@ -1,4 +1,5 @@
 import AlulaRateLimit
+import AlulaSupport
 import HTTPTypes
 
 /// What to do when the rate limit store cannot answer.
@@ -156,7 +157,7 @@ public struct RateLimiting: Middleware {
             response = limitHeaders(on: response, decision: decision, quota: quota)
             if let retryAfter = decision.retryAfter {
                 response = response.settingHeader(
-                    .retryAfter, String(retryAfterSeconds(retryAfter)))
+                    .retryAfter, String(retryAfter.wholeSecondsRoundedUp))
             }
             return response
         }
@@ -172,16 +173,7 @@ public struct RateLimiting: Middleware {
         response
             .settingHeader(RateLimitHeader.limit, String(quota.permits))
             .settingHeader(RateLimitHeader.remaining, String(decision.remaining))
-            .settingHeader(RateLimitHeader.reset, String(retryAfterSeconds(decision.resetAfter)))
-    }
-
-    /// `Retry-After` is whole seconds, and it rounds **up**: telling a client
-    /// to come back in zero seconds when it has 400ms to wait produces a
-    /// second refusal and a client that believes the header is lying.
-    private func retryAfterSeconds(_ duration: Duration) -> Int {
-        let components = duration.components
-        guard components.seconds > 0 || components.attoseconds > 0 else { return 0 }
-        return Int(components.seconds) + (components.attoseconds > 0 ? 1 : 0)
+            .settingHeader(RateLimitHeader.reset, String(decision.resetAfter.wholeSecondsRoundedUp))
     }
 }
 

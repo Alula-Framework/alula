@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaSupport
 import Foundation
 import HTTPTypes
 
@@ -141,8 +142,7 @@ struct TusMount: Sendable {
         }
 
         let id = UUID().uuidString.lowercased()
-        let expires = Date().addingTimeInterval(
-            TimeInterval(options.ttl.components.seconds))
+        let expires = Date().addingTimeInterval(options.ttl.inSeconds)
         let info = UploadInfo(
             id: id, offset: 0, length: length,
             metadata: Self.parseMetadata(context.request.headers[.uploadMetadata]),

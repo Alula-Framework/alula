@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Synchronization
 
@@ -65,7 +66,7 @@ public final class Session: Sendable {
         func record(createdAt: Date, now: Date, ttl: Duration) -> SessionRecord {
             SessionRecord(
                 values: values, flash: nextFlash, createdAt: createdAt,
-                expiresAt: now.addingTimeInterval(ttl.timeInterval), owner: owner)
+                expiresAt: now.addingTimeInterval(ttl.inSeconds), owner: owner)
         }
     }
 
@@ -256,7 +257,7 @@ public final class Session: Sendable {
                     id: id, record: state.record(createdAt: now, now: now, ttl: ttl), replacing: nil
                 )
             }
-            let renewalDue = loaded.expiresAt.timeIntervalSince(now) < ttl.timeInterval / 2
+            let renewalDue = loaded.expiresAt.timeIntervalSince(now) < ttl.inSeconds / 2
             let needsSave = state.isModified || loaded.hadFlash || renewalDue
             guard needsSave else { return .nothing }
             guard hasContent else { return .delete(loaded.id) }
@@ -279,11 +280,4 @@ public enum SessionCommit: Sendable, Equatable {
     case save(id: SessionID, record: SessionRecord, replacing: SessionID?)
     /// Delete the entry and expire the cookie.
     case delete(SessionID)
-}
-
-extension Duration {
-    /// Seconds, as `Date` arithmetic wants them.
-    var timeInterval: TimeInterval {
-        Double(components.seconds) + Double(components.attoseconds) / 1e18
-    }
 }

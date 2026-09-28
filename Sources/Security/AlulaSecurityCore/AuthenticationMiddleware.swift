@@ -1,3 +1,4 @@
+import AlulaSupport
 import AlulaCore
 import AlulaSessions
 import AlulaWeb
@@ -146,13 +147,7 @@ extension Authentication {
             try session.set(Session.authenticatedAtKey, now)
             return true
         }
-        return now.timeIntervalSince(signedInAt) < authenticatedLifetime.timeIntervalValue
-    }
-}
-
-extension Duration {
-    fileprivate var timeIntervalValue: TimeInterval {
-        Double(components.seconds) + Double(components.attoseconds) / 1e18
+        return now.timeIntervalSince(signedInAt) < authenticatedLifetime.inSeconds
     }
 }
 

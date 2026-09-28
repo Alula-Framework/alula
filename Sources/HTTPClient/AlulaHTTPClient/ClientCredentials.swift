@@ -1,4 +1,6 @@
 import AlulaCore
+import AlulaSupport
+import AlulaSupportFoundation
 import Foundation
 import HTTPTypes
 
@@ -38,8 +40,8 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
     public var audience: String?
     public var clientAuthentication: ClientAuthentication
     /// A token is renewed this long before it expires, so a request never
-    /// leaves with one that lapses on the way. Whole seconds; not read from
-    /// configuration.
+    /// leaves with one that lapses on the way. Fractions of a second count.
+    /// Not read from configuration.
     public var renewBefore: Duration
 
     public init(
@@ -195,8 +197,7 @@ public actor ClientCredentialsTokenSource {
     ///
     /// - Throws: ``ClientCredentialsError``.
     public func token() async throws -> String {
-        let renewBefore = Double(settings.renewBefore.components.seconds)
-        if let current, current.expires.timeIntervalSince(now()) > renewBefore {
+        if let current, current.expires.timeIntervalSince(now()) > settings.renewBefore.inSeconds {
             return current.token
         }
         if let inFlight { return try await inFlight.value.token }
@@ -216,7 +217,7 @@ public actor ClientCredentialsTokenSource {
 
     private func fetch() async throws -> (token: String, expires: Date) {
         let endpoint = try await resolveTokenURL()
-        let label = Self.label(endpoint)
+        let label = endpoint.redactedForLog
         var form = [("grant_type", "client_credentials")]
         if let scope = settings.scope { form.append(("scope", scope)) }
         if let audience = settings.audience { form.append(("audience", audience)) }
@@ -225,14 +226,12 @@ public actor ClientCredentialsTokenSource {
         headers[.accept] = "application/json"
         switch settings.clientAuthentication {
         case .basic:
-            // RFC 6749 §2.3.1: each part form-encoded before the colon.
-            let credentials =
-                "\(Self.formEncoded(settings.clientID)):\(Self.formEncoded(settings.clientSecret))"
-            headers[.authorization] = "Basic \(Data(credentials.utf8).base64EncodedString())"
+            headers[.authorization] = FormEncoding.basicAuthorization(
+                user: settings.clientID, password: settings.clientSecret)
         case .post:
             form += [("client_id", settings.clientID), ("client_secret", settings.clientSecret)]
         }
-        let body = form.map { "\($0.0)=\(Self.formEncoded($0.1))" }.joined(separator: "&")
+        let body = FormEncoding.encode(form)
         let response: OutboundResponse
         do {
             response = try await http.send(
@@ -270,7 +269,7 @@ public actor ClientCredentialsTokenSource {
         case .issuer(let url): issuer = url
         }
         let discovery = issuer.appendingPathComponent(".well-known/openid-configuration")
-        let label = Self.label(discovery)
+        let label = discovery.redactedForLog
         let response: OutboundResponse
         do {
             response = try await http.send(OutboundRequest(url: discovery))
@@ -288,21 +287,6 @@ public actor ClientCredentialsTokenSource {
         }
         tokenURL = url
         return url
-    }
-
-    /// The endpoint without a query: what an error may name.
-    static func label(_ url: URL) -> String {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.query = nil
-        components?.user = nil
-        components?.password = nil
-        return components?.string ?? url.absoluteString
-    }
-
-    static func formEncoded(_ value: String) -> String {
-        var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "-._~")
-        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 }
 

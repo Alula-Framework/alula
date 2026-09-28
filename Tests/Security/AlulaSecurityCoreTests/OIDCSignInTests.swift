@@ -198,6 +198,26 @@ struct OIDCSignInTests {
         #expect(open.map(\.state) == Array(states.suffix(5)))
     }
 
+    /// The pending list was filtered on `lifetime.components.seconds`: a
+    /// 1.5 s lifetime acted as one second, and one under a second dropped
+    /// every sign-in before its callback could arrive.
+    @Test("a pending sign-in's lifetime keeps its fraction of a second")
+    func pendingFractionalLifetime() throws {
+        let session = Session()
+        let start = Date(timeIntervalSince1970: 1_750_000_000)
+        for (state, lifetime, elapsed) in [
+            ("a", Duration.milliseconds(1500), 1.25), ("b", .milliseconds(500), 0.25),
+        ] {
+            let pending = PendingSignIn(
+                state: state, nonce: "n", verifier: "v", returnTo: nil, startedAt: start)
+            try PendingSignIn.store(pending, in: session, now: start, lifetime: lifetime)
+            #expect(
+                try PendingSignIn.take(
+                    state: state, from: session, now: start.addingTimeInterval(elapsed),
+                    lifetime: lifetime) == pending)
+        }
+    }
+
     // MARK: Complete
 
     @Test("the callback exchanges the code with the verifier and yields the standard claims")

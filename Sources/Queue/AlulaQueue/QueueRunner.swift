@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Logging
 import Synchronization
@@ -99,7 +100,7 @@ public struct QueueRunner: Sendable {
             var random = SystemRandomNumberGenerator()
             let delay = handler.retry.delay(after: job.attempt, using: &random)
             return await record(
-                .retrying(at: now().addingTimeInterval(delay.queueSeconds), error: message),
+                .retrying(at: now().addingTimeInterval(delay.inSeconds), error: message),
                 job, logger)
         }
     }

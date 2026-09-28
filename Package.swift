@@ -225,6 +225,19 @@ let package = Package(
 
         // MARK: Core
 
+        // Rules that were written more than once — base64url, secure random
+        // tokens, constant-time compare, Duration → seconds, Retry-After
+        // rounding, bounded-map eviction — kept once. No product: `package`
+        // access only. Standard library only, so a Foundation-free file
+        // anywhere can use it; the helpers that need Foundation (HTTP dates,
+        // URL loopback and redaction, form encoding) are the second target.
+        .target(
+            name: "AlulaSupport", path: "Sources/Core/AlulaSupport",
+            swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
+            name: "AlulaSupportFoundation", path: "Sources/Core/AlulaSupportFoundation",
+            swiftSettings: [.swiftLanguageMode(.v6)]),
+
         // The registration macros' shared model: one `InjectedProperty`, one
         // parenthesisation rule, one constructor-injection generator. It was
         // written three times before this, each copy commented as mirroring
@@ -325,7 +338,7 @@ let package = Package(
         .target(
             name: "AlulaWeb",
             dependencies: [
-                "AlulaDiagnostics",
+                "AlulaDiagnostics", "AlulaSupport", "AlulaSupportFoundation",
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Web"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaTelemetryBridges", condition: .when(traits: ["Web"])),
@@ -445,7 +458,7 @@ let package = Package(
         .target(
             name: "AlulaChannelsTransport",
             dependencies: [
-                "AlulaChannelsClient",
+                "AlulaChannelsClient", "AlulaSupportFoundation",
                 .product(name: "Logging", package: "swift-log"),
                 // Gated like the client: an ungated product makes a
                 // consumer with no traits resolve swift-http-types.
@@ -520,6 +533,7 @@ let package = Package(
                 "AlulaCore",
                 "AlulaCronCore",
                 "AlulaSchedulerMacrosImpl",
+                "AlulaSupport",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
@@ -529,7 +543,7 @@ let package = Package(
 
         .target(
             name: "AlulaSchedulerTesting",
-            dependencies: ["AlulaScheduler"],
+            dependencies: ["AlulaScheduler", "AlulaSupport"],
             path: "Sources/Scheduler/AlulaSchedulerTesting",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -539,7 +553,7 @@ let package = Package(
         .target(
             name: "AlulaQueue",
             dependencies: [
-                "AlulaCore",
+                "AlulaCore", "AlulaSupport",
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Telemetry"])),
                 .product(name: "Logging", package: "swift-log"),
@@ -550,7 +564,7 @@ let package = Package(
         ),
         .target(
             name: "AlulaQueueTesting",
-            dependencies: ["AlulaQueue"],
+            dependencies: ["AlulaQueue", "AlulaSupport"],
             path: "Sources/Queue/AlulaQueueTesting",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -573,7 +587,7 @@ let package = Package(
         .target(
             name: "AlulaHTTPClient",
             dependencies: [
-                "AlulaCore",
+                "AlulaCore", "AlulaSupport", "AlulaSupportFoundation",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["HTTPClient"])),
                 .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
@@ -636,9 +650,10 @@ let package = Package(
         // cache-only consumer never resolves the HTTP stack. A seam that
         // needed AlulaWeb would need a conditional trait from alula-data —
         // a pattern nothing here uses. Same shape as AlulaPubSub's adapter
-        // seam.
+        // seam. (AlulaSupport is this package's own, with no dependencies.)
         .target(
-            name: "AlulaSessions", path: "Sources/Sessions/AlulaSessions",
+            name: "AlulaSessions", dependencies: ["AlulaSupport"],
+            path: "Sources/Sessions/AlulaSessions",
             swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(
             name: "AlulaSessionsTesting",
@@ -655,7 +670,7 @@ let package = Package(
         // HTTP stack behind it. Same posture as AlulaCache.
         .target(
             name: "AlulaRateLimit",
-            dependencies: ["AlulaCore"],
+            dependencies: ["AlulaCore", "AlulaSupport"],
             path: "Sources/RateLimit/AlulaRateLimit",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -718,7 +733,8 @@ let package = Package(
         .target(
             name: "AlulaSecurityCore",
             dependencies: [
-                "AlulaCore", "AlulaSessions", "AlulaRateLimit",
+                "AlulaCore", "AlulaSessions", "AlulaRateLimit", "AlulaSupport",
+                "AlulaSupportFoundation",
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Security"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Security"])),
                 .target(name: "AlulaTelemetryBridges", condition: .when(traits: ["Security"])),
@@ -769,7 +785,7 @@ let package = Package(
         .target(
             name: "AlulaAPNS",
             dependencies: [
-                "AlulaCore",
+                "AlulaCore", "AlulaSupport", "AlulaSupportFoundation",
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["APNS"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["APNS"])),
                 .target(name: "AlulaTelemetryBridges", condition: .when(traits: ["APNS"])),
@@ -898,6 +914,12 @@ let package = Package(
             name: "AlulaDiagnosticsTests",
             dependencies: ["AlulaDiagnostics"],
             path: "Tests/Core/AlulaDiagnosticsTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "AlulaSupportTests",
+            dependencies: ["AlulaSupport", "AlulaSupportFoundation"],
+            path: "Tests/Core/AlulaSupportTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
@@ -1087,7 +1109,7 @@ let package = Package(
                 .product(name: "TelemetryTesting", package: "swift-telemetry", condition: .when(traits: ["Security"])),
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])), "AlulaCore",
-                "AlulaSessions", "AlulaSessionsTesting",
+                "AlulaSessions", "AlulaSessionsTesting", "AlulaSupportFoundation",
                 .product(
                     name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["Security"])),
                 .target(name: "CArgon2", condition: .when(traits: ["Security"])),

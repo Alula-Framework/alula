@@ -1,4 +1,5 @@
 import AlulaRateLimit
+import AlulaSupport
 import AlulaWeb
 import Foundation
 import Logging
@@ -316,9 +317,7 @@ extension PasswordAuthenticationError: HTTPErrorRepresentable {
 
     public var httpHeaders: HTTPFields {
         guard case .throttled(let retryAfter?) = self else { return [:] }
-        // Whole seconds, rounded up: an early retry is refused again.
-        let seconds =
-            retryAfter.components.seconds + (retryAfter.components.attoseconds > 0 ? 1 : 0)
-        return [.retryAfter: String(max(seconds, 1))]
+        // Whole seconds, rounded up, never 0: an early retry is refused again.
+        return [.retryAfter: String(max(retryAfter.wholeSecondsRoundedUp, 1))]
     }
 }

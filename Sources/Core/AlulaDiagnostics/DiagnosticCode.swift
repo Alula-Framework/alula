@@ -104,7 +104,7 @@ extension DiagnosticCode {
     public static let uninitializedStoredProperty = DiagnosticCode(
         "ALU-DI-1017", "A stored property the generated initializer does not assign")
     public static let unsupportedComponentDeclaration = DiagnosticCode(
-        "ALU-DI-1018", "@Component on something other than a struct or final class")
+        "ALU-DI-1018", "@Service or @Repository on something other than a struct or final class")
     public static let invalidInjectionTarget = DiagnosticCode(
         "ALU-DI-1019", "@Inject or @ConfigValue on something other than a stored instance property")
     public static let nonSendableClassComponent = DiagnosticCode(

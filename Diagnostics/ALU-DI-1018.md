@@ -1,10 +1,10 @@
-# ALU-DI-1018: @Component on something other than a struct or final class
+# ALU-DI-1018: @Service or @Repository on something other than a struct or final class
 
 **Severity:** error
 
 ## Meaning
 
-`@Component`, `@Service` or `@Repository` is attached to a non-final class,
+`@Service` or `@Repository` is attached to a non-final class,
 an enum, an actor, a protocol or an extension.
 
 ## Why Alula rejects it

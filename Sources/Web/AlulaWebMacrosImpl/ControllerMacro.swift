@@ -6,7 +6,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-/// `@Controller` (§4). Expands like Alula Core's `@Component` — a
+/// `@Controller` (§4). Expands like Alula Core's `@Service` — a
 /// parameterized initializer over its `@Inject`/`@ConfigValue` properties —
 /// with one purely additive difference: it also emits one route *factory* per
 /// mapped method, each carrying (HTTP method, path pattern, encoded handler
@@ -22,7 +22,7 @@ import SwiftSyntaxMacros
 /// paths.
 ///
 /// The injection half (`@Inject`/`@ConfigValue` handling, attachment and
-/// storage validation) is ComponentMacro's own, shared through
+/// storage validation) is `@Service`'s own, shared through
 /// AlulaMacroSupport — same diagnostics, same generated shapes — so a
 /// controller author's mental model transfers from components unchanged. The authoritative expansions
 /// are the fixtures in AlulaWebMacroTests.
@@ -319,7 +319,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
     /// The `pipelines:` argument's source text, re-embedded verbatim into
     /// every generated RouteRegistration — or nil for the default lane.
-    /// Verbatim like @Component's `scope:`: the expression is evaluated in
+    /// Verbatim, as the removed `scope:` argument was: the expression is evaluated in
     /// the expansion, so `[.defaultLane, "admin"]` and a constant both work.
 
     /// The canonical security lanes, in every spelling a declaration site can

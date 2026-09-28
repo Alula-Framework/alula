@@ -13,7 +13,7 @@ public enum ResolutionError: Error, CustomStringConvertible, Sendable {
         switch self {
         case .notRegistered(let name):
             return
-                "No component available for \(name). If this type is annotated @Component, the build plugin may not be wired into this target; if it is provided by a module, check that the module is composed in."
+                "No component available for \(name). If this type is annotated @Service, the build plugin may not be wired into this target; if it is provided by a module, check that the module is composed in."
         case .circularDependency(let chain):
             return "Circular dependency: \(chain.joined(separator: " → "))"
         case .typeMismatch(let requested, let produced):
@@ -22,16 +22,19 @@ public enum ResolutionError: Error, CustomStringConvertible, Sendable {
     }
 }
 
-/// A component's architectural layer. Stereotype macros expand *identically*
-/// to `@Component`, differing only in this tag. It is not cosmetic: Actuator
+/// A component's architectural layer. `@Service` and `@Repository` expand
+/// *identically*, differing only in this tag. It is not cosmetic: Actuator
 /// groups its dashboard by layer, and it is the pointcut for any future
 /// default AOP policy ("all @Repository methods join the ambient
 /// transaction"). Not part of component identity — construction never consults
 /// it; it rides the build-scanned descriptor.
 public enum Stereotype: Sendable, Equatable, CaseIterable {
-    /// Generic registration (`@Component`), incl. third-party client wrappers.
+    /// A graph node with no more specific tag: a `@Scheduler` type, for one.
+    /// (`@Component` registered here until it was removed; `@Service` is the
+    /// general annotation now.)
     case component
-    /// Business logic (`@Service`).
+    /// `@Service`: the general annotation — business logic, third-party
+    /// client wrappers, anything else the application builds once.
     case service
     /// Data access (`@Repository`).
     case repository

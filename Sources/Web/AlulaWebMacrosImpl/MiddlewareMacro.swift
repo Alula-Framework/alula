@@ -4,14 +4,14 @@ import AlulaMacroSupport
 import SwiftSyntax
 import SwiftSyntaxMacros
 
-/// `@Middleware`. Expands like Alula Core's `@Component` — a parameterized
+/// `@Middleware`. Expands like Alula Core's `@Service` — a parameterized
 /// initializer taking the type's `@Inject`/`@ConfigValue` dependencies, built
 /// once by the composition root — with one addition: the generated extension
 /// also declares conformance to `AlulaWeb.Middleware`, so the type's own
 /// `handle(_:next:)` is all it needs to write.
 ///
 /// Not built on Alula Core's `RegistrationMacro` (the shared expansion behind
-/// `@Component`/`@Service`/`@Repository`), because `AlulaWebMacrosImpl` does
+/// `@Service`/`@Repository`), because `AlulaWebMacrosImpl` does
 /// not depend on `AlulaCoreMacrosImpl`; the injection half both use lives in
 /// AlulaMacroSupport instead, as `@Controller`'s does.
 ///

@@ -157,7 +157,7 @@ enum DiagnosticCatalog {
 
             ## Fixes
 
-            1. Move dependencies to a `@Service` or `@Component`.
+            1. Move dependencies to a `@Service`.
             2. Write the type.
             3. Replace the optional with a concrete default.
             4. Use `var` for a property with a default.
@@ -509,13 +509,13 @@ enum DiagnosticCatalog {
               `let state = LabState()` — which the build cannot see. The diagnostic
               names such a property when it finds one.
             - The value is a plain class or struct nobody constructs: it should be a
-              `@Component`, or a module should create and hold it.
+              `@Service`, or a module should create and hold it.
 
             ## Fixes
 
             1. Add the providing module to `modules:`.
             2. Write the property's type: `let state: LabState = LabState()`.
-            3. Make the type a `@Component`, or have a module construct and hold it.
+            3. Make the type a `@Service`, or have a module construct and hold it.
 
             ## Example
 
@@ -729,7 +729,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            An `@Inject` names a type that is neither a scanned `@Component` nor a value
+            An `@Inject` names a type that is neither a scanned `@Service` nor a value
             any included module provides.
 
             ## Why Alula warns
@@ -740,7 +740,7 @@ enum DiagnosticCatalog {
 
             ## Fixes
 
-            1. Make the type a `@Component`, or have a module hold it.
+            1. Make the type a `@Service`, or have a module hold it.
             2. If it is supplied by hand on purpose, acknowledge it with a
                `// alula:hand-registered` comment on the property.
 
@@ -804,7 +804,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            A `@Component` declared in one Swift module is part of a graph composed in
+            A `@Service` declared in one Swift module is part of a graph composed in
             another, but the type is not `public`, so the generated composition cannot
             name it.
 
@@ -821,7 +821,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            A component declares `scope:` — `@Component(scope: .transient)` or similar.
+            A component declares `scope:` — `@Service(scope: .transient)` or similar.
             The argument was removed in 0.20.0.
 
             ## Why Alula rejects it
@@ -835,7 +835,7 @@ enum DiagnosticCatalog {
 
             ## Fixes
 
-            Delete the argument: `@Component`.
+            Delete the argument: `@Service`.
 
             """##,
         "ALU-DI-1014": ##"""
@@ -866,7 +866,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            A `@Component`, `@Controller` or `@Middleware` type has two `@Inject`
+            A `@Service`, `@Repository`, `@Controller` or `@Middleware` type has two `@Inject`
             properties of the same type, and nothing tells them apart.
 
             ## Why Alula rejects it
@@ -937,7 +937,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            A `@Component`, `@Controller` or `@Middleware` type has a stored property
+            A `@Service`, `@Repository`, `@Controller` or `@Middleware` type has a stored property
             that is neither `@Inject` nor `@ConfigValue` and has no default value.
 
             ## Why Alula rejects it
@@ -973,13 +973,13 @@ enum DiagnosticCatalog {
 
             """##,
         "ALU-DI-1018": ##"""
-            # ALU-DI-1018: @Component on something other than a struct or final class
+            # ALU-DI-1018: @Service or @Repository on something other than a struct or final class
 
             **Severity:** error
 
             ## Meaning
 
-            `@Component`, `@Service` or `@Repository` is attached to a non-final class,
+            `@Service` or `@Repository` is attached to a non-final class,
             an enum, an actor, a protocol or an extension.
 
             ## Why Alula rejects it
@@ -1052,7 +1052,7 @@ enum DiagnosticCatalog {
 
             ## Meaning
 
-            A `@Service`, `@Component`, `@Repository` or other component is a class that
+            A `@Service`, `@Repository` or other component is a class that
             does not declare `Sendable`.
 
             ## Why Alula rejects it
@@ -1506,7 +1506,7 @@ enum DiagnosticCatalog {
             ## Fixes
 
             1. Add a `@Scheduled` method.
-            2. If this is an ordinary component, use `@Component` instead.
+            2. If this is an ordinary component, use `@Service` instead.
 
             ## Related
 

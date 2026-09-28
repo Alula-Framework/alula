@@ -33,7 +33,7 @@ which edge to break.
 **`@ConfigValue` keys.** Checked against `alula.yaml`. A typo in a
 configuration key is a build error rather than a startup failure.
 
-**Declaration shapes.** `@Component`, `@Service` and `@Repository` — and
+**Declaration shapes.** `@Service` and `@Repository` — and
 `@Controller` and `@Middleware` — go on a struct or a `final class`. A class
 without `final` is a build error (ALU-DI-1018, ALU-WEB-2003) with a fix-it that
 adds it.
@@ -58,7 +58,7 @@ the concrete type, or provide the value yourself — the marker comment below
 says how.
 
 There is no qualifier to add. Both spellings of one were removed in 0.20.0:
-the type-level `@Component(qualifier:)`, which expanded to nothing, and the
+the type-level `@Service(qualifier:)`, which expanded to nothing, and the
 property-level `@Inject("name")`, which the wiring never read — two `@Inject`
 properties of one type silently received the same instance, and are now a
 build error instead.
@@ -87,7 +87,7 @@ to the program.
 
 ## Limits worth knowing
 
-**Nested types are not scanned.** A `@Component` declared inside another type
+**Nested types are not scanned.** A `@Service` declared inside another type
 is skipped silently, so nothing that depends on it will be wired. Declare
 components at file scope.
 

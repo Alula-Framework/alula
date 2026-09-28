@@ -5,7 +5,7 @@ import SwiftSyntaxBuilder
 /// it.
 ///
 /// Shared because it was written three times — identically, each copy
-/// carrying a comment saying it mirrored the others. `@Component`,
+/// carrying a comment saying it mirrored the others. `@Service`,
 /// `@Controller` and `@Middleware` all expand to the same shape, so the
 /// property model, the parenthesisation rule and the initializers generated
 /// from them belong in one place — as does collecting them, in

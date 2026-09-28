@@ -177,7 +177,7 @@ struct GeneratorTests {
             protocol Greeter {}
             @Service
             struct EnglishGreeter: Greeter {}
-            @Component
+            @Service
             final class Welcomer: Sendable {
                 @Inject var greeter: (any Greeter)
             }
@@ -219,9 +219,9 @@ struct GeneratorTests {
         let result = try generate([
             "Sources.swift": """
             import AlulaCore
-            @Component final class Ordinary: Sendable { init() {} }
+            @Service final class Ordinary: Sendable { init() {} }
             // alula:module-registered — its own module registers it.
-            @Component final class Gated: Sendable { init() {} }
+            @Service final class Gated: Sendable { init() {} }
             """
         ])
         #expect(result.exitCode == 0)
@@ -249,7 +249,7 @@ struct GeneratorTests {
             protocol Validator {}
             // alula:module-registered
             @Service struct GatedValidator: Validator {}
-            @Component final class Consumer: Sendable {
+            @Service final class Consumer: Sendable {
                 @Inject var validator: (any Validator)
             }
             """
@@ -263,9 +263,9 @@ struct GeneratorTests {
     @Test("registration order is deterministic across runs")
     func deterministicOutput() throws {
         let sources = [
-            "A.swift": "import AlulaCore\n@Component final class Alpha: Sendable { init() {} }",
-            "B.swift": "import AlulaCore\n@Component final class Beta: Sendable { init() {} }",
-            "C.swift": "import AlulaCore\n@Component final class Gamma: Sendable { init() {} }",
+            "A.swift": "import AlulaCore\n@Service final class Alpha: Sendable { init() {} }",
+            "B.swift": "import AlulaCore\n@Service final class Beta: Sendable { init() {} }",
+            "C.swift": "import AlulaCore\n@Service final class Gamma: Sendable { init() {} }",
         ]
         let first = try generate(sources)
         let second = try generate(sources)
@@ -295,7 +295,7 @@ struct GeneratorTests {
             [
                 "Server.swift": """
                 import AlulaCore
-                @Component final class ServerConfig: Sendable {
+                @Service final class ServerConfig: Sendable {
                     @ConfigValue("server.port") let port: Int
                 }
                 """
@@ -319,7 +319,7 @@ struct GeneratorTests {
             [
                 "Settings.swift": """
                 import AlulaCore
-                @Component struct Settings {
+                @Service struct Settings {
                     @ConfigValue("app.name") var appName: String
                 }
                 """
@@ -342,7 +342,7 @@ struct GeneratorTests {
             [
                 "Main.swift": """
                 import AlulaCore
-                @Component struct Settings {
+                @Service struct Settings {
                     @ConfigValue("app.name") var appName: String
                 }
                 @main struct Main {
@@ -368,7 +368,7 @@ struct GeneratorTests {
             [
                 "Main.swift": """
                 import AlulaCore
-                @Component struct Settings {
+                @Service struct Settings {
                     @ConfigValue("app.name") var appName: String
                 }
                 let configuration = try Configuration.load(prefix: "myapp")
@@ -388,7 +388,7 @@ struct GeneratorTests {
             [
                 "Main.swift": """
                 import AlulaCore
-                @Component struct Settings {
+                @Service struct Settings {
                     @ConfigValue("app.name") var appName: String
                 }
                 let configuration = try Configuration.load(prefix: "myapp")
@@ -406,7 +406,7 @@ struct GeneratorTests {
         let result = try generate([
             "Main.swift": """
             import AlulaCore
-            @Component struct Settings {
+            @Service struct Settings {
                 @ConfigValue("app.name") var appName: String
             }
             let configuration = try Configuration.load(prefix: "my-app")
@@ -422,7 +422,7 @@ struct GeneratorTests {
         let result = try generate([
             "Main.swift": """
             import AlulaCore
-            @Component struct Settings {
+            @Service struct Settings {
                 @ConfigValue("app.name") var appName: String
             }
             let name = "myapp"
@@ -444,7 +444,7 @@ struct GeneratorTests {
         let result = try generate([
             "Settings.swift": """
             import AlulaCore
-            @Component struct Settings {
+            @Service struct Settings {
                 @ConfigValue("app.name") var appName: String
             }
             """
@@ -461,7 +461,7 @@ struct GeneratorTests {
             [
                 "Server.swift": """
                 import AlulaCore
-                @Component final class ServerConfig: Sendable {
+                @Service final class ServerConfig: Sendable {
                     @ConfigValue("server.port") let port: Int
                 }
                 """
@@ -591,8 +591,8 @@ struct GeneratorTests {
             "Two.swift": """
             import AlulaCore
             protocol Greeter: Sendable {}
-            @Component final class English: Greeter, Sendable { init() {} }
-            @Component final class French: Greeter, Sendable { init() {} }
+            @Service final class English: Greeter, Sendable { init() {} }
+            @Service final class French: Greeter, Sendable { init() {} }
             """
         ])
         // Ambiguity must not silently resolve to whichever was scanned first.
@@ -607,7 +607,7 @@ struct GeneratorTests {
             "Service.swift": """
             import AlulaCore
             protocol Pinger: Sendable {}
-            @Component final class Pinger1: Sendable { init() {} }
+            @Service final class Pinger1: Sendable { init() {} }
             extension Pinger1: Pinger {}
             """
         ])
@@ -639,11 +639,11 @@ struct GeneratorTests {
         let result = try generate([
             "Cycle.swift": """
             import AlulaCore
-            @Component final class Ping: Sendable {
+            @Service final class Ping: Sendable {
             @Inject var pong: Pong
             init() {}
             }
-            @Component final class Pong: Sendable {
+            @Service final class Pong: Sendable {
             @Inject var ping: Ping
             init() {}
             }
@@ -1244,7 +1244,7 @@ struct GeneratorTests {
             @Repository struct UserRepository { @Inject var pool: DataSource }
             """
         ])
-        #expect(result.diagnostics.contains("[ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Component"))
+        #expect(result.diagnostics.contains("[ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Service"))
     }
 
     @Test("a graph root nothing provides is a build error naming the type")
@@ -2488,17 +2488,23 @@ struct GeneratorTests {
             import AlulaWeb
             @Service struct A: Sendable {}
             @Repository struct B: Sendable {}
-            @Component struct C: Sendable {}
+            @Scheduler struct C: Sendable {
+                @Scheduled(every: .seconds(5)) func tick() async {}
+            }
             @Middleware struct D: Sendable {}
+            @Component struct E: Sendable {}
             """
         ])
         #expect(result.exitCode == 0)
         #expect(result.generated.contains(#"typeName: "A", stereotype: "service""#))
         #expect(result.generated.contains(#"typeName: "B", stereotype: "repository""#))
-        // @Component passes no `stereotype:` and takes the parameter's
-        // default, so the manifest must say the same thing.
+        // An attribute with no stereotype of its own takes `.component`, the
+        // general bucket, so the manifest must say the same thing.
         #expect(result.generated.contains(#"typeName: "C", stereotype: "component""#))
         #expect(result.generated.contains(#"typeName: "D", stereotype: "middleware""#))
+        // `@Service` is unavailable (renamed to `@Service`): the compiler
+        // rejects it with a fix-it, so the scan does not pick it up.
+        #expect(!result.generated.contains(#"typeName: "E""#))
     }
 
     @Test("a module-registered component is listed, and flagged")
@@ -2552,7 +2558,7 @@ struct GeneratorTests {
         let result = try generate([
             "Sources.swift": """
             import AlulaCore
-            @Component(qualifier: nil) struct Pool: Sendable {}
+            @Service(qualifier: nil) struct Pool: Sendable {}
             """
         ])
         #expect(result.exitCode != 0)

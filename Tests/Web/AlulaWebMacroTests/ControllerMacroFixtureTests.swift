@@ -7,7 +7,7 @@
 //
 // What a @Controller emits, since the container was removed (0.15.0–0.18.0):
 //
-//   1. the parameterized initializer @Component emits, unchanged;
+//   1. the parameterized initializer @Service emits, unchanged;
 //   2. one `_alulaRoute_<method>_<index>` factory per mapped method, each
 //      taking a `make` closure that builds the controller for one request;
 //   3. a `alulaRoutes(_:)` aggregate (0.18.0) returning every route in one
@@ -1061,10 +1061,10 @@ struct ControllerMacroFixtureTests {
         )
     }
 
-    // Same check, same code as @Component's (CodedDiagnosticTests in
+    // Same check, same code as @Service's (CodedDiagnosticTests in
     // AlulaCoreMacroTests). @Controller's copy of the collection code lacked
     // it, so a static @Inject reached the generated initializer.
-    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    @Test("a static @Inject is ALU-DI-1019, as on @Service")
     func staticInjectIsRejected() {
         assertMacroExpansion(
             """

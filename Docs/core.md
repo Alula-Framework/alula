@@ -26,6 +26,12 @@ struct App {
 }
 ```
 
+`@Service` puts a type in the graph. It is the general annotation for anything
+the application builds once and injects by type; `@Repository` is the same
+thing tagged as data access. It has nothing to do with lifecycle services, the
+long-running `run()` a module hands to that `ServiceGroup`: annotating a type
+`@Service` starts nothing.
+
 ## Installation
 
 ```swift
@@ -231,7 +237,7 @@ Everything that asks for a `ConnectionPool` by type now gets the primary one.
 Where you want the other, name it at the injection site:
 
 ```swift
-@Component
+@Service
 struct ReportBuilder {
     @Inject var pool: ConnectionPool                             // primary
     @Inject(from: ReplicaPoolModule.self) var replica: ConnectionPool

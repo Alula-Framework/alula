@@ -943,7 +943,7 @@ let socket = try await client.webSocket("/chat/lobby")   // in-process upgrade
 
 ## How routing rides the one registration pipeline (§4)
 
-`@Controller` expands like `@Component` — a parameterized initializer over its
+`@Controller` expands like `@Service` — a parameterized initializer over its
 `@Inject`/`@ConfigValue` properties — plus one **route factory per mapped
 method**, each of which builds the controller and runs one method as a
 `RouteRegistration` value. The route table is not a parallel mechanism: the
@@ -955,7 +955,7 @@ an Actuator dashboard like any other.
 
 The build plugin side is Alula Core's existing `AlulaRegistrationPlugin`,
 generalized by one word: its scanner recognizes `@Controller` alongside
-`@Component` (a name-level change — Core references no Alula Web types), so the
+`@Service` (a name-level change — Core references no Alula Web types), so the
 generated composition root's `alulaRoutes(_:)` covers controllers, and route
 existence + path-pattern validity are compile-time information (`@GetRoute`
 rejects non-literal and malformed paths at the declaration site).
@@ -1107,7 +1107,7 @@ would take it; nothing here has needed it yet), no templating/SSR (a future
 consumer of the upgrade hook), no persistence
 (Alula Data), no runtime route-registration API (routes are the macro path;
 a hand-built `RouteRegistration` value is the escape hatch beside it, exactly
-as a hand-written component sits beside `@Component`), and **no hand-rolled HTTP
+as a hand-written component sits beside `@Service`), and **no hand-rolled HTTP
 parsing** — `AlulaTransport` wraps HummingbirdCore rather than reimplementing
 HTTP/1.1 correctness, request-smuggling mitigations, and WebSocket protocol
 handling; Alula owns routing and dispatch, not byte-level protocol work.

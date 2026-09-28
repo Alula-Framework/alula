@@ -5,7 +5,7 @@ import AlulaCore
 /// to be right. A fixture without a @ConfigValue would compile happily and
 /// prove nothing — the generator only emits the throwing form when a node has
 /// configuration to read.
-@Component
+@Service
 struct Settings {
     @ConfigValue("app.name") var appName: String
 }

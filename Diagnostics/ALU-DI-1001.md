@@ -23,13 +23,13 @@ nothing to pass, and the application cannot be assembled.
   `let state = LabState()` — which the build cannot see. The diagnostic
   names such a property when it finds one.
 - The value is a plain class or struct nobody constructs: it should be a
-  `@Component`, or a module should create and hold it.
+  `@Service`, or a module should create and hold it.
 
 ## Fixes
 
 1. Add the providing module to `modules:`.
 2. Write the property's type: `let state: LabState = LabState()`.
-3. Make the type a `@Component`, or have a module construct and hold it.
+3. Make the type a `@Service`, or have a module construct and hold it.
 
 ## Example
 

@@ -15,7 +15,7 @@ registers nothing — usually a sign the jobs were removed or never marked.
 ## Fixes
 
 1. Add a `@Scheduled` method.
-2. If this is an ordinary component, use `@Component` instead.
+2. If this is an ordinary component, use `@Service` instead.
 
 ## Related
 

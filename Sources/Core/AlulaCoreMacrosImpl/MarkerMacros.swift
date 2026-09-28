@@ -4,7 +4,7 @@ import SwiftSyntax
 import SwiftSyntaxMacros
 
 /// `@Inject`. A pure marker: all generated code lives in
-/// `@Component`'s expansion (which reads this attribute off the property).
+/// `@Service`'s expansion (which reads this attribute off the property).
 /// Its own expansion is empty; its job is validating the attachment site at
 /// the point of use so misuse fails on the property, not somewhere in the
 /// enclosing type's expansion.
@@ -20,7 +20,7 @@ public struct InjectMacro: PeerMacro {
 }
 
 /// `@ConfigValue`. Same marker pattern as `@Inject`; the key
-/// argument is consumed by `@Component`'s expansion.
+/// argument is consumed by `@Service`'s expansion.
 public struct ConfigValueMacro: PeerMacro {
     public static func expansion(
         of node: AttributeSyntax,

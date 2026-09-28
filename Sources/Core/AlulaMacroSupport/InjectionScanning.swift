@@ -5,9 +5,9 @@ import SwiftSyntaxMacros
 // The half of every registration macro that reads the declaration: which
 // properties are injected, what the attribute arguments say, what access the
 // generated members get, and the validation that has to pass before anything
-// is generated. `@Component` (and its stereotypes), `@Controller`,
+// is generated. `@Service` (and its stereotypes), `@Controller`,
 // `@Middleware` and `@Scheduler` all use these; before, each carried its own
-// copy, and the copies had drifted — only `@Component` diagnosed a static
+// copy, and the copies had drifted — only `@Service` diagnosed a static
 // `@Inject`, and only `@Scheduler` gave a `package` type internal members.
 
 /// Every `@Inject` / `@ConfigValue` property the declaration carries, in

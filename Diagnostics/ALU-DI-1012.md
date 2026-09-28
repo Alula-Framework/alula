@@ -4,7 +4,7 @@
 
 ## Meaning
 
-A `@Component` declared in one Swift module is part of a graph composed in
+A `@Service` declared in one Swift module is part of a graph composed in
 another, but the type is not `public`, so the generated composition cannot
 name it.
 

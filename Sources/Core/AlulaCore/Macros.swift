@@ -1,10 +1,34 @@
 import AlulaConfig
 
-/// Marks a type as a composed component. Expansion:
+/// Removed: use ``Service()``, which expands identically.
+///
+/// `@Component` and `@Service` generated the same initializer; the only
+/// difference was the stereotype tag Actuator's dashboard groups by. Two
+/// names for one thing meant choosing between them on every type, so the
+/// general annotation is now `@Service`. The declaration stays for one
+/// release so the compiler offers the rename as a fix-it.
+@available(*, unavailable, renamed: "Service", message: "@Service expands identically; @Component was removed")
+@attached(member, names: named(init))
+public macro Component() =
+    #externalMacro(module: "AlulaCoreMacrosImpl", type: "ComponentMacro")
+
+/// Puts a type in the composed graph: Alula's general annotation for
+/// anything the application builds once and injects by type — business
+/// logic, a third-party client wrapper, a cache. Expansion:
 /// 1. a memberwise initializer that takes every `@Inject` property as a
 /// parameter and reads every `@ConfigValue` property from `Configuration`.
 /// The generated composition root calls it, wiring the injected values by
 /// type — there is no container to resolve against.
+///
+/// "Service" here means a node in the graph, nothing more: it has nothing
+/// to do with lifecycle services (ServiceLifecycle's `Service`, the
+/// long-running `run()` a module hands to bootstrap with its
+/// `serviceShutdownPhase`), and annotating a type `@Service` starts nothing.
+///
+/// Its build-scanned descriptor is tagged `.service`, which Actuator's
+/// dashboard groups by; construction never consults the tag. Lives in Core
+/// (not Web/Data) because a service must be equally callable from a
+/// controller, a CLI command, or a background job.
 ///
 /// It takes no arguments. Composition wires by type, and singleton is the
 /// only lifetime, so there is nothing left for a type-level `scope:` or
@@ -16,34 +40,22 @@ import AlulaConfig
 /// The exact expansions are pinned by Tests/Core/AlulaCoreMacroTests — those
 /// fixtures are the spec, more precise than this comment.
 @attached(member, names: named(init))
-public macro Component() =
-    #externalMacro(module: "AlulaCoreMacrosImpl", type: "ComponentMacro")
-
-/// Stereotype for business logic and third-party clients. Expands
-/// *identically* to `@Component`; its build-scanned descriptor is tagged
-/// `.service` — the tag feeds Actuator's layer grouping and any future AOP
-/// pointcut; construction never consults it. Lives in Core (not Web/Data)
-/// because a service must be equally callable from a controller, a CLI
-/// command, or a background job.
-///
-/// Takes no arguments, for the same reason `@Component` takes none.
-@attached(member, names: named(init))
 public macro Service() =
     #externalMacro(module: "AlulaCoreMacrosImpl", type: "ServiceMacro")
 
-/// Stereotype for data access. Same expansion as `@Component`; its scanned
+/// Stereotype for data access. Same expansion as `@Service`; its scanned
 /// descriptor is tagged `.repository`. (`@Controller` is deliberately NOT here — it lives
 /// in Alula Web, carrying route metadata meaningless outside HTTP dispatch;
 /// only the `Stereotype.controller` case belongs to Core's vocabulary.)
 ///
-/// Takes no arguments, for the same reason `@Component` takes none.
+/// Takes no arguments, for the same reason `@Service` takes none.
 @attached(member, names: named(init))
 public macro Repository() =
     #externalMacro(module: "AlulaCoreMacrosImpl", type: "RepositoryMacro")
 
 /// Marks a property as injected at construction time — the composition root
 /// supplies it by type. A pure marker: the generated code lives in
-/// `@Component`'s initializer; this macro's own expansion is empty and exists
+/// `@Service`'s initializer; this macro's own expansion is empty and exists
 /// to validate the attachment site.
 ///
 /// Usually bare. Composition resolves the property by type, and in an

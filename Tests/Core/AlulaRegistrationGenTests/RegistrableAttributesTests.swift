@@ -51,6 +51,10 @@ struct RegistrableAttributesTests {
                 // A macro that writes an initializer without making a
                 // component — `@TelemetryFields`' memberwise one — says so.
                 let attributes = block.joined(separator: "\n")
+                // An unavailable macro cannot be applied, so there is
+                // nothing for the generator to scan: `@Component`, renamed
+                // to `@Service`.
+                if attributes.contains("@available(*, unavailable") { continue }
                 if attributes.range(
                     of: #"@attached\(\s*member[\s\S]*?named\(init\)"#,
                     options: .regularExpression) != nil,
@@ -63,7 +67,7 @@ struct RegistrableAttributesTests {
         return found
     }
 
-    /// `public macro Component(` → "Component".
+    /// `public macro Service(` → "Service".
     private func macroName(declaredOn line: String) -> String? {
         guard
             let range = line.range(
@@ -113,6 +117,12 @@ struct RegistrableAttributesTests {
             not scanned, so types using them are silently left out of composition. \
             Add them to registrableAttributes in alula-registration-gen.
             """)
+    }
+
+    @Test("the generator does not scan the removed @Component")
+    func componentIsNotScanned() throws {
+        #expect(try !scannedAttributes().contains("Component"))
+        #expect(try scannedAttributes().contains("Service"))
     }
 
     @Test("the generator scans for @Scheduler")
@@ -186,5 +196,85 @@ struct AlwaysAvailableTests {
         // added are genuinely resolvable without registration, or whether
         // someone silenced a true warning by adding a name to a list.
         #expect(try alwaysAvailableNames().count <= 6)
+    }
+}
+
+/// `@Component` was removed in favour of `@Service`, which expands
+/// identically. Its declaration stays for one release, unavailable and
+/// renamed, so that the compiler both rejects it and offers the rename.
+///
+/// That the rename fix-it appears on a *macro* is a compiler behaviour, not
+/// something a macro-expansion test can see, so this compiles a use of the
+/// declaration exactly as `Macros.swift` spells it and reads what `swiftc`
+/// prints. The implementations are not loaded: availability is checked
+/// before expansion, which is the point.
+@Suite("Removed @Component")
+struct RemovedComponentTests {
+
+    private static func packageRoot() -> URL {
+        var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Package.swift").path)
+        {
+            let parent = root.deletingLastPathComponent()
+            precondition(parent.path != root.path, "no Package.swift above \(#filePath)")
+            root = parent
+        }
+        return root
+    }
+
+    /// The `@Component` declaration block, attributes included, read from
+    /// source so the test follows whatever it says.
+    private func componentDeclaration() throws -> String {
+        let file = Self.packageRoot().appendingPathComponent("Sources/Core/AlulaCore/Macros.swift")
+        let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+        let index = try #require(lines.firstIndex { $0.hasPrefix("public macro Component(") })
+        var start = index
+        while start > 0, lines[start - 1].hasPrefix("@") { start -= 1 }
+        return lines[start...(index + 1)].joined(separator: "\n")
+    }
+
+    @Test("@Component is unavailable, renamed to @Service, with a fix-it")
+    func componentIsRenamedWithFixIt() throws {
+        let declaration = try componentDeclaration()
+        #expect(declaration.contains(#"@available(*, unavailable, renamed: "Service""#))
+
+        let workspace = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("alula-component-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let source = workspace.appendingPathComponent("Use.swift")
+        try """
+            @attached(member, names: named(init))
+            public macro Service() = #externalMacro(module: "AlulaCoreMacrosImpl", type: "ServiceMacro")
+
+            \(declaration)
+
+            @Component
+            struct Legacy {}
+            """.write(to: source, atomically: true, encoding: .utf8)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["swiftc", "-typecheck", "-diagnostic-style", "llvm", source.path]
+        let output = Pipe()
+        process.standardError = output
+        process.standardOutput = output
+        try process.run()
+        let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+
+        #expect(process.terminationStatus != 0)
+        #expect(
+            text.contains("error: 'Component()' has been renamed to 'Service'"),
+            "swiftc said:\n\(text)")
+        // The llvm style prints a fix-it as its replacement text on the line
+        // under the caret: `@Component` becomes `@Service`.
+        let lines = text.components(separatedBy: "\n")
+        let caret = try #require(lines.firstIndex { $0.contains("^~~~~~~~~") }, "no caret line:\n\(text)")
+        #expect(
+            lines.indices.contains(caret + 1)
+                && lines[caret + 1].trimmingCharacters(in: .whitespaces) == "Service",
+            "no rename fix-it:\n\(text)")
     }
 }

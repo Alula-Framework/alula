@@ -13,7 +13,7 @@ import SwiftSyntaxMacros
 ///    build-scanned descriptor, for Actuator;
 /// 2. if any property carries `@Secret`, a redacting `CustomStringConvertible`.
 ///
-/// Deliberately self-contained rather than sharing `ComponentMacro`'s
+/// Deliberately self-contained rather than sharing `RegistrationMacro`'s
 /// property-collection machinery: the classification rules are different
 /// enough (every plain property is an implicit config binding, not an error)
 /// that sharing code would mean threading a mode flag through logic written
@@ -67,7 +67,7 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
         // a `public` settings type in a library is a documented shape, and the
         // generator hard-errors unless a cross-module scanned component is
         // public — so withholding it here made that combination impossible to
-        // satisfy. `@Component` applies the same helper; this one computed it
+        // satisfy. `@Service` applies the same helper; this one computed it
         // and dropped it on the floor, which is the `'access' was never used`
         // warning every build of this package printed.
         let settingsInit: DeclSyntax = """
@@ -168,7 +168,7 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
                 if hasAttribute(variable, named: "Inject") {
                     context.diagnose(
                         .invalidSettingsProperty,
-                        "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service or @Component instead.",
+                        "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service instead.",
                         at: variable
                     )
                     continue
@@ -345,7 +345,7 @@ public struct SettingsMacro: MemberMacro, ExtensionMacro {
     // MARK: - Validation
 
     /// Final class or struct only — same rule and same rationale as
-    /// `@Component`.
+    /// `@Service`.
     private static func validateAttachmentTarget(
         _ declaration: some DeclGroupSyntax, in context: some MacroExpansionContext
     ) -> Bool {

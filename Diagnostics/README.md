@@ -31,7 +31,7 @@ and alula-data's cache and migration codes, `ALD-…`, in
 | [ALU-DI-1015](ALU-DI-1015.md) | error | Two @Inject properties of one type |
 | [ALU-DI-1016](ALU-DI-1016.md) | error | An @Inject or @ConfigValue property has no written type |
 | [ALU-DI-1017](ALU-DI-1017.md) | error | A stored property the generated initializer does not assign |
-| [ALU-DI-1018](ALU-DI-1018.md) | error | @Component on something other than a struct or final class |
+| [ALU-DI-1018](ALU-DI-1018.md) | error | @Service or @Repository on something other than a struct or final class |
 | [ALU-DI-1019](ALU-DI-1019.md) | error | @Inject or @ConfigValue on something other than a stored instance property |
 | [ALU-DI-1020](ALU-DI-1020.md) | error | A class component that is not Sendable |
 

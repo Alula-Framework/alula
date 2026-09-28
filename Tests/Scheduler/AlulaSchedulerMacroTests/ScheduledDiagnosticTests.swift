@@ -144,8 +144,8 @@ struct ScheduledDiagnosticTests {
     }
 
     // @Scheduler had its own copy of the @Inject scan, which skipped a static
-    // property silently. It shares @Component's now, diagnostic included.
-    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    // property silently. It shares @Service's now, diagnostic included.
+    @Test("a static @Inject is ALU-DI-1019, as on @Service")
     func staticInject() {
         expectDiagnostic(
             """

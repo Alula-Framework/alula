@@ -8,7 +8,7 @@ struct ConstructorInjectionTests {
     func buildsWithoutAContainer() throws {
         // The point of the whole migration, in one line: no registration, no
         // freeze, no override registry. A struct would get this from
-        // memberwise synthesis, except that `@Component`'s `init(_alula:)`
+        // memberwise synthesis, except that `@Service`'s `init(_alula:)`
         // suppresses it — which is why it is generated.
         let service = CountingService(clock: FixedClock(now: 7))
         #expect(service.clock.now() == 7)
@@ -48,12 +48,12 @@ protocol ClockReading: Sendable, AnyObject {
     func now() -> Int
 }
 
-@Component
+@Service
 struct CountingService: Sendable {
     @Inject var clock: any ClockReading
 }
 
-@Component
+@Service
 struct HandWritten: Sendable {
     @Inject var dependency: any ClockReading
     var marker: String = ""

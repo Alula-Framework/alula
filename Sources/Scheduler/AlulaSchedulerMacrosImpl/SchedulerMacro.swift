@@ -12,9 +12,9 @@ import SwiftSyntaxMacros
 /// wired the same way as everything else. Scheduling is not a separate system
 /// from the rest of the component graph.
 ///
-/// A separate attribute rather than teaching `@Component` about `@Scheduled`,
+/// A separate attribute rather than teaching `@Service` about `@Scheduled`,
 /// because that would make AlulaCore's macros depend on the scheduler's
-/// vocabulary — the same reason `@Controller` exists rather than `@Component`
+/// vocabulary — the same reason `@Controller` exists rather than `@Service`
 /// growing route awareness.
 public struct SchedulerMacro: MemberMacro, ExtensionMacro {
 
@@ -38,7 +38,7 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
                 .invalidScheduler,
                 """
                 @Scheduler type has no @Scheduled methods, so it schedules nothing. Add \
-                one, or drop @Scheduler and use @Component if this is an ordinary \
+                one, or drop @Scheduler and use @Service if this is an ordinary \
                 component.
                 """,
                 at: node)
@@ -60,7 +60,7 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
         let access = registrationAccess(for: declaration)
 
         // A @Scheduler type is an ordinary component: it injects what its
-        // jobs need, exactly as @Controller and @Component do. Without the
+        // jobs need, exactly as @Controller and @Service do. Without the
         // generated initializer, @Inject in a scheduler would not compile
         // — which the compiled doc snippet caught.
         let properties = collectInjectedProperties(from: declaration, in: context)
@@ -78,7 +78,7 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
                 ]
             }
             """
-        // Constructor injection, through the same generator @Component,
+        // Constructor injection, through the same generator @Service,
         // @Controller and @Middleware use.
         let parameterInit = parameterizedInitializer(
             properties: properties, access: access, declaration: declaration)

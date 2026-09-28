@@ -247,7 +247,7 @@ struct SettingsMacroFixtureTests {
 /// invokes the extension role whatever the member role did, and a diagnostic
 /// emitted from the member role does not suppress it. That used to be visible
 /// here as a `_AlulaRegistrable` conformance on every invalid case below,
-/// pinned deliberately to match `@Component`/`@Repository`'s established
+/// pinned deliberately to match `@Service`/`@Repository`'s established
 /// behavior. With the container's marker protocol gone, `@Settings` has only
 /// one conformance left to emit — `CustomStringConvertible`, and only when a
 /// `@Secret` field makes a redacting description necessary — so the invalid
@@ -296,7 +296,7 @@ struct SettingsMacroDiagnosticTests {
                 """,
             diagnostics: [
                 DiagnosticSpec.coded(.invalidSettingsProperty,
-                    message: "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service or @Component instead.",
+                    message: "@Inject is not valid inside @Settings — settings hold configuration only. Put dependencies in a @Service instead.",
                     line: 3, column: 5)
             ],
             macroSpecs: settingsMacros

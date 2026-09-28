@@ -17,7 +17,7 @@ struct CreateUserRequest: Codable {
     let name: String
 }
 
-@Component
+@Service
 final class UserService: Sendable {
     private let storage = Mutex<[Int: User]>([1: User(id: 1, name: "ada")])
 
@@ -46,7 +46,7 @@ final class UserService: Sendable {
 }
 
 /// One instance per request (Alula Core §3, interpreted by Web §2).
-@Component
+@Service
 final class RequestTracer: Sendable {
     private static let counter = Mutex(0)
     let id: Int = RequestTracer.counter.withLock { $0 += 1; return $0 }

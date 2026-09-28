@@ -37,7 +37,7 @@ public struct EnqueueOptions: Sendable, Equatable {
 /// Enqueues background work. Inject it wherever work is handed off:
 ///
 /// ```swift
-/// @Component struct SignupService {
+/// @Service struct SignupService {
 ///     @Inject var jobs: JobQueue
 ///
 ///     func signUp(_ form: SignupForm) async throws {

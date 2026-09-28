@@ -7,7 +7,7 @@ import Foundation
 /// routes are values the module declares.
 ///
 /// Alula Core's registration plugin scans every recursive source-module
-/// dependency that sits atop AlulaCore for `@Component`/`@Controller`
+/// dependency that sits atop AlulaCore for `@Service`/`@Controller`
 /// types — right for an app-owned library target (so an app never has to wire
 /// it), wrong for a starter package with its own `AlulaModule`: a downstream
 /// app's generated composition root would try to build this type as one of
@@ -15,7 +15,7 @@ import Foundation
 /// (whole point) and colliding with what `ActuatorModule` already does. Every
 /// other starter (`alula-web`, `alula-pubsub`, `alula-channels`,
 /// `alula-data-postgres`) avoids this the same way: none put
-/// `@Component`/`@Controller` on their own infrastructure, wiring it from that
+/// `@Service`/`@Controller` on their own infrastructure, wiring it from that
 /// package's own `AlulaModule` instead. This mirrors that.
 ///
 /// Internal deliberately: `ActuatorModule` constructs it and serves it through

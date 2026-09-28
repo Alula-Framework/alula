@@ -34,7 +34,7 @@ struct OverriddenKeyFixtureSettings: Sendable {
     @ConfigValue("legacy.old-name", default: "fallback") var value: String
 }
 
-@Component
+@Service
 struct NeedsSettingsFixture: Sendable {
     @Inject var server: ServerFixtureSettings
 }

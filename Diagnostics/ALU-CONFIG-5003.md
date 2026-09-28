@@ -22,7 +22,7 @@ and a `let` default could never be overridden by configuration.
 
 ## Fixes
 
-1. Move dependencies to a `@Service` or `@Component`.
+1. Move dependencies to a `@Service`.
 2. Write the type.
 3. Replace the optional with a concrete default.
 4. Use `var` for a property with a default.

@@ -55,7 +55,7 @@ struct MiddlewareMacroFixtureTests {
         )
     }
 
-    @Test("@Inject dependencies resolve exactly like @Component")
+    @Test("@Inject dependencies resolve exactly like @Service")
     func withDependencies() {
         assertMacroExpansion(
             """
@@ -199,11 +199,11 @@ struct MiddlewareMacroDiagnosticTests {
         )
     }
 
-    // The static-property check used to live only in @Component's copy of the
+    // The static-property check used to live only in @Service's copy of the
     // collection code; @Middleware collected a static @Inject like any other
     // and the generated initializer then assigned to it — an error inside the
     // expansion. One collection function now, one diagnostic, one code.
-    @Test("a static @Inject is ALU-DI-1019, as on @Component")
+    @Test("a static @Inject is ALU-DI-1019, as on @Service")
     func staticInjectIsRejected() {
         assertMacroExpansion(
             """

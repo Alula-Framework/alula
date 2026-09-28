@@ -4,7 +4,7 @@
 
 ## Meaning
 
-A `@Service`, `@Component`, `@Repository` or other component is a class that
+A `@Service`, `@Repository` or other component is a class that
 does not declare `Sendable`.
 
 ## Why Alula rejects it

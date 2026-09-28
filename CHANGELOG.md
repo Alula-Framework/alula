@@ -38,6 +38,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **`@Component` is gone — use `@Service`.** The two expanded identically; the
+  only difference was the stereotype tag Actuator's dashboard groups by, so
+  `@Service` is now the one general "put this in the graph" annotation, with
+  `@Repository` beside it for data access. It has nothing to do with lifecycle
+  services: annotating a type `@Service` starts nothing. Migration is a
+  search-and-replace of `@Component` with `@Service`; for this release the
+  declaration remains, unavailable, so the compiler reports `'Component()' has
+  been renamed to 'Service'` and its fix-it makes the change.
 - **`ConnectionUpgradeHandler` and `UpgradedConnection`** (AlulaWeb), deprecated
   since 0.4.0. Use `WebSocketUpgradeHandler` and `WebSocketConnection`, the
   names the deprecations already pointed to.

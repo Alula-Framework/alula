@@ -193,7 +193,7 @@ Recorded here the same way sibling packages record theirs:
    graph nodes — bypassing the exposure gate entirely (whole point) and
    colliding with what `ActuatorModule` already does. Every sibling starter
    (`alula-web`, `alula-pubsub`, `alula-channels`, `alula-data-postgres`)
-   avoids this the same way: none of them put `@Component`/`@Controller` on
+   avoids this the same way: none of them put `@Service`/`@Controller` on
    their own infrastructure. `ActuatorModule` builds the controller and serves
    it through route values (`RouteRegistration`, the escape hatch `@GetRoute`
    sits beside).

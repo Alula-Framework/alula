@@ -1,17 +1,17 @@
 import AlulaCore
 
-/// Marks a type as a routing controller (§4). Expands like `@Component`
+/// Marks a type as a routing controller (§4). Expands like `@Service`
 /// (Alula Core §5.1) — a parameterized initializer over its
 /// `@Inject`/`@ConfigValue` properties — plus one route *factory* per
 /// `@GetRoute`/`@PostRoute`/… method, each of which builds the controller and
 /// runs one method as a `RouteRegistration` value.
 ///
 /// The build plugin (Alula Core's `AlulaRegistrationPlugin`) picks
-/// `@Controller` types up in the same source-scanning pass as `@Component`,
+/// `@Controller` types up in the same source-scanning pass as `@Service`,
 /// so the generated composition root's `alulaRoutes(_:)` covers controllers
 /// too — route existence is information the build has before the binary exists.
 ///
-/// `@Inject` and `@ConfigValue` properties work exactly as on `@Component`
+/// `@Inject` and `@ConfigValue` properties work exactly as on `@Service`
 /// types; a controller is built per request by its route factory.
 ///
 /// `path` is an optional base path, combined with every mapped method's own
@@ -51,7 +51,7 @@ public macro Controller(
 ) =
     #externalMacro(module: "AlulaWebMacrosImpl", type: "ControllerMacro")
 
-/// Marks a type as a middleware layer. Expands like `@Component` — a
+/// Marks a type as a middleware layer. Expands like `@Service` — a
 /// parameterized initializer over its `@Inject`/`@ConfigValue` properties —
 /// and additionally declares the type's conformance to ``Middleware``, so the
 /// type only needs to supply `handle(_:next:)`:
@@ -68,7 +68,7 @@ public macro Controller(
 /// }
 /// ```
 ///
-/// `@Inject` and `@ConfigValue` properties work exactly as on `@Component`
+/// `@Inject` and `@ConfigValue` properties work exactly as on `@Service`
 /// types. A middleware is a singleton, built once and shared: the chain is
 /// assembled once, at composition, not per request.
 ///

@@ -10,7 +10,7 @@ composition root, and shared for the application's lifetime. There is no
 better home, and removing them removed the captive-dependency class of bug
 with them.
 
-There is no `scope:` argument either. `@Component`, `@Service` and
+There is no `scope:` argument either. `@Service` and
 `@Repository` take no arguments at all — an argument with one legal value is
 not a choice, it is ceremony — and it was removed in 0.20.0 along with the
 `Lifetime` enum it named. A declaration still carrying one is a build error

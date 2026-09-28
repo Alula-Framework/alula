@@ -39,11 +39,10 @@ import Testing
 // integration suite proves the compiler path emits the conformance).
 //
 // Only `@Settings` still declares an extension role, and only
-// `CustomStringConvertible`: `@Component` and its stereotypes conform to
+// `CustomStringConvertible`: `@Service` and `@Repository` conform to
 // nothing now, because the container's `_AlulaRegistrable` marker protocol
 // went with the container.
 private let testMacros: [String: MacroSpec] = [
-    "Component": MacroSpec(type: ComponentMacro.self),
     "Service": MacroSpec(type: ServiceMacro.self),
     "Repository": MacroSpec(type: RepositoryMacro.self),
     "Inject": MacroSpec(type: InjectMacro.self),
@@ -61,7 +60,7 @@ struct MacroFixtureTests {
     func plainComponent() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class ClockService {
                 func now() -> Int { 0 }
             }
@@ -86,7 +85,7 @@ struct MacroFixtureTests {
     func componentWithDependencies() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             public final class UserService {
                 @Inject let repository: UserRepository
                 @Inject let logger: AppLogger
@@ -200,7 +199,7 @@ struct MacroFixtureTests {
     func scopedComponent() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class RequestContext {
             }
             """,
@@ -221,7 +220,7 @@ struct MacroFixtureTests {
     func ambiguousInjectIsCompileError() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class ReportService {
                 @Inject var primary: DataSource
                 @Inject var replica: DataSource
@@ -271,7 +270,7 @@ struct MacroFixtureTests {
         // implementation ignoring the argument and refusing the pair.
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class ReportService {
                 @Inject("primary") var primary: DataSource
                 @Inject("replica") var replica: DataSource
@@ -307,7 +306,7 @@ struct MacroFixtureTests {
     func configValue() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class ServerSettings {
                 @ConfigValue("server.port") let port: Int
             }
@@ -337,7 +336,7 @@ struct MacroFixtureTests {
     func configValueWithDefault() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class PoolSettings {
                 @ConfigValue("datasource.pool_size", default: 10) let poolSize: Int
             }
@@ -355,11 +354,11 @@ struct MacroFixtureTests {
         )
     }
 
-    // MARK: Supplementary — @Component takes no arguments
+    // MARK: Supplementary — @Service takes no arguments
 
     @Test("component takes no arguments")
     func componentTakesNoArguments() {
-        // This fixture existed to say out loud that `@Component(qualifier:)`
+        // This fixture existed to say out loud that `@Service(qualifier:)`
         // expanded to nothing — the "shipped inert" shape — and to notice if
         // it were ever made to mean something again. 0.20.0 took the third
         // option and deleted it, so what is worth pinning now is the inverse:
@@ -371,7 +370,7 @@ struct MacroFixtureTests {
         // are refused outright because nothing can tell them apart.
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class PrimarySource {
             }
             """,
@@ -392,7 +391,7 @@ struct MacroFixtureTests {
     func nonFinalClassIsRejected() {
         assertMacroExpansion(
             """
-            @Component
+            @Service
             class OpenService {
             }
             """,
@@ -403,7 +402,7 @@ struct MacroFixtureTests {
             diagnostics: [
                 DiagnosticSpec.coded(.unsupportedComponentDeclaration,
                     message:
-                        "@Component requires a final class (or a struct). Mark 'OpenService' final.",
+                        "@Service requires a final class (or a struct). Mark 'OpenService' final.",
                     line: 2,
                     column: 7,
                     fixIts: [FixItSpec(message: "mark the class 'final'")]
@@ -420,7 +419,7 @@ struct MacroFixtureTests {
         // compile error points inside the macro expansion.
         assertMacroExpansion(
             """
-            @Component
+            @Service
             final class Tracer {
                 let id: Int
             }
@@ -433,7 +432,7 @@ struct MacroFixtureTests {
             diagnostics: [
                 DiagnosticSpec.coded(.uninitializedStoredProperty,
                     message:
-                        "Stored property 'id' of a @Component type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
+                        "Stored property 'id' of a @Service type needs a default value — the generated initializer assigns only @Inject/@ConfigValue properties.",
                     line: 3,
                     column: 5
                 )

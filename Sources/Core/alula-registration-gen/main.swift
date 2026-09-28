@@ -657,13 +657,13 @@ final class ModuleVisitor: SyntaxVisitor {
 
 // MARK: - Syntax visitor
 
-/// Collects top-level `@Component`/`@Controller` types. Nested registrable
+/// Collects top-level `@Service`/`@Controller` types. Nested registrable
 /// types are a deliberate v1 non-goal (registration by qualified nested name
 /// is easy to add; supporting it silently before deciding it's wanted is not).
 final class ComponentVisitor: SyntaxVisitor {
     /// Attribute names that mark a type as a scanned component. This is Alula
     /// Web's "one pipeline, different entry kinds" extension point:
-    /// `@Controller` expands to the same parameterized init as `@Component`,
+    /// `@Controller` expands to the same parameterized init as `@Service`,
     /// so the generator's only job is knowing the *name* — it never references
     /// another package's types, keeping the "Core imports nothing above it"
     /// boundary intact at the code level.
@@ -677,8 +677,12 @@ final class ComponentVisitor: SyntaxVisitor {
     /// runtime, and no entry here, so a scheduled job never ran. There is a
     /// test below pinning this list against the macros the framework
     /// actually declares.
+    ///
+    /// `@Component` is not here: it is declared unavailable (renamed to
+    /// `@Service`), so a type carrying it does not compile, and the
+    /// compiler's rename fix-it is the one message its author needs.
     static let registrableAttributes: Set<String> = [
-        "Component", "Service", "Repository", "Controller", "Scheduler", "Settings", "Middleware",
+        "Service", "Repository", "Controller", "Scheduler", "Settings", "Middleware",
     ]
 
     let module: String
@@ -899,7 +903,7 @@ final class ComponentVisitor: SyntaxVisitor {
                 module: module,
                 typeName: name,
                 attributeName: registrable.attributeName
-                    .as(IdentifierTypeSyntax.self)?.name.text ?? "Component",
+                    .as(IdentifierTypeSyntax.self)?.name.text ?? "Service",
                 isPublic: isPublic,
                 removedScopeText: labeledArgumentSource(of: registrable, label: "scope"),
                 removedQualifierText: labeledArgumentSource(of: registrable, label: "qualifier"),
@@ -974,7 +978,7 @@ final class ComponentVisitor: SyntaxVisitor {
     /// Source text of a labeled argument, nil only when the label is absent.
     ///
     /// A literal `nil` reads as present, with text "nil". That matters for the
-    /// removed-argument diagnostic: `@Component(qualifier: nil)` is a call site
+    /// removed-argument diagnostic: `@Service(qualifier: nil)` is a call site
     /// still passing an argument that no longer exists, and telling its author
     /// so is the entire point — the value it passes is beside the point.
     private func labeledArgumentSource(of attribute: AttributeSyntax, label: String) -> String? {
@@ -1596,8 +1600,8 @@ detectCycles()
 // (removed in 0.15.0).
 //
 // A `scope:` argument therefore names a distinction that no longer exists —
-// and as of 0.20.0 the argument itself is gone from `@Component`, `@Service`
-// and `@Repository`, along with the type-level `qualifier:` beside it, which
+// and as of 0.20.0 the argument itself is gone from `@Service` and
+// `@Repository`, along with the type-level `qualifier:` beside it, which
 // expanded to nothing because composition wires by type.
 //
 // Both are reported here, at build time and pointing at the site. Without this
@@ -1812,12 +1816,12 @@ func warnUnscannedInjections() {
     for (type, component) in unscannedInjections where !provided.contains(providedTypeKey(type)) {
         report(Diagnostic(
             .unscannedInjection,
-            "`\(component.typeName)` injects `\(type)`, which is not a scanned @Component"
+            "`\(component.typeName)` injects `\(type)`, which is not a scanned @Service"
                 + (includedModules.isEmpty ? "" : " and no module in this application provides it"),
             at: injectLocation(of: type, in: component),
             explanation: ["If nothing supplies it, composition fails."],
             help: [
-                "make `\(type)` a @Component, or have a module hold it; if it is supplied some other way,\n"
+                "make `\(type)` a @Service, or have a module hold it; if it is supplied some other way,\n"
                     + "acknowledge the property with a `// alula:hand-registered` comment."
             ]))
     }
@@ -2198,9 +2202,9 @@ func lanesInModuleOrder() -> [ScannedPipelineLane] {
 
 /// The `Stereotype` a registrable attribute registers under.
 ///
-/// Mirrors the macros' own mapping: `@Component` passes no `stereotype:` and
-/// takes the parameter's `.component` default, and so does anything without
-/// an explicit case here. `@Scheduler` is deliberately in that group —
+/// Anything without an explicit case here takes `.component`, the general
+/// bucket (`@Component` registered there until it was removed; `@Service`
+/// is the general annotation now). `@Scheduler` is deliberately in that group —
 /// `Stereotype` has no scheduler case, and inventing one in a build tool
 /// would put the manifest and the runtime out of step.
 func stereotype(forAttribute name: String) -> String {

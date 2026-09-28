@@ -4,7 +4,7 @@
 
 ## Meaning
 
-A `@Component`, `@Controller` or `@Middleware` type has two `@Inject`
+A `@Service`, `@Repository`, `@Controller` or `@Middleware` type has two `@Inject`
 properties of the same type, and nothing tells them apart.
 
 ## Why Alula rejects it

@@ -4,7 +4,7 @@
 
 ## Meaning
 
-A component declares `scope:` — `@Component(scope: .transient)` or similar.
+A component declares `scope:` — `@Service(scope: .transient)` or similar.
 The argument was removed in 0.20.0.
 
 ## Why Alula rejects it
@@ -18,4 +18,4 @@ that holds the pool.
 
 ## Fixes
 
-Delete the argument: `@Component`.
+Delete the argument: `@Service`.

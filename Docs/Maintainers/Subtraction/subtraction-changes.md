@@ -100,3 +100,25 @@ eviction. Configured positive numbers are checked by
   deleted.
 - **Format debt re-measured:** 4,267 violations. The figure it replaced,
   1,725, dated from 2026-09-18.
+
+## Pass 4 — one change per commit
+
+### `@Component` (R1)
+
+`@Component` is removed. `@Service` is the one general "put this in the graph"
+annotation, and `@Repository` stays beside it for data access.
+
+- **Capability:** unchanged. `@Service` always expanded identically to
+  `@Component`. The only difference was the stereotype tag in the scanned
+  descriptor, and that tag changes from `.component` to `.service`.
+  `Stereotype.component` stays as the bucket for graph nodes with no more
+  specific tag, such as `@Scheduler` types, so Actuator's dashboard grouping
+  is unchanged.
+- **Migration:** for one release the declaration stays, marked
+  `@available(*, unavailable, renamed: "Service")`. Any use is a compile error
+  with a rename fix-it, and a test compiles a use to pin that. `ComponentMacro`
+  stays in the plugin for that release. Without it, the compiler adds a second
+  error because it cannot find the implementation.
+- **Generator:** it no longer scans `@Component`. Its messages, the
+  diagnostic pages, DocC and Docs now say `@Service`. No new rule restricts
+  what a controller injects.

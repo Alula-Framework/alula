@@ -4,7 +4,7 @@
 
 ## Meaning
 
-A `@Component`, `@Controller` or `@Middleware` type has a stored property
+A `@Service`, `@Repository`, `@Controller` or `@Middleware` type has a stored property
 that is neither `@Inject` nor `@ConfigValue` and has no default value.
 
 ## Why Alula rejects it

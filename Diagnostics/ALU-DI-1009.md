@@ -4,7 +4,7 @@
 
 ## Meaning
 
-An `@Inject` names a type that is neither a scanned `@Component` nor a value
+An `@Inject` names a type that is neither a scanned `@Service` nor a value
 any included module provides.
 
 ## Why Alula warns
@@ -15,7 +15,7 @@ instead of at build time.
 
 ## Fixes
 
-1. Make the type a `@Component`, or have a module hold it.
+1. Make the type a `@Service`, or have a module hold it.
 2. If it is supplied by hand on purpose, acknowledge it with a
    `// alula:hand-registered` comment on the property.
 

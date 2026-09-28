@@ -68,7 +68,6 @@ context as a typed value — one copy per request, never shared between them.
 
 ### Macros
 
-- ``Component()``
 - ``Service()``
 - ``Repository()``
 - ``Inject(from:)``

@@ -218,3 +218,59 @@ The directive is gone from the generator, and so is the manifest's
   pins that.
 - **Docs:** `Docs/core.md`'s "Types their own module registers" is now
   "Types their own module builds", showing the plain-conformer pattern.
+
+### `// alula:hand-registered` (R19)
+
+The generator no longer reads the comment. It is not an error either: dozens
+of application sites carry it, and they are now ordinary comments.
+
+- **Experiment:** the generator run on each usage kind with and without the
+  comment, comparing the generated file and the diagnostics.
+
+  | Usage | Before: what the comment changed | Now |
+  |---|---|---|
+  | App, concrete module value (`PostgresDataSource`, `ChannelSockets`, `LabState`), service or controller | nothing | nothing |
+  | App, `any P` a module provides, no scanned conformer (`any TokenValidator`, `any PubSub`, `any SignInProvider`) | nothing | nothing |
+  | App, `any P` a module provides, one scanned conformer | with: module value; without: bridge to the conformer, module value ignored | module value |
+  | App, `any P` a module provides, two conformers | without: ALU-DI-1010 | module value, no warning |
+  | App, `any P`, one conformer, no module | with: ALU-DI-1001; without: bridge | bridge |
+  | App, `T?` | with: no ALU-DI-1008, and an uncompilable `let pool?: Pool?`; without: ALU-DI-1008 | ALU-DI-1008 |
+  | App, nothing provides `T` | ALU-DI-1001 either way | ALU-DI-1001 |
+  | Library, `T` no scanned module provides | without: ALU-DI-1009 | ALU-DI-1009 |
+  | Library, `T` a scanned module provides | without: ALU-DI-1009 | nothing |
+
+- **Inference implemented:** `moduleProvidedKeys` — what the included modules
+  provide in an application, or every scanned module in a library. It
+  suppresses bridge synthesis (and the ALU-DI-1010 ambiguity) for an
+  existential a module provides, and it is what ALU-DI-1009 checks against.
+  The optional check no longer depends on the comment.
+- **Capability:** the comment's one remaining job was silencing ALU-DI-1009
+  in a library for a value a module provides; the build now sees that
+  module. What is left is a type no scanned module provides, which is worth
+  a warning. No typed escape was added: no known repository applies the
+  plugin to a library target.
+- **Docs:** CompileTimeWiring.md's "Dependencies the scan can't see" is now
+  "Dependencies a module provides"; `Docs/core.md`, ALU-DI-1009 and
+  ALU-DI-1010 give the real fix (have a module provide it). The catalog was
+  regenerated.
+- **External sites now dead** (other repositories, not edited here; every
+  one is in an application target, and every existential among them is one a
+  module provides, so each generates the same file without the comment):
+  - alula-cli: `templates/demo/Sources/App/Controllers/SocketController.swift:33,40`,
+    `ChatController.swift:70,72`, `SessionController.swift:42`,
+    `templates/demo/Sources/App/Repos/ChatRepository.swift:74`,
+    `UserRepository.swift:14`, `templates/basics/Sources/App/Repos/UserRepository.swift:18,22`
+    (prose and marker), their copies in `Sources/alula/EmbeddedTemplates.swift`
+    (1032, 1036, 1955, 1957, 2316, 2424, 2431, 3117, 3509), and
+    `TUTORIAL.md:593,1115,1117`.
+  - fledge: `server/Sources/Server/SocketController.swift:20`,
+    `server/Sources/Server/SessionController.swift:32`,
+    `runner/supervisor/Sources/Supervisor/RunnerController.swift:30`, and the
+    tutorial pages and apps under `content/tutorial/` (03-intermediate/01, 02,
+    04; 04-advanced/03; 05-modules/01, 02 — `README.md` and `app-b` sources),
+    plus `PLAN.md:364`. 05-modules/01's README explains the comment and should
+    say it is no longer needed.
+  - relay: 24 sites in `Sources/Relay` (Identity, Incidents, Integrations,
+    Maintenance, Notifications, Realtime, Workers), `Sources/RelayGateway/HookController.swift:11,13`
+    and `Sources/RelayLab/Providers/Emulators.swift:59,92,111,130`.
+  - alula-data: `Docs/data-postgres.md:52`, `Snippets/DataPostgresShapes.swift:25`.

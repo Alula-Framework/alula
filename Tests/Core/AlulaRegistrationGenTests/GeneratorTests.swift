@@ -647,22 +647,165 @@ struct GeneratorTests {
         #expect(result.diagnostics.contains("Ping") && result.diagnostics.contains("Pong"))
     }
 
-    @Test("a hand-registered marker suppresses the missing-registration report")
-    func handRegisteredMarkerSuppresses() throws {
+    // MARK: - `// alula:hand-registered` is an ordinary comment (R19)
+
+    /// The comment used to silence ALU-DI-1009 in a library target. What it
+    /// asserted — "a module provides this" — the build now reads from the
+    /// modules it can see, so the comment silences nothing.
+    @Test("the hand-registered comment no longer suppresses anything")
+    func handRegisteredCommentIsInert() throws {
         let result = try generate([
             "Marked.swift": """
             import AlulaCore
             @Service final class Marked: Sendable {
             // alula:hand-registered
-            @Inject var external: SomethingRegisteredByHand
+            @Inject var external: SomethingNothingProvides
             init() {}
             }
             """
         ])
-        #expect(
-            !result.diagnostics.contains("SomethingRegisteredByHand"),
-            "the documented escape hatch must actually suppress the diagnostic"
-        )
+        #expect(result.exitCode == 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1009]"))
+        #expect(result.diagnostics.contains("SomethingNothingProvides"))
+    }
+
+    @Test("in a library, a module the library declares provides what it injects")
+    func libraryModuleProvidesInjection() throws {
+        let result = try generate([
+            "Library.swift": """
+            import AlulaCore
+            public struct Pool: Sendable {}
+            public struct PoolModule: AlulaModule {
+            public let pool: Pool
+            public init() { pool = Pool() }
+            }
+            @Service public struct Reporter: Sendable {
+            @Inject var pool: Pool
+            }
+            """
+        ])
+        #expect(result.exitCode == 0)
+        #expect(!result.diagnostics.contains("[ALU-DI-1009]"), "\(result.diagnostics)")
+    }
+
+    @Test("in a library, a module from a linked package provides what it injects")
+    func libraryLinkedModuleProvidesInjection() throws {
+        let result = try generate(
+            [
+                "Library.swift": """
+                import AlulaCore
+                import PoolKit
+                @Service public struct Reporter: Sendable {
+                @Inject var pool: PostgresDataSource
+                @Inject var validator: any TokenValidator
+                }
+                """
+            ],
+            targetModule: "ReportingKit",
+            dependencyModules: [
+                "PoolKit": [
+                    "PoolKit.swift": """
+                    import AlulaCore
+                    public struct PostgresDataSource: Sendable {}
+                    public protocol TokenValidator: Sendable {}
+                    public struct PostgresDataModule: AlulaModule {
+                    public let dataSource: PostgresDataSource
+                    public let validator: any TokenValidator
+                    }
+                    """
+                ]
+            ])
+        #expect(result.exitCode == 0)
+        #expect(!result.diagnostics.contains("[ALU-DI-1009]"), "\(result.diagnostics)")
+    }
+
+    @Test("an existential an included module provides is not bridged to a scanned conformer")
+    func moduleProvidedExistentialWinsOverConformer() throws {
+        // Without this inference the one scanned conformer — a test fake, a
+        // leftover — was bridged in and the module's value silently ignored,
+        // unless the property carried `// alula:hand-registered`.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaCore
+            protocol TokenValidator: Sendable {}
+            struct Real: TokenValidator {}
+            struct SecModule: AlulaModule {
+            let validator: any TokenValidator
+            init() { validator = Real() }
+            }
+            @Service struct FakeValidator: TokenValidator {}
+            @Service struct Consumer: Sendable {
+            @Inject var validator: any TokenValidator
+            }
+            struct AppModule: AlulaModule {
+            static var dependencies: [any AlulaModule.Type] { [SecModule.self] }
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: alulaComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0, "\(result.diagnostics)")
+        #expect(result.generated.contains("existential bridges: 0"))
+        #expect(result.generated.contains("Consumer(validator: tokenValidator)"))
+        #expect(result.generated.contains("AlulaGraph(tokenValidator: secModule.validator)"))
+    }
+
+    @Test("several conformers are not ambiguous when an included module provides the existential")
+    func moduleProvidedExistentialSettlesAmbiguity() throws {
+        let result = try generate([
+            "Main.swift": """
+            import AlulaCore
+            protocol TokenValidator: Sendable {}
+            struct Real: TokenValidator {}
+            struct SecModule: AlulaModule {
+            let validator: any TokenValidator
+            init() { validator = Real() }
+            }
+            @Service struct FakeA: TokenValidator {}
+            @Service struct FakeB: TokenValidator {}
+            @Service struct Consumer: Sendable {
+            @Inject var validator: any TokenValidator
+            }
+            struct AppModule: AlulaModule {
+            static var dependencies: [any AlulaModule.Type] { [SecModule.self] }
+            init() {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(
+            configuration: .load(), modules: [AppModule.self],
+            composedBy: alulaComposeModules)
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0, "\(result.diagnostics)")
+        #expect(!result.diagnostics.contains("[ALU-DI-1010]"))
+        #expect(result.generated.contains("AlulaGraph(tokenValidator: secModule.validator)"))
+    }
+
+    @Test("an optional injection is an error with or without the old comment")
+    func optionalInjectionIgnoresComment() throws {
+        // The comment used to skip this check, and the generated graph then
+        // declared `let pool?: Pool?` — not Swift.
+        let result = try generate([
+            "Sources.swift": """
+            import AlulaCore
+            struct Pool: Sendable {}
+            @Service struct Consumer: Sendable {
+            // alula:hand-registered
+            @Inject var pool: Pool?
+            }
+            """
+        ])
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-DI-1008]"))
     }
 
     // MARK: - AlulaGraph
@@ -752,10 +895,10 @@ struct GeneratorTests {
             result.generated.contains("try (pager ?? Pager(_alulaConfiguration: configuration))"))
     }
 
-    @Test("a hand-registered dependency becomes a required graph input, not a container resolve")
-    func handRegisteredDependencyIsAGraphInput() throws {
-        // A `alula:hand-registered` @Inject names something the scan does not
-        // build — a root input the composition root supplies. The graph takes
+    @Test("a module-held dependency becomes a required graph input, not a container resolve")
+    func moduleHeldDependencyIsAGraphInput() throws {
+        // An @Inject of something the scan does not build — a value a module
+        // holds — is a root input the composition root supplies. The graph takes
         // it as a required init parameter (no `= nil` default) and builds the
         // component from it; there is no container to resolve it from.
         let result = try generate([
@@ -763,7 +906,6 @@ struct GeneratorTests {
             import AlulaCore
             @Repository
             struct UserRepository: Sendable {
-            // alula:hand-registered
             @Inject var pool: PostgresDataSource
             }
             """
@@ -836,7 +978,6 @@ struct GeneratorTests {
             import AlulaWeb
             @Controller("/socket")
             struct SocketController {
-            // alula:hand-registered
             @Inject var validator: (any TokenValidator)
             @GetRoute("/")
             func open(_ context: RequestContext) -> String { "x" }
@@ -868,14 +1009,12 @@ struct GeneratorTests {
             import AlulaWeb
             @Controller("/socket")
             struct SocketController {
-            // alula:hand-registered
             @Inject var validator: any TokenValidator
             @GetRoute("/")
             func open(_ context: RequestContext) -> String { "x" }
             }
             @Controller("/session")
             struct SessionController {
-            // alula:hand-registered
             @Inject var validator: (any TokenValidator)
             @PostRoute("/")
             func signIn(_ context: RequestContext) -> String { "y" }
@@ -1209,7 +1348,7 @@ struct GeneratorTests {
             """
         ])
         #expect(result.exitCode == 0)
-        #expect(!result.diagnostics.contains("not a scanned"), "\(result.diagnostics)")
+        #expect(!result.diagnostics.contains("[ALU-DI-1009]"), "\(result.diagnostics)")
     }
 
     @Test("a library target still reports an unscanned injection")
@@ -1221,7 +1360,7 @@ struct GeneratorTests {
             @Repository struct UserRepository { @Inject var pool: DataSource }
             """
         ])
-        #expect(result.diagnostics.contains("[ALU-DI-1009] `UserRepository` injects `DataSource`, which is not a scanned @Service"))
+        #expect(result.diagnostics.contains("[ALU-DI-1009] `UserRepository` injects `DataSource`, which no scanned @Service or module provides"))
     }
 
     @Test("a graph root nothing provides is a build error naming the type")
@@ -1326,20 +1465,19 @@ struct GeneratorTests {
                 "let consumerModule = ConsumerModule(environment: envModule.environment)"))
     }
 
-    @Test("dependencies are passed in declaration order, not injected-then-acknowledged")
+    @Test("dependencies are passed in declaration order, roots and nodes interleaved")
     func graphPassesDependenciesInDeclarationOrder() throws {
         // The generated initializer takes its parameters in declaration order.
-        // Emitting the injected ones first mislabels every call where a
-        // `alula:hand-registered` property is declared before an injected
-        // one — which reads as "argument 'validator' must precede argument
-        // 'sockets'". Caught by the demo's SocketController, not by these.
+        // Emitting graph nodes and root inputs as two groups mislabels every
+        // call where a root is declared before a node — which reads as
+        // "argument 'validator' must precede argument 'sockets'". Caught by
+        // the demo's SocketController, not by these.
         let result = try generate([
             "Main.swift": """
             import AlulaWeb
             @Service struct Sockets { init() {} }
             @Controller
             struct SocketController {
-            // alula:hand-registered
             @Inject var validator: any TokenValidator
             @Inject var sockets: Sockets
             @GetRoute("/s")
@@ -1612,9 +1750,7 @@ struct GeneratorTests {
             init() { pool = Pool() }
             }
             @Service struct Reporter: Sendable {
-            // alula:hand-registered — PoolModule provides it.
             @Inject var primary: Pool
-            // alula:hand-registered — PoolModule<Analytics> provides it.
             @Inject(from: PoolModule<Analytics>.self) var analytics: Pool
             }
             struct AppModule: AlulaModule {
@@ -1658,7 +1794,6 @@ struct GeneratorTests {
             init() { pool = Pool() }
             }
             @Service struct Reporter: Sendable {
-            // alula:hand-registered — PoolModule provides it.
             @Inject var primary: Pool
             }
             struct AppModule: AlulaModule {
@@ -1751,7 +1886,6 @@ struct GeneratorTests {
             init() { pool = Pool() }
             }
             @Service struct Reporter: Sendable {
-            // alula:hand-registered — PoolModule provides it.
             @Inject(from: PoolModule<Analytics>.self) var analytics: Pool
             }
             struct AppModule: AlulaModule {

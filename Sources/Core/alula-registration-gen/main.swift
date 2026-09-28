@@ -87,24 +87,14 @@ struct ScannedComponent {
     /// composition function calling it needs these and not the type names —
     /// `UserRepository(pool: dataSource)`, never `(postgresDataSource:)`.
     let injectPropertyNames: [String]
-    /// `@Inject` types whose property carries a `alula:hand-registered`
-    /// marker comment — the author's acknowledgment that the type is provided
-    /// some other way (a value a module holds, or an external input) and so is
-    /// invisible to this scanner (P-2), and the missing-registration warning
-    /// should not fire. Still participates in cycle detection.
-    let acknowledgedTypeNames: [String]
-    /// Every dependency, injected and acknowledged alike, in **declaration
-    /// order** with its property name.
+    /// Every dependency in **declaration order** with its property name and
+    /// the provider `@Inject(from:)` named.
     ///
-    /// The generated initializer takes its parameters in declaration order, so
-    /// emitting `inject` then `acknowledged` mislabels the call whenever a
-    /// `alula:hand-registered` property is declared before an injected one —
+    /// The generated initializer takes its parameters in declaration order,
+    /// so a call built from anything else mislabels it —
     /// `UserController(sockets:validator:)` against an
     /// `init(validator:sockets:)`. Caught by the demo's `SocketController`.
     let dependencyOrder: [(type: String, label: String, from: String?)]
-
-    /// As `injectPropertyNames`, for the acknowledged edges.
-    let acknowledgedPropertyNames: [String]
     let configValues: [ScannedConfigValue]
     let file: String
     let line: Int
@@ -807,8 +797,6 @@ final class ComponentVisitor: SyntaxVisitor {
 
         var inject: [String] = []
         var injectNames: [String] = []
-        var acknowledged: [String] = []
-        var acknowledgedNames: [String] = []
         var dependencyOrder: [(type: String, label: String, from: String?)] = []
         var injectLocations: [String: DiagnosticLocation] = [:]
         var configValues: [ScannedConfigValue] = []
@@ -827,19 +815,14 @@ final class ComponentVisitor: SyntaxVisitor {
                     .map(moduleTypeText(ofMetatype:))
                 let propertyName =
                     binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text ?? ""
-                // `member.description` spans the member's leading trivia
-                // through its last token's trailing trivia, so the marker is
-                // found whether it sits on the line above the property or as
-                // a same-line trailing comment.
+                // A `// alula:hand-registered` comment on the property was
+                // once read here, and is now an ordinary comment: what it
+                // declared — "a module provides this" — the build infers from
+                // the modules it can see (R19).
                 dependencyOrder.append((type: type, label: propertyName, from: namedProvider))
                 injectLocations[propertyName] = sourceLocation(of: binding.typeAnnotation!.type)
-                if member.description.contains("alula:hand-registered") {
-                    acknowledged.append(type)
-                    acknowledgedNames.append(propertyName)
-                } else {
-                    inject.append(type)
-                    injectNames.append(propertyName)
-                }
+                inject.append(type)
+                injectNames.append(propertyName)
             }
             if let attribute = attribute(of: variable.attributes, named: "ConfigValue") {
                 let propertyLocation = converter.location(for: variable.position)
@@ -905,9 +888,7 @@ final class ComponentVisitor: SyntaxVisitor {
                 },
                 injectTypeNames: inject,
                 injectPropertyNames: injectNames,
-                acknowledgedTypeNames: acknowledged,
                 dependencyOrder: dependencyOrder,
-                acknowledgedPropertyNames: acknowledgedNames,
                 configValues: configValues,
                 file: file,
                 line: location.line,
@@ -1293,6 +1274,68 @@ if !extensionConformances.isEmpty {
     }
 }
 
+/// Every module an application actually includes: the ones it listed, plus
+/// everything those pull in through `dependencies`.
+///
+/// The composition root includes the same set at bootstrap; this is that walk
+/// over the scanned edges, against roots read from the `modules:` argument in
+/// the application's own source. It is what makes "does this subsystem exist in
+/// this app" a build-time question instead of a runtime one (D11).
+///
+/// Empty when the target names no bootstrap list, which is the ordinary case
+/// for a library: it includes nothing because it starts nothing.
+@MainActor
+func resolveIncludedModules() -> [String] {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    var ordered: [String] = []
+    var seen: Set<String> = []
+
+    func visit(_ text: String) {
+        let key = moduleIdentity(text)
+        guard !seen.contains(key) else { return }
+        seen.insert(key)
+        // Dependencies first, the order `configure` runs in.
+        for dependency in scannedModule(text, in: byName)?.dependencies ?? [] {
+            visit(dependency)
+        }
+        // As written, generic argument and all: this is what constructs it.
+        ordered.append(text)
+    }
+    for root in bootstrapModules { visit(root) }
+    return ordered
+}
+let includedModules = resolveIncludedModules()
+
+/// Every type a module visible to this build provides, keyed the way the
+/// composer matches a provider (`providedTypeKey`), plus the modules
+/// themselves, which are injectable too.
+///
+/// In an application, the modules it includes. A library includes nothing,
+/// so there it is every module the scan saw — in the target or in a package
+/// it links: whichever of them the consuming application includes, that
+/// application's own build checks the wiring (ALU-DI-1001).
+///
+/// This is the inference that retired `// alula:hand-registered`. The comment
+/// told the build "a module provides this"; the build can see the modules.
+@MainActor
+func resolveModuleProvidedKeys() -> Set<String> {
+    let byName = Dictionary(
+        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    let visible: [ScannedModule]
+    let names: [String]
+    if includedModules.isEmpty {
+        visible = moduleGraph
+        names = moduleGraph.map(\.typeName)
+    } else {
+        visible = includedModules.compactMap { scannedModule($0, in: byName) }
+        names = includedModules
+    }
+    return Set(visible.flatMap { $0.provides.map { providedTypeKey($0.type) } })
+        .union(names.map(providedTypeKey))
+}
+let moduleProvidedKeys = resolveModuleProvidedKeys()
+
 // MARK: - Existential bridge synthesis
 //
 // The stereotype macros register a component under its CONCRETE type key;
@@ -1308,13 +1351,14 @@ if !extensionConformances.isEmpty {
 // for means marker conformances (Sendable, Codable, a superclass) never
 // produce registrations — nobody autowires `(any Sendable)`.
 //
-// A `// alula:hand-registered` marker on the demanding property suppresses
-// synthesis: it is the author's statement that the key is supplied some other
-// way this scanner cannot see (P-2), and a synthesized duplicate would collide
-// at composition. Ambiguity (multiple scanned
-// conformers) also synthesizes nothing — warning, not error, because a hand
-// bridge may already resolve it invisibly; guessing a winner silently would
-// be worse than asking.
+// A module that provides the existential itself (`let validator: any
+// TokenValidator`) suppresses synthesis: a module's value is a deliberate
+// choice, a scanned conformer an incidental one, and a bridge would silently
+// shadow the module's value. That used to take a `// alula:hand-registered`
+// comment on the demanding property; the build now sees the module and
+// decides the same way. Ambiguity (multiple scanned conformers and no module)
+// also synthesizes nothing — a warning, because guessing a winner silently
+// would be worse than asking.
 
 /// `(any P)` / `any P` → "P". Nil for optionals (they resolve under a
 /// different key), compositions (`any P & Q`), generics, and non-existential
@@ -1401,15 +1445,6 @@ var ambiguousExistentialBases: Set<String> = []
 
 @MainActor
 func synthesizeBridges() -> [SynthesizedBridge] {
-    var suppressed: Set<String> = []
-    for component in components {
-        for acknowledged in component.acknowledgedTypeNames {
-            if let name = existentialProtocolName(acknowledged) {
-                suppressed.insert(baseName(name))
-            }
-        }
-    }
-
     // First demand site wins for spelling/diagnostics; the key is the same
     // type however it is spelled.
     var demands: [String: (protocolName: String, written: String, demandedBy: ScannedComponent)] = [:]
@@ -1423,8 +1458,9 @@ func synthesizeBridges() -> [SynthesizedBridge] {
 
     var bridges: [SynthesizedBridge] = []
     for base in demands.keys.sorted() {
-        guard !suppressed.contains(base) else { continue }
         let demand = demands[base]!
+        // A module provides it: the composer wires the module's value.
+        guard !moduleProvidedKeys.contains(providedTypeKey(demand.written)) else { continue }
         let conformers = components.filter { component in
             component.conformanceNames.contains { baseName($0) == base }
         }
@@ -1442,8 +1478,8 @@ func synthesizeBridges() -> [SynthesizedBridge] {
                 at: injectLocation(of: demand.written, in: demand.demandedBy),
                 explanation: ["Alula bridges a protocol to a component only when exactly one conforms."],
                 help: [
-                    "inject the concrete type you mean, or have a module hold the `any \(demand.protocolName)`\n"
-                        + "and acknowledge the property with `// alula:hand-registered`."
+                    "inject the concrete type you mean, or have an included module provide `any \(demand.protocolName)`,\n"
+                        + "which the build then uses instead of guessing."
                 ],
                 notes: conformers.sorted { $0.typeName < $1.typeName }.map {
                     .init("`\($0.typeName)` conforms to `\(demand.protocolName)`", at: $0.location)
@@ -1554,10 +1590,7 @@ func detectCycles() {
             return
         }
         inProgress.insert(name)
-        // Acknowledged (marker-carrying) dependencies keep their edges here:
-        // the marker silences the missing-registration warning, never cycle
-        // detection.
-        for dependency in (component.injectTypeNames + component.acknowledgedTypeNames)
+        for dependency in component.injectTypeNames
         where byName[dependency] != nil {
             visit(dependency, stack: stack + [name])
         }
@@ -1735,38 +1768,6 @@ func laneNames(in text: String) -> [String]? {
 
 diagnoseUndeclaredLanes()
 
-/// Every module an application actually includes: the ones it listed, plus
-/// everything those pull in through `dependencies`.
-///
-/// The composition root includes the same set at bootstrap; this is that walk
-/// over the scanned edges, against roots read from the `modules:` argument in
-/// the application's own source. It is what makes "does this subsystem exist in
-/// this app" a build-time question instead of a runtime one (D11).
-///
-/// Empty when the target names no bootstrap list, which is the ordinary case
-/// for a library: it includes nothing because it starts nothing.
-@MainActor
-func resolveIncludedModules() -> [String] {
-    let byName = Dictionary(
-        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
-    var ordered: [String] = []
-    var seen: Set<String> = []
-
-    func visit(_ text: String) {
-        let key = moduleIdentity(text)
-        guard !seen.contains(key) else { return }
-        seen.insert(key)
-        // Dependencies first, the order `configure` runs in.
-        for dependency in scannedModule(text, in: byName)?.dependencies ?? [] {
-            visit(dependency)
-        }
-        // As written, generic argument and all: this is what constructs it.
-        ordered.append(text)
-    }
-    for root in bootstrapModules { visit(root) }
-    return ordered
-}
-let includedModules = resolveIncludedModules()
 
 /// Warns about each `@Inject` type that neither a scanned component nor an
 /// included module provides.
@@ -1779,28 +1780,25 @@ let includedModules = resolveIncludedModules()
 /// about a type the composer had resolved. In a target that composes, a type
 /// nothing provides fails the build in the composer, so what remains here is
 /// the case that is actually uncertain: a library target, which composes
-/// nothing and cannot see the modules its components will run under.
+/// nothing. There, any module the scan saw — declared in the library or in a
+/// package it links — counts (`moduleProvidedKeys`), so what is left is a type
+/// no scanned module provides at all.
 @MainActor
 func warnUnscannedInjections() {
-    let byName = Dictionary(
-        moduleGraph.map { (moduleIdentity($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
-    let modules = includedModules.compactMap { scannedModule($0, in: byName) }
-    let provided = Set(modules.flatMap { $0.provides.map { providedTypeKey($0.type) } })
-        .union(includedModules.map(providedTypeKey))
     // In an application the composer reports a type nothing provides as an
     // error (ALU-DI-1001), with every place that asks for it; warning here too
     // would say it twice. A library composes nothing, so this is all it gets.
     guard includedModules.isEmpty else { return }
-    for (type, component) in unscannedInjections where !provided.contains(providedTypeKey(type)) {
+    for (type, component) in unscannedInjections
+    where !moduleProvidedKeys.contains(providedTypeKey(type)) {
         report(Diagnostic(
             .unscannedInjection,
-            "`\(component.typeName)` injects `\(type)`, which is not a scanned @Service"
-                + (includedModules.isEmpty ? "" : " and no module in this application provides it"),
+            "`\(component.typeName)` injects `\(type)`, which no scanned @Service or module provides",
             at: injectLocation(of: type, in: component),
             explanation: ["If nothing supplies it, composition fails."],
             help: [
-                "make `\(type)` a @Service, or have a module hold it; if it is supplied some other way,\n"
-                    + "acknowledge the property with a `// alula:hand-registered` comment."
+                "make `\(type)` a @Service, or have a module provide it — one this library declares,\n"
+                    + "or one in a package it links."
             ]))
     }
 }
@@ -2224,7 +2222,7 @@ let graphRegistrable = components
 // a graph node. Unless something else injects it, in which case the
 // graph has to build it like anything else.
 let graphDependedUpon = Set(
-graphRegistrable.flatMap { $0.injectTypeNames + $0.acknowledgedTypeNames }.map(baseName))
+graphRegistrable.flatMap(\.injectTypeNames).map(baseName))
 // Only a controller is left out of the graph, and only when nothing injects
 // it: its route terminal builds it per request.
 //
@@ -2341,7 +2339,7 @@ var emittedComponentDescriptors = false
 //
 // What it can build is the application's own graph. A dependency it cannot
 // construct — a framework component a module provides as a value, a type
-// marked `alula:hand-registered`, anything the scan never saw — becomes an
+// a module holds, anything the scan never saw — becomes an
 // initializer parameter instead. That is §2.6's escape hatch: externally
 // supplied values arrive through the same typed parameters everything else
 // uses, visible at one root rather than scattered across many separate
@@ -2386,7 +2384,7 @@ func emitAlulaGraph(into out: inout String) {
         let key = baseName(component.typeName)
         if finished.contains(key) || visiting.contains(key) { return }
         visiting.insert(key)
-        for dependency in component.injectTypeNames + component.acknowledgedTypeNames {
+        for dependency in component.injectTypeNames {
             if let next = provider(of: dependency) { visit(next) }
         }
         visiting.remove(key)
@@ -3618,9 +3616,7 @@ if !routes.isEmpty || !lanes.isEmpty || !moduleGraph.isEmpty
             component.module == manifest.targetModuleName
             ? component.typeName
             : "\(component.module).\(component.typeName)"
-        // Acknowledged edges are dependencies too — the marker says the type
-        // is registered by hand, not that nothing depends on it.
-        let dependencies = (component.injectTypeNames + component.acknowledgedTypeNames)
+        let dependencies = component.injectTypeNames
             .map { "\"\(escaped($0))\"" }.joined(separator: ", ")
         out += "        Component("
         out += "typeName: \"\(escaped(qualified))\", "

@@ -150,13 +150,15 @@ checks the graph before anything runs:
 - **Existential bridges** are synthesized: a protocol with exactly one
   conformer is resolvable as `any Protocol` without hand-written glue.
 
-A component that is registered by hand rather than scanned is acknowledged
-with a comment, so the check does not have to choose between false positives
-and silence:
+A dependency a module provides as a value — `PostgresDataModule`'s
+`PostgresDataSource`, a security module's `any TokenValidator` — needs no
+annotation: the scan sees the modules too, and wires it from whichever
+included module provides it. An existential a module provides wins over any
+scanned conformer. (Earlier releases asked for a `// alula:hand-registered`
+comment here; it is now an ordinary comment and can be deleted.)
 
 ```swift
-// alula:hand-registered
-@Inject var external: SomethingFromAnotherLibrary
+@Inject var pool: PostgresDataSource
 ```
 
 ### Types their own module builds

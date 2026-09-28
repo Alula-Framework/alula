@@ -4,20 +4,26 @@
 
 ## Meaning
 
-An `@Inject` names a type that is neither a scanned `@Service` nor a value
-any included module provides.
+An `@Inject` in a library target names a type that is neither a scanned
+`@Service` nor a value any scanned module provides — in the library itself or
+in a package it links.
 
 ## Why Alula warns
 
-It may be provided some other way the build cannot see — a value supplied
-by hand at composition. If it is not, the application fails at startup
-instead of at build time.
+A library composes nothing, so the build cannot check its wiring the way it
+checks an application's. It can still see every module in the scan; a type
+none of them provides has no known source, and an application that uses the
+component fails to build (ALU-DI-1001) unless it supplies one itself.
+
+In an application target this warning never appears: the composer checks
+every dependency against the modules the application includes, and reports a
+missing one as ALU-DI-1001.
 
 ## Fixes
 
-1. Make the type a `@Service`, or have a module hold it.
-2. If it is supplied by hand on purpose, acknowledge it with a
-   `// alula:hand-registered` comment on the property.
+1. Make the type a `@Service`.
+2. Have a module provide it (`public let pool: DataSource`) — one the library
+   declares, or one in a package it links.
 
 ## Related
 

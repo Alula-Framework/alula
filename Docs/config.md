@@ -20,7 +20,7 @@ let certPath: String? = try configuration.getIfPresent("tls.certificate")
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0")
 ]
 ```
 

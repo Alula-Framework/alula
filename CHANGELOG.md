@@ -4,7 +4,15 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.60.0] - 2026-09-28
+
+A subtraction release: less to learn, nothing a working application needs
+taken away. The inventory, the decisions and a per-change record are in
+`Docs/Maintainers/Subtraction/`. Breaking: `@Component` (use `@Service`),
+`ActuatorModule()` (use `init(configuration:)`), the `AlulaChannelsProtocol`
+product, old configuration-key spellings (ALU-CONFIG-5014 names the new one),
+and an undeclared environment no longer counts as development for mail,
+OpenAPI and the actuator dashboard (`alula dev` sets `ALULA_ENV=dev`).
 
 ### Added
 

@@ -21,7 +21,7 @@ conflict-free merge semantics and the diffing that make a distributed
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.59.0", traits: ["Web"]),
+        from: "0.60.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

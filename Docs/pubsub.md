@@ -27,7 +27,7 @@ multi-node story needs. Modeled on
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.59.0"),
+        from: "0.60.0"),
 ],
 targets: [
     .executableTarget(

@@ -48,7 +48,7 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0",
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0",
          traits: ["Web"])
 ```
 
@@ -127,14 +127,14 @@ All are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.59.0", traits: ["Web"])
+         from: "0.60.0", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.59.0", traits: ["Security"])
+         from: "0.60.0", traits: ["Security"])
 
 // Just composition and lifecycle — 7 resolved dependencies instead of 30.
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the

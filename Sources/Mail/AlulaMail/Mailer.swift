@@ -193,16 +193,20 @@ public struct AlulaMailModule: AlulaModule {
             self.mailer = Mailer(transport: transport, defaultFrom: from)
             return
         }
-        let environment = configuration.environment ?? AlulaEnvironment.current()
+        // Development only when the environment was *declared* one: a
+        // production box that forgets ALULA_ENV resolves to dev for its
+        // overlay file, and must not quietly log mail instead of sending it.
+        let development = configuration.isExplicitlyDevelopment()
         let chosen = try configuration.getIfPresent("mail.transport", as: String.self)
-        guard environment == .dev || environment == .test || chosen == "log" else {
-            throw MailConfigurationError.noTransport(environment: environment.rawValue)
+        guard development || chosen == "log" else {
+            let environment = configuration.declaredEnvironment()?.rawValue ?? "undeclared"
+            throw MailConfigurationError.noTransport(environment: environment)
         }
-        // Bodies carry reset links and personal data; outside development
-        // and test they stay out of the log unless asked for.
+        // Bodies carry reset links and personal data; outside a declared
+        // development or test environment they stay out of the log unless
+        // asked for.
         let logBody =
-            try configuration.getIfPresent("mail.log-body", as: Bool.self)
-            ?? (environment == .dev || environment == .test)
+            try configuration.getIfPresent("mail.log-body", as: Bool.self) ?? development
         self.mailer = Mailer(transport: LoggingMailTransport(logBody: logBody), defaultFrom: from)
     }
 
@@ -216,12 +220,21 @@ public struct AlulaMailModule: AlulaModule {
 
 /// Why ``AlulaMailModule`` refused to compose.
 public enum MailConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
-    /// No module provides a ``MailTransport`` and the environment is not
-    /// `dev` or `test`, and `mail.transport` is not `log`.
+    /// No module provides a ``MailTransport``, `mail.transport` is not
+    /// `log`, and the environment was not declared as a development or test
+    /// one. `environment` is the declared environment's name, or
+    /// `"undeclared"` when none was set.
     case noTransport(environment: String)
 
     public var description: String {
         switch self {
+        case .noTransport(let environment) where environment == "undeclared":
+            """
+            no mail transport, and no environment was declared: nothing would be delivered. Add \
+            AlulaMailSMTPModule (configured under mail.smtp.*) or another module providing a \
+            MailTransport, set mail.transport: log to log mail on purpose, or declare a \
+            development environment (ALULA_ENV=dev) when running locally.
+            """
         case .noTransport(let environment):
             """
             no mail transport in the \(environment) environment: nothing would be delivered. Add \

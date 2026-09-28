@@ -113,13 +113,17 @@ discarded.
   `mail.smtp.allow-plaintext-auth: true`, and settings built in code are
   held to the same rule when the connection opens: without
   `allowPlaintextAuth`, no credentials are sent and the send fails.
-- **No transport, no start.** Outside `dev` and `test`, `AlulaMailModule`
-  without a transport fails composition. `mail.transport: log` logs mail on
-  purpose, for a staging environment with no server.
+- **No transport, no start.** Unless the environment is *declared* as a
+  development or test one (`ALULA_ENV=dev`, `test`, …), `AlulaMailModule`
+  without a transport fails composition. An unset `ALULA_ENV` counts as not
+  declared: it still selects `alula-dev.yaml`, but a production box that
+  forgot it must not log mail instead of sending it. `mail.transport: log`
+  logs mail on purpose, for a staging environment with no server.
 - **Bodies stay out of the log outside development.** A logged body carries
   reset and sign-in links, verification tokens and personal data, and goes
   wherever the logs go. The logging transport writes recipients, subject and
-  body size everywhere, and the body itself only in `dev` and `test` unless
+  body size everywhere, and the body itself only in a declared `dev` or
+  `test` environment unless
   `mail.log-body: true`. Do not turn it on where logs are shipped or kept.
 
 ## What the message looks like

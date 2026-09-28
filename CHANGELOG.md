@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An undeclared environment no longer logs mail instead of sending it.**
+  With no mail transport, `AlulaMailModule` fell back to logging mail —
+  bodies, and so reset links, included — whenever the environment resolved
+  to `dev`, and an unset `ALULA_ENV` resolves to `dev`. A production box that
+  forgot `ALULA_ENV` composed, sent nothing, and logged every reset link. The
+  fallback now needs a *declared* development or test environment, the same
+  rule OpenAPI and Actuator use; otherwise composition fails and says so.
+  `AlulaQueueModule`'s in-memory-store warning follows the same rule. Local
+  development sets `ALULA_ENV=dev`.
 - **`.json(value, status:)` uses the application's configured encoder.** It
   defaulted to `WebCoders.default`'s, so a handler that called it only to
   answer `.created` silently lost `web.json.key-strategy`,

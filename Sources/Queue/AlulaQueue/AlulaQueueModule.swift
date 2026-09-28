@@ -25,8 +25,10 @@ public struct AlulaQueueModule: AlulaModule {
 
     public init(configuration: Configuration, store: (any QueueStore)? = nil) throws {
         if store == nil {
-            let environment = configuration.environment ?? AlulaEnvironment.current()
-            if environment != .dev, environment != .test {
+            // Quiet only in a declared development or test environment: an
+            // undeclared one may be production that forgot ALULA_ENV.
+            if !configuration.isExplicitlyDevelopment() {
+                let environment = configuration.declaredEnvironment()?.rawValue ?? "undeclared"
                 Logger(label: "alula.queue").warning(
                     """
                     no durable queue store: jobs are kept in memory and a restart loses every \

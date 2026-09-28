@@ -137,8 +137,9 @@ next poll.
 ## Durability
 
 With no store module, jobs are kept in memory: right for development and
-tests, and outside them `AlulaQueueModule` logs a warning at startup, because
-a restart loses every waiting job.
+tests, and unless the environment is declared as one of those (`ALULA_ENV`
+set), `AlulaQueueModule` logs a warning at startup, because a restart loses
+every waiting job.
 
 `AlulaQueuePostgresModule` keeps them in a table. It claims with
 `FOR UPDATE SKIP LOCKED`, so workers on every replica share the queue without

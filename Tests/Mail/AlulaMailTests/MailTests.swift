@@ -218,3 +218,37 @@ struct MailModuleTests {
         #expect(module.mailer.transport is RecordingMailTransport)
     }
 }
+
+@Suite("Mail module without a transport")
+struct MailModuleEnvironmentTests {
+    @Test("a declared development or test environment falls back to logging mail")
+    func declaredDevelopmentLogs() throws {
+        for environment in [AlulaEnvironment.dev, .test] {
+            _ = try AlulaMailModule(configuration: Configuration(sources: [], environment: environment))
+        }
+    }
+
+    @Test("a declared production environment refuses to compose")
+    func declaredProductionRefuses() {
+        #expect(throws: MailConfigurationError.noTransport(environment: "prod")) {
+            try AlulaMailModule(configuration: Configuration(sources: [], environment: .prod))
+        }
+    }
+
+    // An undeclared environment resolves to dev for choosing overlay files,
+    // but a production box that forgot ALULA_ENV must not log mail — reset
+    // links included — instead of sending it.
+    @Test(
+        "an undeclared environment refuses to compose rather than logging mail",
+        .enabled(if: ProcessInfo.processInfo.environment["ALULA_ENV"] == nil))
+    func undeclaredRefuses() {
+        #expect(throws: MailConfigurationError.noTransport(environment: "undeclared")) {
+            try AlulaMailModule(configuration: Configuration(values: [:]))
+        }
+    }
+
+    @Test("mail.transport: log is honoured in any environment")
+    func explicitLogTransport() throws {
+        _ = try AlulaMailModule(configuration: Configuration(values: ["mail.transport": "log"]))
+    }
+}

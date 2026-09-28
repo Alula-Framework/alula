@@ -48,7 +48,15 @@ let package = Package(
         // Web: routing, middleware, RequestContext, Response, WebSocket/SSE,
         // the ServerTransport seam, and the default HummingbirdCore-backed
         // transport as a peer of any third-party one.
-        .library(name: "AlulaWeb", targets: ["AlulaWeb"]),
+        //
+        // One product, two targets: listing AlulaWeb makes `import
+        // AlulaTransport` available, so an app names one product rather than
+        // two. AlulaTransport stays its own *target* (it depends on AlulaWeb,
+        // not the reverse), so the ServerTransport seam is unchanged and a
+        // third-party transport is still a peer.
+        .library(name: "AlulaWeb", targets: ["AlulaWeb", "AlulaTransport"]),
+        // Kept for compatibility so manifests that list it still resolve.
+        // AlulaWeb now contains it. Remove in the release after next.
         .library(name: "AlulaTransport", targets: ["AlulaTransport"]),
         .library(name: "AlulaWebTesting", targets: ["AlulaWebTesting"]),
         .library(name: "AlulaOpenAPI", targets: ["AlulaOpenAPI"]),

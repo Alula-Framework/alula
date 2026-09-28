@@ -136,3 +136,23 @@ The product is removed; the target stays.
   `AlulaChannelsClient` (client) instead.
 - **Manifest:** a comment where the product was, like the ones for the hidden
   Config, PresenceProtocol and CronCore products.
+
+### `AlulaWeb` product includes `AlulaTransport` (R5)
+
+The `AlulaWeb` product is now `targets: ["AlulaWeb", "AlulaTransport"]`.
+
+- **Capability:** unchanged. `AlulaTransport` is still its own target and
+  still depends on `AlulaWeb`, not the reverse. `ServerTransport` is
+  untouched, and a third-party transport is still a peer. A scratch consumer
+  listing only `AlulaWeb` compiled and linked `import AlulaTransport`,
+  `AlulaWebModule<AlulaTransport>.self` and a custom `ServerTransport`.
+- **Migration:** delete the `AlulaTransport` product line. The product is kept
+  for one more release so existing manifests resolve, marked in the manifest
+  for removal in the release after next. SwiftPM accepts two products that
+  share a target.
+- **Docs:** the README's Getting started, `Docs/web.md`'s "Adding this
+  module", and the manifest snippets in the sessions, security-core,
+  presence, channels and actuator pages list `AlulaWeb` only.
+- **Still open (Pass 5):** `Main.swift` still imports `AlulaTransport` and
+  names it. Removing that needs a default-transport typealias and a design
+  note.

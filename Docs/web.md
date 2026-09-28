@@ -14,7 +14,7 @@ Core's `AlulaModule` composition — through exactly one channel,
 | | |
 |---|---|
 | **Trait** | `Web` |
-| **Products** | `AlulaWeb`, `AlulaTransport` |
+| **Product** | `AlulaWeb` (it contains the `AlulaTransport` target) |
 | **Module** | `AlulaWebModule<AlulaTransport>.self` |
 
 ```swift
@@ -30,7 +30,6 @@ targets: [
         dependencies: [
             .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
-            .product(name: "AlulaTransport", package: "alula"),
         ],
         // Required. It scans this target for the Alula macros and writes
         // `alulaComposeModules`; without it there is no composition root
@@ -60,7 +59,10 @@ struct Main {
 
 Choosing a transport is choosing a module: `AlulaWebModule` is generic over
 `ServerTransport`, and `AlulaTransport` is the HummingbirdCore-backed one
-this package ships. Any conforming transport is a peer.
+this package ships. Any conforming transport is a peer. The `AlulaWeb`
+product contains the `AlulaTransport` target, which is why `import
+AlulaTransport` works with one product line; an `AlulaTransport` product is
+also kept for one release so older manifests still resolve.
 
 The `modules:` list names roots, not an order — the build resolves the
 dependency DAG. A module you write can declare framework modules in its own
@@ -71,7 +73,7 @@ dependency DAG. A module you write can declare framework modules in its own
 | Product | Contents |
 |---|---|
 | `AlulaWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `AlulaWebModule`, `Sessions`/`AlulaSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)), `TrustedProxies`/`clientAddress` (see [client-address.md](client-address.md)) |
-| `AlulaTransport` | The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Alula that knows what it wraps (§5.6) |
+| `AlulaTransport` | Shipped in the `AlulaWeb` product. The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Alula that knows what it wraps (§5.6) |
 | `AlulaWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
 
 ## Using it

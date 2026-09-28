@@ -40,7 +40,6 @@ targets: [
         dependencies: [
             .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
-            .product(name: "AlulaTransport", package: "alula"),
         ],
         plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
     )

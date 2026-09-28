@@ -60,6 +60,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The `AlulaWeb` product includes the default transport.** It is now
+  `.library(name: "AlulaWeb", targets: ["AlulaWeb", "AlulaTransport"])`, so an
+  HTTP app lists one product instead of two; `Main.swift` still `import`s
+  `AlulaTransport` and names `AlulaWebModule<AlulaTransport>.self`.
+  `AlulaTransport` stays a separate target, so the `ServerTransport` seam is
+  unchanged and a third-party transport is still a peer. Migration: delete
+  `.product(name: "AlulaTransport", package: "alula")`. The `AlulaTransport`
+  product is kept for this release and the next so existing manifests still
+  resolve, and is removed in the release after that.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

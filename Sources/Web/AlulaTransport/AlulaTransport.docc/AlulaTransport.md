@@ -21,6 +21,11 @@ await Alula.run(
 )
 ```
 
+The module ships in the `AlulaWeb` product, so listing `AlulaWeb` is enough
+to `import AlulaTransport`. The target stays separate from `AlulaWeb` —
+it depends on `AlulaWeb`, never the reverse — so a third-party transport
+conforms to the same seam as a peer.
+
 ## Configuration
 
 ``AlulaTransportConfiguration`` covers the host, the port, and TLS. TLS is

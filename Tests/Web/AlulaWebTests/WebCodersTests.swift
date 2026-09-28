@@ -107,6 +107,110 @@ struct WebCodersTests {
         #expect(response.bodyText.contains("\"error\""))
     }
 
+    // MARK: The statics read the request's coders
+
+    private static let snake = [
+        "web.json.key-strategy": "snake-case", "web.json.date-strategy": "seconds",
+        "web.errors.format": "simple",
+    ]
+
+    @Test("`.json(_:status:)` in a handler uses the configured encoder, not the default")
+    func jsonWithStatusUsesConfiguredEncoder() async throws {
+        let event = Event(eventName: "a", occurredAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let client = try TestClient(
+            routes: [
+                RouteRegistration(method: .post, path: "/events", source: "t") { _ in
+                    try .json(event, status: .created)
+                }
+            ],
+            web: webRuntime(Self.snake))
+        let response = await client.post("/events")
+        #expect(response.status == .created)
+        #expect(response.bodyText.contains("\"event_name\""))
+        #expect(response.bodyText.contains("1700000000"))
+    }
+
+    @Test("the binding reaches a time-limited route's task, a streaming producer and a WebSocket handler")
+    func bindingReachesDetachedWork() async throws {
+        let event = Event(eventName: "a", occurredAt: .init(timeIntervalSince1970: 0))
+        struct Socket: WebSocketUpgradeHandler {
+            let event: Event
+            func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {
+                let body = try Response.json(event).bodyText
+                try await connection.send(body)
+                try await connection.close()
+            }
+        }
+        let client = try TestClient(
+            routes: [
+                RouteRegistration(method: .get, path: "/limited", source: "t", timeout: .seconds(30)) { _ in
+                    try .json(event, status: .accepted)
+                },
+                RouteRegistration(method: .get, path: "/stream", source: "t") { _ in
+                    .streaming(contentType: .json) { writer in
+                        let data = (try? WebCoders.current.jsonEncoder.encode(event)) ?? Data()
+                        _ = await writer.write(data)
+                    }
+                },
+                RouteRegistration(method: .get, path: "/problem", source: "t") { _ in
+                    .problem(status: .conflict, message: "taken")
+                },
+                RouteRegistration(
+                    method: .get, path: "/socket", kind: .upgrade(.webSocket), source: "t"
+                ) { context in .upgrade(handler: Socket(event: event), context: context) },
+            ],
+            web: webRuntime(Self.snake))
+
+        #expect(await client.get("/limited").bodyText.contains("\"event_name\""))
+        let streamed = await client.get("/stream").collectStreamingBody()
+        #expect(String(decoding: streamed, as: UTF8.self).contains("\"event_name\""))
+        let problem = await client.get("/problem")
+        #expect(problem.headers[.contentType] == ContentType.json.rawValue)
+        #expect(problem.bodyText.contains("\"error\":\"taken\""))
+
+        let socket = try await client.webSocket("/socket")
+        var received: [String] = []
+        for await frame in socket.frames {
+            if case .text(let text) = frame { received.append(text) }
+        }
+        #expect(received.count == 1)
+        #expect(received.first?.contains("\"event_name\"") == true)
+        await socket.waitForServer()
+    }
+
+    @Test("outside a request, `.json` and `.problem` use the defaults")
+    func staticsOutsideARequestUseDefaults() throws {
+        let event = Event(eventName: "a", occurredAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let body = try Response.json(event, status: .created).bodyText
+        #expect(body.contains("\"eventName\""))
+        #expect(body.contains("2023-11-14T22:13:20Z"))
+        #expect(
+            Response.problem(status: .conflict, message: "taken").headers[.contentType]
+                == "application/problem+json")
+    }
+
+    @Test("concurrent requests to two applications each see their own coders")
+    func bindingIsPerRequest() async throws {
+        let event = Event(eventName: "a", occurredAt: .init(timeIntervalSince1970: 0))
+        let route = RouteRegistration(method: .get, path: "/", source: "t") { _ in
+            try .json(event, status: .created)
+        }
+        let configured = try TestClient(routes: [route], web: webRuntime(Self.snake))
+        let plain = try TestClient(routes: [route], web: webRuntime([:]))
+        let bodies = await withTaskGroup(of: (Bool, String).self) { group in
+            for index in 0..<40 {
+                let snake = index.isMultiple(of: 2)
+                group.addTask {
+                    (snake, await (snake ? configured : plain).get("/").bodyText)
+                }
+            }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        for (snake, body) in bodies {
+            #expect(body.contains(snake ? "\"event_name\"" : "\"eventName\""))
+        }
+    }
+
     // MARK: Failures
 
     @Test("an unknown value names the key and what was expected")

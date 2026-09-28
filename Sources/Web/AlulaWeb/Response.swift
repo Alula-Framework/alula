@@ -129,14 +129,15 @@ extension Response {
 
     /// JSON body, `application/json`.
     ///
-    /// `encoder` defaults to ``WebCoders/default``'s. A handler that wants the
-    /// application's configured encoder should return the value itself and let
-    /// `ResponseEncodable` do it, or pass `context.coders.jsonEncoder` here —
-    /// this is a static, so it has no composition context to read the configured encoder from.
+    /// `encoder` defaults to the application's configured one
+    /// (``WebCoders/current``), the same encoder a returned value goes
+    /// through — so `.json(user, status: .created)` differs from returning
+    /// `user` only in its status. Outside a request it is
+    /// ``WebCoders/default``'s.
     public static func json(
         _ value: some Encodable,
         status: HTTPResponse.Status = .ok,
-        encoder: JSONEncoder = WebCoders.default.jsonEncoder
+        encoder: JSONEncoder = WebCoders.current.jsonEncoder
     ) throws -> Response {
         let body = try encoder.encode(value)
         var headers: HTTPFields = [:]
@@ -144,16 +145,16 @@ extension Response {
         return .fixed(status: status, headers: headers, body: body)
     }
 
-    /// The uniform error-body shape used by `errorResponse(for:context:)`.
     /// An error body, rendered by `render` — RFC 9457 `problem+json` unless
-    /// the application configured otherwise.
+    /// the application configured otherwise (`web.errors.format`).
     ///
-    /// Call sites that have a `RequestContext` should pass
-    /// `context.coders.renderError`, so the application's choice is honored.
+    /// `render` defaults to the application's configured renderer
+    /// (``WebCoders/current``); outside a request it is
+    /// ``ProblemDetails/render``.
     public static func problem(
         status: HTTPResponse.Status,
         message: String,
-        render: (HTTPResponse.Status, String) -> Response = ProblemDetails.render
+        render: (HTTPResponse.Status, String) -> Response = WebCoders.current.renderError
     ) -> Response {
         render(status, message)
     }
@@ -180,9 +181,14 @@ extension Response {
         _ produce: @escaping @Sendable (ResponseBodyWriter) async -> Void
     ) -> Response {
         let handoff = ResponseBodyHandoff()
+        // The producer starts on the transport's first read, outside the
+        // request's task, so the request's coders are carried over by hand.
+        let coders = WebCoders.bound
         let producer = ResponseBodyProducer(handoff: handoff) { handoff in
             Task {
-                await produce(ResponseBodyWriter(handoff: handoff))
+                await WebCoders.$bound.withValue(coders) {
+                    await produce(ResponseBodyWriter(handoff: handoff))
+                }
                 handoff.finish()
             }
         }
@@ -213,8 +219,12 @@ extension Response {
         return .upgrade(
             .webSocket(
                 WebSocketUpgrade(handler: handler, subprotocol: agreed) { connection in
-                    try await handler.handle(
-                        upgraded: connection.agreeing(on: agreed), context: context)
+                    // Runs on the transport's task after the switch, outside
+                    // dispatch's binding.
+                    try await WebCoders.$bound.withValue(context.coders) {
+                        try await handler.handle(
+                            upgraded: connection.agreeing(on: agreed), context: context)
+                    }
                 }))
     }
 

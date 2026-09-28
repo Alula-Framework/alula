@@ -69,6 +69,20 @@ public struct WebCoders: Sendable {
             jsonDecoder: decoder,
             renderError: ProblemDetails.render)
     }
+
+    /// The coders of the request being handled, or ``default`` outside one.
+    ///
+    /// Dispatch binds the application's coders around each request —
+    /// middleware, handler, the task a time-limited route runs in, a
+    /// streaming producer and a WebSocket handler alike — so the statics that
+    /// have no `RequestContext` to read (``Response/json(_:status:encoder:)``,
+    /// ``Response/problem(status:message:render:)``) still answer the way the
+    /// application configured. A task-local, not global state: two
+    /// applications in one process each see their own.
+    public static var current: WebCoders { bound ?? .default }
+
+    /// Set by dispatch; `nil` outside a request.
+    @TaskLocal static var bound: WebCoders?
 }
 
 /// RFC 9457 `application/problem+json` — the standard shape for an HTTP error

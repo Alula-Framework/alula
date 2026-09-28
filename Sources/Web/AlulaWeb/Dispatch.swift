@@ -376,7 +376,7 @@ public enum DispatchBuilder {
         web: WebRuntime = .default,
         logger: Logger
     ) -> Dispatch {
-        let respond: @Sendable (Request) async -> Response = { request in
+        let handle: @Sendable (Request) async -> Response = { request in
             // Read only when something will see the request event.
             let start =
                 Telemetry.isEnabled(HTTPEvents.RequestHandled.self) ? ContinuousClock.now : nil
@@ -465,6 +465,12 @@ public enum DispatchBuilder {
                 return web.securityHeaders.apply(to: response)
                     .settingHeader(.xRequestID, requestID)
             }
+        }
+        // The application's coders, bound around the whole request so
+        // `Response.json` and `Response.problem` default to them. The
+        // time-limited path's `Task`s inherit the binding.
+        let respond: @Sendable (Request) async -> Response = { request in
+            await WebCoders.$bound.withValue(web.coders) { await handle(request) }
         }
         return Dispatch(respond: respond, acceptsUpgrade: acceptsUpgrade, bodyMode: bodyMode)
     }

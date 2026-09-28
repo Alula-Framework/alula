@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`.json(value, status:)` uses the application's configured encoder.** It
+  defaulted to `WebCoders.default`'s, so a handler that called it only to
+  answer `.created` silently lost `web.json.key-strategy`,
+  `web.json.date-strategy` and `pretty-print`, while returning the same value
+  honored them. Dispatch now binds the request's coders in a task-local,
+  `WebCoders.current`, which the default reads; outside a request it is still
+  `WebCoders.default`. `.problem(status:message:)` (and `.notFound`) default
+  to the configured `web.errors.format` the same way, which also covers the
+  CORS refusal, the WebSocket origin refusal and `Authentication`'s 401. The
+  binding reaches a time-limited route's task, a streaming or SSE producer
+  and a WebSocket handler. No signature changed; an explicit `encoder:` or
+  `render:` argument still wins.
 - **`web.request-timeout-seconds: inf` is a configuration error, not a crash
   at startup.** `inf` passed the "must be positive" check and then trapped
   converting to milliseconds; `nan` and a finite value too large for a

@@ -196,6 +196,7 @@ ten modules, what each gives a test, and the trait each needs, with a note on
 when to list one module directly. New sections cover rate limiting, Queue and
 Mail, the Scheduler, outbound HTTP and APNs, which the page had not
 mentioned. The existing sections are kept.
+
 ### Old config-key spellings (R14)
 
 A renamed key's old spelling is refused at startup with ALU-CONFIG-5014,

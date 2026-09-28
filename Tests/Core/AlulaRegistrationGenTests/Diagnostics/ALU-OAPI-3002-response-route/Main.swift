@@ -9,9 +9,12 @@ struct ReportController {
     @GetRoute("/:id")
     func show(_ context: RequestContext, id: String) async throws -> Response { .noContent }
 
-    // alula:undocumented-response — a download, deliberately untyped.
-    @GetRoute("/:id/pdf")
-    func pdf(_ context: RequestContext, id: String) async throws -> Response { .noContent }
+    @GetRoute("/:id/summary")
+    func summary(_ context: RequestContext, id: String) async throws -> Report { Report() }
+}
+
+struct Report: Codable {
+    var title = ""
 }
 
 @main struct Main {

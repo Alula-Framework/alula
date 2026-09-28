@@ -222,9 +222,7 @@ final class OpenAPIBuilder {
                 responses["204"] = ["description": "No Content"]
             case "Response", "AlulaWeb.Response":
                 responses["default"] = ["description": "Response"]
-                if !route.acknowledgesUndocumentedResponse {
-                    gaps.append(Gap(route: route, kind: .untypedResponse))
-                }
+                gaps.append(Gap(route: route, kind: .untypedResponse))
             case "String":
                 responses["200"] = ["description": "OK", "content": ["text/plain": ["schema": ["type": "string"]]]]
             case let type?:

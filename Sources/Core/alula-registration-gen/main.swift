@@ -152,9 +152,6 @@ struct ScannedControllerRoute {
     let file: String
     let line: Int
     var column: Int = 1
-    /// The handler carries `// alula:undocumented-response`: it returns
-    /// `Response` on purpose (a redirect, a file) and says so.
-    var acknowledgesUndocumentedResponse = false
     /// The handler's inputs and output, as written — for the OpenAPI document.
     var bodyTypeText: String? = nil
     var queryTypeText: String? = nil
@@ -742,9 +739,6 @@ final class ComponentVisitor: SyntaxVisitor {
                         file: file,
                         line: location.line,
                         column: location.column,
-                        acknowledgesUndocumentedResponse:
-                            function.leadingTrivia.description.contains("alula:undocumented-response")
-                            || function.attributes.description.contains("alula:undocumented-response"),
                         bodyTypeText: route.bodyTypeText,
                         queryTypeText: route.queryTypeText,
                         pathParameters: route.pathParameters.map { ($0.name, $0.typeText) },
@@ -1940,7 +1934,11 @@ func reportOpenAPIGaps(_ gaps: [OpenAPIBuilder.Gap]) {
             // Opt-in. Handlers return `Response` to choose a status — a 201,
             // a 409 — far more often than to hide a body, and on by default
             // this was a warning on most routes of the starter templates.
-            // A team publishing its document turns it on in alula.yaml.
+            // A team publishing its document turns it on in alula.yaml, and
+            // then gets every route the document cannot describe — a
+            // deliberate redirect or download included, because the document
+            // cannot describe that one either. There is no per-route opt-out:
+            // `// alula:undocumented-response` was one, and it had no users.
             guard baseConfiguration?.rawValue(for: "openapi.warn-undocumented-responses") == "true"
             else { continue }
             report(Diagnostic(
@@ -1949,8 +1947,7 @@ func reportOpenAPIGaps(_ gaps: [OpenAPIBuilder.Gap]) {
                 at: at,
                 explanation: ["The handler returns `Response`, which could be anything; the document lists only that it responds."],
                 help: [
-                    "return the Codable type it sends, and the document describes it;\n"
-                        + "for a redirect or a file, mark the handler `// alula:undocumented-response`."
+                    "return the Codable type it sends, and the document describes it."
                 ]))
         }
     }

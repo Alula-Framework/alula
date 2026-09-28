@@ -103,6 +103,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comment drops its registrable macro (`@Service`, `@Middleware`, …), gets an
   `init`, and is constructed by the module that decides whether it exists;
   the comment is now an ordinary comment and can be deleted.
+- **The `// alula:undocumented-response` directive.** It silenced the opt-in
+  ALU-OAPI-3002 for one route and had no users. The control is the
+  whole-application switch, `openapi.warn-undocumented-responses`, which
+  stays; with it on, a deliberate redirect or download is listed like any
+  other `Response` route, since the document cannot describe it either.
+  **Migration:** delete the comment.
 
 ### Changed
 

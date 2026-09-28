@@ -274,3 +274,22 @@ of application sites carry it, and they are now ordinary comments.
     Maintenance, Notifications, Realtime, Workers), `Sources/RelayGateway/HookController.swift:11,13`
     and `Sources/RelayLab/Providers/Emulators.swift:59,92,111,130`.
   - alula-data: `Docs/data-postgres.md:52`, `Snippets/DataPostgresShapes.swift:25`.
+
+### `// alula:undocumented-response` (R20)
+
+Removed, not replaced by a typed argument.
+
+- **Why not typed:** a `@GetRoute(…, documentsResponse: false)` would add a
+  parameter to five public route macros for a check no known application
+  turns on, silencing a directive no application used. The subtraction pass
+  should not add surface to remove surface; if a user of the switch asks for
+  a per-route exemption, the argument is the shape to add then.
+- **Capability:** the control is the whole-application switch,
+  `openapi.warn-undocumented-responses`, unchanged. With it on, a redirect or
+  a download is listed like any other `Response` route — accurately, since
+  the document cannot describe it either.
+- **Changed:** the generator no longer reads the comment; the ALU-OAPI-3002
+  help text, its page and `Docs/openapi.md` stop mentioning it. The golden
+  fixture's second route now returns a `Codable` type, the real fix, and a
+  test pins that the comment is inert. DECISIONS.md's entry that introduced
+  it is marked superseded.

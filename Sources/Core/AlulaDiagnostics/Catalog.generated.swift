@@ -1334,20 +1334,23 @@ enum DiagnosticCatalog {
 
             A client generated from the document has nothing to decode the response
             into. Returning the `Codable` type the route sends lets Alula encode it and
-            describe it. Some routes legitimately answer with a redirect or a file; those
-            say so with a comment and the warning stays quiet.
+            describe it.
+
+            A route that legitimately answers with a redirect or a file is reported too:
+            the document cannot describe it either, and the list is what the switch asks
+            for. There is no per-route opt-out; the switch is the control.
 
             ## Fixes
 
             1. Return the type the route sends: `-> Report` rather than `-> Response`.
-            2. For a redirect, a download or another deliberately untyped answer, put `// alula:undocumented-response` above the handler.
+            2. For a redirect or a download, leave it: the warning is an accurate entry
+               in the list of routes the document describes only as "responds".
 
             ## Example
 
             ```swift
-            // alula:undocumented-response — a PDF download.
-            @GetRoute("/:id/pdf")
-            func pdf(_ context: RequestContext, id: String) async throws -> Response
+            @GetRoute("/:id")
+            func show(_ context: RequestContext, id: String) async throws -> Report
             ```
 
             ## Related

@@ -93,6 +93,36 @@ struct OpenAPIGeneratorTests {
         #expect(strict.diagnostics.contains("[ALU-OAPI-3002]"))
     }
 
+    /// The per-route opt-out, `// alula:undocumented-response`, had no users
+    /// and was removed: with the switch on, a deliberate download is listed
+    /// like any other `Response` route, and the comment is a comment.
+    @Test("the undocumented-response comment no longer silences a route")
+    func undocumentedResponseCommentIsInert() throws {
+        let result = try generator.generate(
+            [
+                "Main.swift": """
+                import AlulaWeb
+                struct AlulaOpenAPIModule: AlulaModule {
+                init(configuration: Configuration, document: OpenAPIDocument) throws {}
+                }
+                @Controller("/reports")
+                struct ReportController {
+                // alula:undocumented-response — a download.
+                @GetRoute("/:id/pdf")
+                func pdf(_ context: RequestContext, id: String) async throws -> Response { .noContent }
+                }
+                @main struct Main {
+                static func main() async {
+                await Alula.run(configuration: .load(), modules: [AlulaOpenAPIModule.self])
+                }
+                }
+                """
+            ],
+            alulaYAML: "openapi:\n  warn-undocumented-responses: true\n")
+        #expect(result.diagnostics.contains("[ALU-OAPI-3002]"), "\(result.diagnostics)")
+        #expect(result.diagnostics.contains("GET /reports/:id/pdf"))
+    }
+
     @Test("paths: methods, templated parameters, query fields, bodies and responses")
     func paths() throws {
         let document = try document()

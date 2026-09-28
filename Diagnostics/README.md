@@ -74,6 +74,7 @@ and alula-data's cache and migration codes, `ALD-…`, in
 | [ALU-CONFIG-5011](ALU-CONFIG-5011.md) | error | Configuration refers to an unset environment variable |
 | [ALU-CONFIG-5012](ALU-CONFIG-5012.md) | error | Configuration written for Flight, before the rename |
 | [ALU-CONFIG-5013](ALU-CONFIG-5013.md) | error | A module's settings are invalid |
+| [ALU-CONFIG-5014](ALU-CONFIG-5014.md) | error | A configuration key under a spelling Alula no longer reads |
 
 ## Security and authentication composition
 

@@ -47,8 +47,8 @@ struct MultiNodeTests {
         // Slow heartbeats: convergence within the assertion window can only
         // come from the startup syncRequest/snapshot exchange.
         var slow = PresenceNode.fastConfig
-        slow["alula.presence.heartbeat-interval-seconds"] = "30"
-        slow["alula.presence.down-after-seconds"] = "90"
+        slow["presence.heartbeat-interval-seconds"] = "30"
+        slow["presence.down-after-seconds"] = "90"
 
         let nodeA = try PresenceNode(name: "a", cluster: cluster, configValues: slow)
         let alice = try await nodeA.wire(user: "alice")
@@ -241,9 +241,9 @@ struct MultiNodeTests {
         // Liveness timers far beyond the assertion window: only the
         // membership event can produce the leave.
         var config = PresenceNode.fastConfig
-        config["alula.presence.down-after-seconds"] = "600"
-        config["alula.presence.heartbeat-interval-seconds"] = "0.1"
-        config["alula.presence.permdown-after-seconds"] = "1200"
+        config["presence.down-after-seconds"] = "600"
+        config["presence.heartbeat-interval-seconds"] = "0.1"
+        config["presence.permdown-after-seconds"] = "1200"
 
         let monitorA = FakeMembershipMonitor()
         let nodeA = try PresenceNode(name: "a", cluster: cluster, monitor: monitorA, configValues: config)

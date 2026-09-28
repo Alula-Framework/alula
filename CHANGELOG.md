@@ -54,6 +54,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking: a renamed configuration key's old spelling stops the start
+  with ALU-CONFIG-5014.** Before, both spellings were read, and the new one
+  won. Now the old one is refused in any layer, whether or not the new one is
+  set too, and the message names both keys and the layer: `Configuration key
+  'pubsub.node_id' is set in alula.yaml, but it was renamed 'pubsub.node-id'
+  and the old spelling is no longer read.` Rename these:
+  - `pubsub.node_id` → `pubsub.node-id`, `pubsub.broadcast_timeout` →
+    `pubsub.broadcast-timeout`
+  - `alula.presence.*` → `presence.*` (`node-name`,
+    `heartbeat-interval-seconds`, `down-after-seconds`,
+    `permdown-after-seconds`, `sweep-interval-seconds`,
+    `membership-fallback-after-seconds`, `max-entries-per-frame`), including
+    `ALULA_ALULA_PRESENCE_*` variables
+  - `alula.channels.*` → `channels.*` (`heartbeat-timeout-seconds`,
+    `heartbeat-check-interval-seconds`, `outbound-buffer-size`,
+    `write-timeout-seconds`, `max-concurrent-envelopes`, `outbound-overflow`,
+    `max-topics-per-socket`), including `ALULA_ALULA_CHANNELS_*` variables
+  - snake_case `security.oidc.*` → kebab-case: `jwks_url`, `jwks_cache_ttl`,
+    `clock_skew_leeway`, `jwks_refresh_cooldown`, `jwks_max_stale`,
+    `jwks_transport`, `roles_claim`, `scopes_claim`, `allowed_algorithms`,
+    `client_id`, `client_secret`, `redirect_uri`, `post_logout_redirect_uri`,
+    `sign_in_scopes`
+
+  Environment variables such as `ALULA_PUBSUB_NODE_ID` and
+  `ALULA_SECURITY_OIDC_JWKS_URL` are unaffected: every character other than a
+  letter or digit becomes `_`, so they spell the new key as much as the old.
+  `getIfPresent(_:formerly:as:)` itself now refuses rather than falls back,
+  so a module author renaming a key gets the same refusal.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

@@ -12,7 +12,9 @@ struct PositiveValueTests {
     func positiveInt() throws {
         #expect(try config([:]).positive("a.count") == nil)
         #expect(try config(["a.count": "3"]).positive("a.count") == 3)
-        #expect(try config(["old.count": "4"]).positive("a.count", formerly: ["old.count"]) == 4)
+        #expect(throws: ConfigError.renamedKey(formerKey: "old.count", currentKey: "a.count", provider: "TestConfigSource")) {
+            try config(["old.count": "4"]).positive("a.count", formerly: ["old.count"])
+        }
         for value in ["0", "-2"] {
             let error = #expect(throws: NonPositiveConfigValue.self) {
                 try config(["a.count": value]).positive("a.count")

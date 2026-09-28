@@ -3,9 +3,9 @@ import Foundation
 
 /// The `sessions.*` configuration vocabulary (env-var form `ALULA_SESSIONS_*`).
 ///
-/// Kebab-case from the start. `security.oidc.*` shipped snake_case and had
-/// to grow a second spelling of every key in 0.22.1; there is no reason to
-/// repeat that.
+/// Kebab-case from the start. `security.oidc.*` shipped snake_case, grew a
+/// second spelling of every key in 0.22.1, and now refuses the old one; there
+/// is no reason to repeat that.
 public enum SessionConfigKey {
     public static let root = "sessions"
     /// `sessions.cookie-name` — the cookie the id travels in.

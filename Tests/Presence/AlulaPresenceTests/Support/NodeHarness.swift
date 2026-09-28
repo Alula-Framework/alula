@@ -25,10 +25,10 @@ final class PresenceNode: Sendable {
 
     /// Fast liveness settings so failure-mode tests run in milliseconds.
     static let fastConfig: [String: String] = [
-        "alula.presence.heartbeat-interval-seconds": "0.1",
-        "alula.presence.down-after-seconds": "0.5",
-        "alula.presence.permdown-after-seconds": "2.0",
-        "alula.presence.sweep-interval-seconds": "0.05",
+        "presence.heartbeat-interval-seconds": "0.1",
+        "presence.down-after-seconds": "0.5",
+        "presence.permdown-after-seconds": "2.0",
+        "presence.sweep-interval-seconds": "0.05",
     ]
 
     init(
@@ -38,7 +38,7 @@ final class PresenceNode: Sendable {
         configValues: [String: String] = PresenceNode.fastConfig
     ) throws {
         var mutableValues = configValues
-        mutableValues["alula.presence.node-name"] = name
+        mutableValues["presence.node-name"] = name
         let nodeConfiguration = Configuration(values: mutableValues)
 
         // One node, wired explicitly — which is now the only way it can be

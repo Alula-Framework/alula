@@ -83,7 +83,7 @@ struct DispatchHarness {
 
     init(maxConcurrent: Int) throws {
         let configuration = Configuration(values: [
-            "alula.channels.max-concurrent-envelopes": "\(maxConcurrent)"
+            "channels.max-concurrent-envelopes": "\(maxConcurrent)"
         ])
         let pubsub = try AlulaPubSubModule(configuration: configuration)
         let fixture = PacedModule()
@@ -275,7 +275,7 @@ struct TopicBoundTests {
 
     private func harness(maxTopics: Int) throws -> TestClient {
         let configuration = Configuration(values: [
-            "alula.channels.max-topics-per-socket": "\(maxTopics)"
+            "channels.max-topics-per-socket": "\(maxTopics)"
         ])
         let pubsub = try AlulaPubSubModule(configuration: configuration)
         let channels = try AlulaChannelsModule(

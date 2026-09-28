@@ -319,13 +319,11 @@ All keys live under `security.oidc.` (env-var form `ALULA_SECURITY_OIDC_*`):
 
 These keys shipped snake_case (`jwks_url`), following OIDC's own spec
 vocabulary, while every other namespace in Alula is kebab-case
-(`channels.heartbeat-timeout-seconds`, `web.json.date-strategy`).
-**Both spellings are read.** Kebab-case is canonical and wins if both are
-set; the snake_case spelling keeps working. The inconsistency was invisible
-until someone wrote `jwks-url` from habit and got the default instead of
-their value — and nothing could catch that, because `Configuration` cannot
-enumerate its keys, so an unknown *key* cannot be refused the way an
-unrecognized *value* is.
+(`channels.heartbeat-timeout-seconds`, `web.json.date-strategy`). Only the
+kebab-case spelling is read now. A snake_case key in a YAML file stops the
+start with [ALU-CONFIG-5014](../Diagnostics/ALU-CONFIG-5014.md), which names
+the kebab-case key to use. The environment variables did not change:
+`ALULA_SECURITY_OIDC_JWKS_URL` is how both spellings were always written.
 
 Missing required keys fail at composition — startup, not first request.
 An unrecognized `jwks-transport` value fails there too, rather than falling

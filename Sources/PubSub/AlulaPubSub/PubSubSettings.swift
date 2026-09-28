@@ -86,8 +86,9 @@ struct PubSubSettings: Sendable {
     var broadcastTimeout: PubSubBroadcastTimeout
 
     static let bufferingKey = "pubsub.buffering"
-    // Kebab-case like every other Alula key; the snake_case spellings they
-    // shipped with are still read (Relay #33).
+    // Kebab-case like every other Alula key. The snake_case spellings they
+    // shipped with (Relay #33) are refused with ALU-CONFIG-5014, which names
+    // the new key.
     static let nodeIDKey = "pubsub.node-id"
     static let broadcastTimeoutKey = "pubsub.broadcast-timeout"
 

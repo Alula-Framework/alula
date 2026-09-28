@@ -61,11 +61,11 @@ struct PresenceConfigurationTests {
     func explicitKeys() throws {
         let configuration = try PresenceConfiguration(
             configuration: Configuration(values: [
-                "alula.presence.node-name": "web-1",
-                "alula.presence.heartbeat-interval-seconds": "2",
-                "alula.presence.down-after-seconds": "7",
-                "alula.presence.permdown-after-seconds": "60",
-                "alula.presence.sweep-interval-seconds": "0.5",
+                "presence.node-name": "web-1",
+                "presence.heartbeat-interval-seconds": "2",
+                "presence.down-after-seconds": "7",
+                "presence.permdown-after-seconds": "60",
+                "presence.sweep-interval-seconds": "0.5",
             ])
         )
         #expect(configuration.nodeName == "web-1")
@@ -80,24 +80,50 @@ struct PresenceConfigurationTests {
         #expect(throws: PresenceConfigurationError.downAfterNotAboveHeartbeat(heartbeat: 10, downAfter: 5)) {
             _ = try PresenceConfiguration(
                 configuration: Configuration(values: [
-                    "alula.presence.heartbeat-interval-seconds": "10",
-                    "alula.presence.down-after-seconds": "5",
+                    "presence.heartbeat-interval-seconds": "10",
+                    "presence.down-after-seconds": "5",
                 ])
             )
         }
     }
 
-    @Test("presence.* keys are read, and the alula.presence.* spellings they replaced still are")
+    @Test("presence.* keys are read")
     func keySpellings() throws {
         let current = try PresenceConfiguration(configuration: Configuration(values: [
             "presence.heartbeat-interval-seconds": "2", "presence.down-after-seconds": "9",
         ]))
         #expect(current.heartbeatInterval == .seconds(2))
         #expect(current.downAfter == .seconds(9))
-        let former = try PresenceConfiguration(configuration: Configuration(values: [
-            "alula.presence.heartbeat-interval-seconds": "3", "alula.presence.down-after-seconds": "10",
-        ]))
-        #expect(former.heartbeatInterval == .seconds(3))
+    }
+
+    @Test("each alula.presence.* spelling is refused, naming the presence.* key", arguments: [
+        "node-name", "heartbeat-interval-seconds", "down-after-seconds", "permdown-after-seconds",
+        "sweep-interval-seconds", "membership-fallback-after-seconds", "max-entries-per-frame",
+    ])
+    func formerSpellingsAreRefused(name: String) {
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "alula.presence.\(name)", currentKey: "presence.\(name)",
+            provider: "TestConfigSource")
+        ) {
+            _ = try PresenceConfiguration(configuration: Configuration(values: [
+                "alula.presence.\(name)": "7",
+            ]))
+        }
+    }
+
+    /// Unlike pubsub's snake_case keys, this rename changes the variable:
+    /// `ALULA_ALULA_PRESENCE_*` spells only the old key.
+    @Test("an ALULA_ALULA_PRESENCE_* variable is refused")
+    func formerVariableIsRefused() {
+        let configuration = Configuration(sources: [
+            EnvironmentVariablesSource(environment: ["ALULA_ALULA_PRESENCE_DOWN_AFTER_SECONDS": "30"])
+        ])
+        #expect(throws: ConfigError.renamedKey(
+            formerKey: "alula.presence.down-after-seconds", currentKey: "presence.down-after-seconds",
+            provider: "the environment variable ALULA_ALULA_PRESENCE_DOWN_AFTER_SECONDS")
+        ) {
+            _ = try PresenceConfiguration(configuration: configuration)
+        }
     }
 
     @Test("down-after is explicit only when a configuration names it")
@@ -106,9 +132,6 @@ struct PresenceConfigurationTests {
         #expect(try PresenceConfiguration(configuration: Configuration(values: [
             "presence.down-after-seconds": "30",
         ])).downAfterIsExplicit)
-        #expect(try PresenceConfiguration(configuration: Configuration(values: [
-            "alula.presence.down-after-seconds": "30",
-        ])).downAfterIsExplicit)
     }
 
     @Test("non-positive intervals are refused")
@@ -116,7 +139,7 @@ struct PresenceConfigurationTests {
         #expect(throws: PresenceConfigurationError.nonPositiveInterval) {
             _ = try PresenceConfiguration(
                 configuration: Configuration(values: [
-                    "alula.presence.heartbeat-interval-seconds": "0"
+                    "presence.heartbeat-interval-seconds": "0"
                 ])
             )
         }
@@ -125,12 +148,12 @@ struct PresenceConfigurationTests {
     /// These used to trap at boot: `get(_:default:)` crashes on a value that
     /// does not parse, and `inf` passed `> 0` and trapped as a Duration.
     @Test("a malformed or infinite interval fails configuration instead of the process", arguments: [
-        ("alula.presence.heartbeat-interval-seconds", "5s"),
-        ("alula.presence.down-after-seconds", "fifteen"),
-        ("alula.presence.permdown-after-seconds", "inf"),
-        ("alula.presence.sweep-interval-seconds", "nan"),
-        ("alula.presence.sweep-interval-seconds", "0"),
-        ("alula.presence.membership-fallback-after-seconds", "inf"),
+        ("presence.heartbeat-interval-seconds", "5s"),
+        ("presence.down-after-seconds", "fifteen"),
+        ("presence.permdown-after-seconds", "inf"),
+        ("presence.sweep-interval-seconds", "nan"),
+        ("presence.sweep-interval-seconds", "0"),
+        ("presence.membership-fallback-after-seconds", "inf"),
         // Finite, and still a trap converting to a Duration.
         ("presence.permdown-after-seconds", "1e300"),
     ])

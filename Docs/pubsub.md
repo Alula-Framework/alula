@@ -166,7 +166,10 @@ pubsub:
 ```
 
 The snake_case spellings these keys shipped with, `node_id` and
-`broadcast_timeout`, are still read.
+`broadcast_timeout`, are no longer read: either one stops the start with
+[ALU-CONFIG-5014](../Diagnostics/ALU-CONFIG-5014.md), which names the
+kebab-case key to use. `ALULA_PUBSUB_NODE_ID` is unaffected, since it is also
+how `node-id` is spelled as an environment variable.
 
 They are deployment knobs, so they live in `alula.yaml` with the other
 deployment knobs — `AlulaPubSubModule(configuration:)` reads them in its

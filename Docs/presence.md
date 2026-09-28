@@ -212,7 +212,10 @@ Under the usual dotted namespace (all optional):
 | `presence.membership-fallback-after-seconds` | `max(down-after × 4, 60)` | Membership mode only: silence past this hides the replica anyway and logs an error. `0` disables it. |
 | `presence.max-entries-per-frame` | 10,000 | A gossip frame carrying more than this is dropped and logged — see *What this trusts*. |
 
-These keys were `alula.presence.*` until 0.52.0; the old spellings are still read.
+These keys were `alula.presence.*` until 0.52.0. The old spellings are no
+longer read: one in any layer, including an `ALULA_ALULA_PRESENCE_*`
+variable, stops the start with
+[ALU-CONFIG-5014](../Diagnostics/ALU-CONFIG-5014.md), naming the new key.
 
 ## Wiring
 

@@ -470,7 +470,10 @@ for it is rare.
 | `channels.outbound-overflow` | `close` | On a full outbound queue: `close` (4410, client resyncs) or `drop-oldest` |
 | `channels.max-topics-per-socket` | `64` | Topics one socket may hold; over it, a join is refused with `too_many_topics` |
 
-These keys were `alula.channels.*` until 0.52.0; the old spellings are still read.
+These keys were `alula.channels.*` until 0.52.0. The old spellings are no
+longer read: one in any layer, including an `ALULA_ALULA_CHANNELS_*`
+variable, stops the start with
+[ALU-CONFIG-5014](../Diagnostics/ALU-CONFIG-5014.md), naming the new key.
 
 A socket closed this way is told so with `4408` — as far as it can be. A peer
 that has stopped reading entirely cannot receive a close frame either, so the

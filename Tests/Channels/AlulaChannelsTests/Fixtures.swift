@@ -183,8 +183,8 @@ struct Harness {
         checkIntervalSeconds: Double = 0.05
     ) throws {
         let configuration = Configuration(values: [
-            "alula.channels.heartbeat-timeout-seconds": "\(heartbeatTimeoutSeconds)",
-            "alula.channels.heartbeat-check-interval-seconds": "\(checkIntervalSeconds)",
+            "channels.heartbeat-timeout-seconds": "\(heartbeatTimeoutSeconds)",
+            "channels.heartbeat-check-interval-seconds": "\(checkIntervalSeconds)",
         ])
         // The wiring, written out: this is what the generated composition
         // root does for an application. PubSub's bus and the fixture's

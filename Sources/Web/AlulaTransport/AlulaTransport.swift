@@ -353,7 +353,7 @@ public struct AlulaTransport: ServerTransport {
     // MARK: - WebSocket bridge (§6.1)
 
     /// Bridges WSCore's (inbound, outbound) pair to AlulaWeb's
-    /// `UpgradedConnection` and runs the routed handler. Frame-level
+    /// `WebSocketConnection` and runs the routed handler. Frame-level
     /// protocol work — masking, fragmentation reassembly, ping auto-reply,
     /// UTF-8 validation, the close handshake — is HummingbirdCore's (§6.1:
     /// "leaving frame-level protocol handling to the transport").

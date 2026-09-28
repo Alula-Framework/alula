@@ -993,7 +993,7 @@ is unaffected.
 Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
 
 1. **`Response.upgrade` carries an `UpgradeResponse`, not a bare handler.**
-   The doc's `case upgrade(handler: any ConnectionUpgradeHandler)` gives the
+   The doc's `case upgrade(handler: any WebSocketUpgradeHandler)` gives the
    transport no way to supply the `RequestContext` the handler's own
    signature requires (and a context payload would make `Response` and
    `RequestContext` mutually recursive). `UpgradeResponse` pairs the handler

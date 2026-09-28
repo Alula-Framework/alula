@@ -36,7 +36,6 @@ targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
             .product(name: "AlulaChannels", package: "alula"),
             .product(name: "AlulaPubSub", package: "alula"),

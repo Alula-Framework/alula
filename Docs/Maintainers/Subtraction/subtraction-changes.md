@@ -156,3 +156,15 @@ The `AlulaWeb` product is now `targets: ["AlulaWeb", "AlulaTransport"]`.
 - **Still open (Pass 5):** `Main.swift` still imports `AlulaTransport` and
   names it. Removing that needs a default-transport typealias and a design
   note.
+
+### `AlulaCore` beside `AlulaWeb` (R6)
+
+Docs only. The manifest snippets in `Docs/web.md`, `sessions.md`,
+`security-core.md`, `presence.md`, `channels.md` and `actuator.md` no longer
+list `AlulaCore` next to `AlulaWeb`.
+
+- **Capability:** unchanged. `AlulaWeb` depends on `AlulaCore`, so
+  `import AlulaCore` resolves with `AlulaWeb` alone; the R5 scratch consumer
+  does exactly that. Pages whose snippet lists `AlulaCore` without `AlulaWeb`
+  (scheduler, pubsub, apns, core) are unchanged.
+- **Templates:** they live in alula-cli and are changed there.

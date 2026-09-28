@@ -28,7 +28,6 @@ targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
         ],
         // Required. It scans this target for the Alula macros and writes
@@ -62,7 +61,8 @@ Choosing a transport is choosing a module: `AlulaWebModule` is generic over
 this package ships. Any conforming transport is a peer. The `AlulaWeb`
 product contains the `AlulaTransport` target, which is why `import
 AlulaTransport` works with one product line; an `AlulaTransport` product is
-also kept for one release so older manifests still resolve.
+also kept for one release so older manifests still resolve. `AlulaCore`
+needs no line either: `AlulaWeb` depends on it, so `import AlulaCore` works.
 
 The `modules:` list names roots, not an order — the build resolves the
 dependency DAG. A module you write can declare framework modules in its own

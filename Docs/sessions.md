@@ -38,7 +38,6 @@ targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
         ],
         plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]

@@ -51,6 +51,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the deprecations already pointed to.
 - **`APNSError.deviceTokenIsInvalid`**, deprecated since 0.33.0. Use
   `shouldForgetDeviceToken(registeredAt:)` or `deviceTokenProblem`.
+- **The `AlulaChannelsProtocol` product.** The target stays; `AlulaChannels`
+  (server) and `AlulaChannelsClient` (Swift client) both re-export it, so
+  listing it beside either was redundant. Migration: delete
+  `.product(name: "AlulaChannelsProtocol", package: "alula")` from your
+  manifest, and `import AlulaChannels` or `import AlulaChannelsClient` where
+  you imported `AlulaChannelsProtocol`.
 
 ### Changed
 

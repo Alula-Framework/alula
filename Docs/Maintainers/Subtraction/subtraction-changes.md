@@ -122,3 +122,17 @@ annotation, and `@Repository` stays beside it for data access.
 - **Generator:** it no longer scans `@Component`. Its messages, the
   diagnostic pages, DocC and Docs now say `@Service`. No new rule restricts
   what a controller injects.
+
+### `AlulaChannelsProtocol` product (R4)
+
+The product is removed; the target stays.
+
+- **Capability:** unchanged. `AlulaChannels` and `AlulaChannelsClient` both
+  `@_exported import AlulaChannelsProtocol`, so `Envelope`, `JSONValue`,
+  `ReservedEvent` and the error reasons arrive with either. Presence's protocol
+  target still depends on the target directly. DocC still builds for it.
+- **Migration:** delete the product line from the manifest. A file that
+  imported `AlulaChannelsProtocol` imports `AlulaChannels` (server) or
+  `AlulaChannelsClient` (client) instead.
+- **Manifest:** a comment where the product was, like the ones for the hidden
+  Config, PresenceProtocol and CronCore products.

@@ -6,9 +6,10 @@ The channel wire format, shared by the server and every client.
 
 This module exists so that a change to the wire format breaks a build rather
 than a production socket. `AlulaChannels` (server) and
-`AlulaChannelsClient` (Swift client) both depend on it, and
+`AlulaChannelsClient` (Swift client) both depend on it and re-export it, and
 `alula-channels-js` implements the same shapes by hand — so this is the
-document the JavaScript is written against.
+document the JavaScript is written against. It has no product of its own:
+`import AlulaChannels` or `import AlulaChannelsClient` brings these types.
 
 ``Envelope`` is the frame: a topic, an event name, a payload, and an optional
 reference for matching a reply to a request.

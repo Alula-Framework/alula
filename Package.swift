@@ -59,7 +59,8 @@ let package = Package(
 
         // Channels: per-connection lifecycle over PubSub and Web.
         .library(name: "AlulaChannels", targets: ["AlulaChannels"]),
-        .library(name: "AlulaChannelsProtocol", targets: ["AlulaChannelsProtocol"]),
+        // AlulaChannelsProtocol has no product: AlulaChannels (server) and
+        // AlulaChannelsClient (client) both re-export it.
         .library(name: "AlulaChannelsClient", targets: ["AlulaChannelsClient"]),
         // A WebSocket for ChannelClient, with headers (Relay #30).
         .library(name: "AlulaChannelsTransport", targets: ["AlulaChannelsTransport"]),

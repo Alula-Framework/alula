@@ -237,13 +237,20 @@ struct MailModuleEnvironmentTests {
 
     // An undeclared environment resolves to dev for choosing overlay files,
     // but a production box that forgot ALULA_ENV must not log mail — reset
-    // links included — instead of sending it.
-    @Test(
-        "an undeclared environment refuses to compose rather than logging mail",
-        .enabled(if: ProcessInfo.processInfo.environment["ALULA_ENV"] == nil))
-    func undeclaredRefuses() {
+    // links included — instead of sending it. Loaded with an empty process
+    // environment, so the result does not depend on another suite having
+    // set ALULA_ENV in this process.
+    @Test("an undeclared environment refuses to compose rather than logging mail")
+    func undeclaredRefuses() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("alula-mail-env-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try "app:\n  name: t\n".write(
+            to: directory.appendingPathComponent("alula.yaml"), atomically: true, encoding: .utf8)
+        let configuration = try Configuration.load(from: directory, processEnvironment: [:])
         #expect(throws: MailConfigurationError.noTransport(environment: "undeclared")) {
-            try AlulaMailModule(configuration: Configuration(values: [:]))
+            try AlulaMailModule(configuration: configuration)
         }
     }
 

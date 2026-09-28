@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaSupportFoundation
 import Foundation
 import HTTPTypes
 import Instrumentation
@@ -174,11 +175,9 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
     /// positive.
     public init(configuration: Configuration) throws {
         func positive(_ key: String, _ fallback: Int) throws -> Int {
-            let value = try configuration.getIfPresent(key, as: Int.self) ?? fallback
-            guard value > 0 else {
-                throw OutboundHTTPConfigurationError(description: "\(key) must be positive")
-            }
-            return value
+            try configuration.positive(
+                key, orThrow: { OutboundHTTPConfigurationError(description: $0.description) })
+                ?? fallback
         }
         self.init(
             timeout: .seconds(try positive("http-client.timeout-seconds", 30)),
@@ -267,7 +266,7 @@ public struct OutboundHTTPClient: Sendable {
         defer { span.end() }
         span.attributes["http.request.method"] = request.method.rawValue
         span.attributes["server.address"] = host
-        span.attributes["url.full"] = redacted(request.url)
+        span.attributes["url.full"] = request.url.redactedForLog
 
         var request = request
         tracer.inject(span.context, into: &request.headers, using: HTTPFieldsInjector())
@@ -347,17 +346,6 @@ public struct OutboundHTTPClient: Sendable {
         return wait <= policy.maxRetryAfter ? wait : nil
     }
 
-    /// The URL without its query string or credentials, for span attributes:
-    /// query strings carry tokens often enough that recording them is a leak.
-    private func redacted(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return "unparseable"
-        }
-        components.query = nil
-        components.user = nil
-        components.password = nil
-        return components.string ?? "unparseable"
-    }
 }
 
 struct HTTPFieldsInjector: Injector {
@@ -376,31 +364,10 @@ enum RetryAfter {
         if let seconds = Int(value) {
             return seconds >= 0 ? .seconds(seconds) : nil
         }
-        guard let date = httpDate(value) else { return nil }
+        guard let date = HTTPDateCodec.parse(value) else { return nil }
         let delta = date.timeIntervalSince(now)
         return delta <= 0 ? .zero : .milliseconds(Int64((delta * 1000).rounded(.up)))
     }
-
-    /// IMF-fixdate, and the two obsolete forms a recipient must still accept
-    /// (RFC 9110 §5.6.7): RFC 850 and asctime.
-    static func httpDate(_ value: String) -> Date? {
-        // Built per call: this runs only on a retried response, and a shared
-        // formatter would need a lock to be safe across tasks.
-        for pattern in patterns {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(identifier: "GMT")
-            formatter.dateFormat = pattern
-            if let date = formatter.date(from: value) { return date }
-        }
-        return nil
-    }
-
-    private static let patterns = [
-        "EEE, dd MMM yyyy HH:mm:ss 'GMT'",
-        "EEEE, dd-MMM-yy HH:mm:ss 'GMT'",
-        "EEE MMM d HH:mm:ss yyyy",
-    ]
 }
 
 extension OutboundHTTPConfigurationError: ModuleConfigurationError {}

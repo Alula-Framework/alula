@@ -1,3 +1,4 @@
+import AlulaSupport
 import Crypto
 import Foundation
 import Synchronization
@@ -80,8 +81,8 @@ public enum APIKeys {
         expiresAt: Date? = nil
     ) -> Issued {
         precondition(isValidPrefix(prefix), "an API key prefix is letters and digits only")
-        let id = randomBytes(8).map { String(format: "%02x", $0) }.joined()
-        let secret = base64URL(Data(randomBytes(32)))
+        let id = SecureRandom.bytes(8).map { String(format: "%02x", $0) }.joined()
+        let secret = SecureRandom.token()
         return Issued(
             key: "\(prefix)_\(id)_\(secret)",
             stored: Stored(
@@ -107,29 +108,7 @@ public enum APIKeys {
     }
 
     static func digest(_ secret: String) -> String {
-        base64URL(Data(SHA256.hash(data: Data(secret.utf8))))
-    }
-
-    /// Compares every byte whatever the first mismatch.
-    static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
-        let a = Array(a.utf8)
-        let b = Array(b.utf8)
-        guard a.count == b.count else { return false }
-        var difference: UInt8 = 0
-        for index in a.indices { difference |= a[index] ^ b[index] }
-        return difference == 0
-    }
-
-    private static func randomBytes(_ count: Int) -> [UInt8] {
-        var generator = SystemRandomNumberGenerator()
-        return (0..<count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
-    }
-
-    private static func base64URL(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        SHA256Digest.base64URL(secret)
     }
 }
 
@@ -208,7 +187,7 @@ public struct APIKeyValidator: TokenValidator {
             throw TokenValidationError(kind: .malformedToken, reason: "API key is malformed")
         }
         guard let stored = try await store.key(id: id),
-            APIKeys.constantTimeEquals(stored.secretDigest, APIKeys.digest(secret))
+            ConstantTime.equals(stored.secretDigest, APIKeys.digest(secret))
         else {
             throw TokenValidationError(
                 kind: .signatureInvalid, reason: "unknown API key or wrong secret (id \(id))")

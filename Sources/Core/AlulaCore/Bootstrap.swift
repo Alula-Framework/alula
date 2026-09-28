@@ -256,7 +256,11 @@ public struct LifecycleSettings: Sendable, Equatable {
         let drain = try configuration.getIfPresent("lifecycle.drain-seconds", as: Double.self) ?? 0
         let timeout = try configuration.getIfPresent(
             "lifecycle.shutdown-timeout-seconds", as: Double.self)
-        guard drain >= 0, (timeout ?? 1) > 0, drain.isFinite, (timeout ?? 1).isFinite else {
+        // Bounded above as well: `1e300` is finite, and trapped converting to
+        // milliseconds below. The bound also refuses `inf`, and `nan` fails
+        // every comparison.
+        let limit = Configuration.maximumSeconds
+        guard drain >= 0, drain <= limit, (timeout ?? 1) > 0, (timeout ?? 1) <= limit else {
             throw LifecycleSettingsError(drainSeconds: drain, shutdownTimeoutSeconds: timeout)
         }
         self.init(

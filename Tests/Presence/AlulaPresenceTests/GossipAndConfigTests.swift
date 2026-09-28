@@ -131,6 +131,8 @@ struct PresenceConfigurationTests {
         ("alula.presence.sweep-interval-seconds", "nan"),
         ("alula.presence.sweep-interval-seconds", "0"),
         ("alula.presence.membership-fallback-after-seconds", "inf"),
+        // Finite, and still a trap converting to a Duration.
+        ("presence.permdown-after-seconds", "1e300"),
     ])
     func malformedIntervalsThrow(key: String, value: String) {
         #expect(throws: (any Error).self) {

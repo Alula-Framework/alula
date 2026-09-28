@@ -1,3 +1,4 @@
+import AlulaSupportFoundation
 import AsyncHTTPClient
 import Foundation
 import JWTKit
@@ -65,7 +66,7 @@ public enum JWKSTransportPolicy: Sendable, Equatable {
             switch self {
             case .allowInsecureAnywhere:
                 return
-            case .allowInsecureLoopback where url.isLoopback:
+            case .allowInsecureLoopback where url.hostIsLoopback:
                 return
             case .httpsOnly, .allowInsecureLoopback:
                 throw JWKSSourceError(
@@ -80,15 +81,6 @@ public enum JWKSTransportPolicy: Sendable, Equatable {
             throw JWKSSourceError(
                 reason: "\(what) is not an HTTP(S) URL: \(url.absoluteString)")
         }
-    }
-}
-
-extension URL {
-    /// Whether this URL's host is a loopback address.
-    var isLoopback: Bool {
-        guard let host = host?.lowercased() else { return false }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
-            || host.hasSuffix(".localhost")
     }
 }
 

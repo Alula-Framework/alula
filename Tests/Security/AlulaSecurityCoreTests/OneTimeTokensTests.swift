@@ -76,6 +76,29 @@ struct OneTimeTokensTests {
         }
     }
 
+    /// Expiry was `lifetime.components.seconds`: a 1.5 s token expired
+    /// after one second, and one under a second was expired on issue.
+    @Test("a lifetime's fraction of a second counts")
+    func fractionalLifetime() async throws {
+        let store = store
+        let tokens = tokens(store)
+        let brief = try await tokens.issue(
+            for: "user-1", purpose: .magicLink, lifetime: .milliseconds(500))
+        #expect(try await tokens.redeem(brief, purpose: .magicLink) == "user-1")
+
+        let token = try await tokens.issue(
+            for: "user-1", purpose: .magicLink, lifetime: .milliseconds(1500))
+        clock.advance(by: 1.25)
+        #expect(try await tokens.redeem(token, purpose: .magicLink) == "user-1")
+
+        let late = try await tokens.issue(
+            for: "user-1", purpose: .magicLink, lifetime: .milliseconds(1500))
+        clock.advance(by: 1.75)
+        await #expect(throws: OneTimeTokenError.invalidOrExpired) {
+            try await tokens.redeem(late, purpose: .magicLink)
+        }
+    }
+
     @Test("a binding that has changed voids the token — a changed password voids reset links")
     func binding() async throws {
         let tokens = tokens(store)
@@ -141,8 +164,30 @@ struct OneTimeTokensTests {
         try await store.put("short", Data("1".utf8), ttl: .seconds(10))
         try await store.put("long", Data("2".utf8), ttl: .seconds(100))
         try await store.put("longer", Data("3".utf8), ttl: .seconds(200))
-        #expect(store.count == 2)
+        // The excess and a batch of max(1, 2 / 16): the two soonest go.
+        #expect(store.count == 1)
         #expect(try await store.take("short") == nil)
-        #expect(try await store.take("long") != nil)
+        #expect(try await store.take("long") == nil)
+        #expect(try await store.take("longer") != nil)
+    }
+
+    /// This store evicted exactly the excess, so once full every put sorted
+    /// the whole map to drop one record. It now evicts in batches like the
+    /// session and rate-limit stores: one sort frees room for the next puts.
+    @Test("a full store evicts a batch, not one record per put")
+    func storeEvictsInBatches() async throws {
+        let store = InMemoryOneTimeTokenStore(maxEntries: 32, now: clock.nowProvider)
+        for index in 0..<32 {
+            try await store.put("t\(index)", Data(), ttl: .seconds(Int64(100 + index)))
+        }
+        #expect(store.count == 32)
+        try await store.put("overflow", Data(), ttl: .seconds(1000))
+        #expect(store.count == 30, "the one over the bound, and a batch of 32 / 16")
+        try await store.put("next", Data(), ttl: .seconds(1000))
+        try await store.put("after", Data(), ttl: .seconds(1000))
+        #expect(store.count == 32, "room freed by the batch: no eviction")
+        #expect(try await store.take("t0") == nil)
+        #expect(try await store.take("t2") == nil)
+        #expect(try await store.take("t3") != nil)
     }
 }

@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`web.request-timeout-seconds: inf` is a configuration error, not a crash
+  at startup.** `inf` passed the "must be positive" check and then trapped
+  converting to milliseconds; `nan` and a finite value too large for a
+  `Duration` (such as `1e300`) are refused with it. The same bound now covers
+  `lifecycle.drain-seconds`, `lifecycle.shutdown-timeout-seconds`, and the
+  `channels.*` and `presence.*` intervals, where `1e300` still trapped.
+- **Sub-second durations are no longer truncated to whole seconds** in a
+  one-time token's `lifetime`, OIDC sign-in's `pendingLifetime`,
+  `ClientCredentialsSettings.renewBefore` and a resumable upload's `ttl`. A
+  1.5 s value acted as 1 s, and anything under a second as zero: a one-time
+  token or pending sign-in expired on issue, and an upload expired as it was
+  created. Webhook signature tolerance stays whole seconds, as documented:
+  the timestamps it compares are whole seconds.
+- **A WebSocket client error no longer logs credentials.**
+  `WebSocketChannelTransportError.description` removed the query but kept
+  `user:password@` from the URL.
+- **An APNs endpoint on loopback is recognised however it is spelled.** The
+  check was case-sensitive and missed `[::1]` and `*.localhost`, refusing a
+  plain-HTTP emulator on those hosts as insecure. It is now the JWKS
+  fetcher's check.
+- **An OAuth client id or secret with non-ASCII letters is percent-encoded.**
+  The HTTP client's client-credentials flow encoded with
+  `CharacterSet.alphanumerics`, which is every Unicode letter, so `é` went out
+  unencoded in the form body and the Basic credentials.
+- **The in-memory one-time token store evicts in batches.** Once full, it
+  sorted every record on each `put` to drop one. It now drops the excess and
+  a sixteenth of the bound at once, as the session and rate-limit stores do.
+
 ### Removed
 
 - **`ConnectionUpgradeHandler` and `UpgradedConnection`** (AlulaWeb), deprecated

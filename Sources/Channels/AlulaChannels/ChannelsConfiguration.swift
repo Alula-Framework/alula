@@ -98,35 +98,27 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     ///   default `"close"`)
     /// - `channels.max-topics-per-socket` (Int, default 64)
     public init(configuration: Configuration) throws {
-        // `getIfPresent` and a finiteness check, never `get(_:default:)`:
-        // that traps on a malformed value, and `.seconds(inf)` traps too — a
+        // Never `get(_:default:)`, which traps on a malformed value, and
+        // never an unchecked `.seconds(_:)`, which traps on `inf` — a
         // deployment typo stopped the process at boot instead of naming the
         // key.
-        func seconds(_ name: String) throws -> Double? {
-            guard let value = try configuration.getIfPresent(
-                "channels.\(name)", formerly: ["alula.channels.\(name)"], as: Double.self)
-            else { return nil }
-            guard value.isFinite else { throw ChannelsConfigurationError.invalidInterval(key: "channels.\(name)") }
-            return value
+        let invalid = { (value: NonPositiveConfigValue) in
+            ChannelsConfigurationError.invalidInterval(key: value.key)
         }
-        let timeoutSeconds = try seconds("heartbeat-timeout-seconds") ?? 60.0
-        guard timeoutSeconds > 0 else {
-            throw ChannelsConfigurationError.invalidInterval(key: "channels.heartbeat-timeout-seconds")
-        }
-        let timeout = Duration.seconds(timeoutSeconds)
-        let checkSeconds = try seconds("heartbeat-check-interval-seconds")
-        if let checkSeconds, checkSeconds <= 0 {
-            throw ChannelsConfigurationError.invalidInterval(key: "channels.heartbeat-check-interval-seconds")
+        func seconds(_ name: String) throws -> Duration? {
+            try configuration.positiveSeconds(
+                "channels.\(name)", formerly: ["alula.channels.\(name)"], orThrow: invalid)
         }
         self.init(
-            heartbeatTimeout: timeout,
-            heartbeatCheckInterval: checkSeconds.map { .seconds($0) },
+            heartbeatTimeout: try seconds("heartbeat-timeout-seconds") ?? .seconds(60),
+            heartbeatCheckInterval: try seconds("heartbeat-check-interval-seconds"),
             outboundBufferSize: try configuration.getIfPresent(
                 "channels.outbound-buffer-size", formerly: ["alula.channels.outbound-buffer-size"], as: Int.self) ?? 256,
             // 0 disables it explicitly — an operator who wants no bound
             // should write that down rather than delete a line.
-            writeTimeout: try seconds("write-timeout-seconds")
-                .map { $0 <= 0 ? nil : Duration.seconds($0) } ?? .seconds(30),
+            writeTimeout: try configuration.secondsOrDisabled(
+                "channels.write-timeout-seconds", formerly: ["alula.channels.write-timeout-seconds"],
+                orThrow: invalid) ?? .seconds(30),
             // 1 is the old socket-wide serialization, spelled as a bound
             // rather than as a separate mode — an operator who wants it back
             // writes the number down.

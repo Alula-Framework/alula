@@ -117,11 +117,24 @@ struct RequestTimeoutTests {
         #expect(RequestTimeout.default.effective(kind: .http, bodyMode: .buffered(maxBytes: nil), fallback: .seconds(30)) == .seconds(30))
     }
 
-    @Test("a non-positive web.request-timeout-seconds is refused")
-    func configuration() {
-        #expect(throws: (any Error).self) {
+    /// `inf` passed `!(v > 0)` and then trapped at startup converting to
+    /// milliseconds; `nan` and a finite value too large for a duration are
+    /// refused with it.
+    @Test(
+        "a non-positive or non-finite web.request-timeout-seconds is a configuration error",
+        arguments: ["0", "-1", "inf", "nan", "1e300"])
+    func configuration(value: String) {
+        let error = #expect(throws: (any Error).self) {
             try AlulaWebModule<InMemoryTransport>(
-                configuration: Configuration(values: ["web.request-timeout-seconds": "0"]))
+                configuration: Configuration(values: ["web.request-timeout-seconds": value]))
         }
+        #expect(error is any ModuleConfigurationError)
+        #expect("\(error.map { "\($0)" } ?? "")".contains("web.request-timeout-seconds"))
+    }
+
+    @Test("web.request-timeout-seconds keeps a fraction of a second")
+    func fractionalTimeout() throws {
+        _ = try AlulaWebModule<InMemoryTransport>(
+            configuration: Configuration(values: ["web.request-timeout-seconds": "0.25"]))
     }
 }

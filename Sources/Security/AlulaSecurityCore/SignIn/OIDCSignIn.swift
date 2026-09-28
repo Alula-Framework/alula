@@ -1,3 +1,5 @@
+import AlulaSupport
+import AlulaSupportFoundation
 import Crypto
 import AlulaCore
 import AlulaWeb
@@ -355,21 +357,12 @@ public final class OIDCSignIn: SignInProvider {
     /// 32 random bytes, base64url — 256 bits, the length RFC 7636 recommends
     /// for a verifier and more than `state` and `nonce` need.
     static func randomToken() -> String {
-        var generator = SystemRandomNumberGenerator()
-        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
-        return base64URL(Data(bytes))
+        SecureRandom.token()
     }
 
     /// `BASE64URL(SHA256(ASCII(code_verifier)))` — RFC 7636 §4.2.
     static func challenge(for verifier: String) -> String {
-        base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
-    }
-
-    static func base64URL(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        SHA256Digest.base64URL(verifier)
     }
 
     private struct TokenResponse: Decodable {
@@ -430,8 +423,7 @@ struct PendingSignIn: Codable, Equatable {
     private static func live(_ open: [PendingSignIn], now: Date, lifetime: Duration)
         -> [PendingSignIn]
     {
-        let seconds = Double(lifetime.components.seconds)
-        return open.filter { now.timeIntervalSince($0.startedAt) < seconds }
+        open.filter { now.timeIntervalSince($0.startedAt) < lifetime.inSeconds }
     }
 }
 

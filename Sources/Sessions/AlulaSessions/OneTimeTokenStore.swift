@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Synchronization
 
@@ -40,8 +41,10 @@ public protocol OneTimeTokenStore: Sendable {
 /// another.
 ///
 /// ``take(_:)`` is atomic under one lock. Past ``maxEntries``, expired
-/// records go first and then the soonest to expire: a link evicted that way
-/// simply stops working, with no error to anyone.
+/// records go first and then the soonest to expire, in a batch of a
+/// sixteenth of the bound so the sort is not paid on every put while the
+/// store is full. A link evicted that way simply stops working, with no
+/// error to anyone.
 public final class InMemoryOneTimeTokenStore: OneTimeTokenStore, Sendable {
     /// The bound ``init(maxEntries:now:)`` uses when given none.
     public static let defaultMaxEntries = 100_000
@@ -69,21 +72,12 @@ public final class InMemoryOneTimeTokenStore: OneTimeTokenStore, Sendable {
         let now = now()
         entries.withLock { entries in
             entries[key] = Entry(
-                record: record, expiresAt: now.addingTimeInterval(ttl.timeInterval))
-            guard entries.count > maxEntries else { return }
-            for (key, entry) in entries where entry.expiresAt <= now {
-                entries.removeValue(forKey: key)
-            }
-            // Still over: the soonest to expire go first — they are the ones
-            // least likely to still be redeemed.
-            if entries.count > maxEntries {
-                let excess = entries.count - maxEntries
-                for (key, _) in entries.sorted(by: { $0.value.expiresAt < $1.value.expiresAt })
-                    .prefix(excess)
-                {
-                    entries.removeValue(forKey: key)
-                }
-            }
+                record: record, expiresAt: now.addingTimeInterval(ttl.inSeconds))
+            // Still over after the expired go: the soonest to expire next —
+            // they are the ones least likely to still be redeemed.
+            BoundedEviction.enforce(
+                &entries, maxEntries: maxEntries, isExpired: { $0.expiresAt <= now },
+                order: \.expiresAt)
         }
     }
 

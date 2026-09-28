@@ -26,6 +26,7 @@ private struct UploadHarness {
 private func withUploads<T>(
     maxSize: Int64 = 1 << 20,
     flushInterval: Int64 = 8 << 20,
+    ttl: Duration? = nil,
     _ body: (UploadHarness) async throws -> T
 ) async throws -> T {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -35,6 +36,7 @@ private func withUploads<T>(
 
     let routes = RouteRegistration.uploads(at: "/uploads", store: store) { options in
         options.maxSize = maxSize
+        if let ttl { options.ttl = ttl }
     }
     let client = try TestClient(routes: routes)
     return try await body(
@@ -142,6 +144,21 @@ struct TusProtocolTests {
                 stored.append(chunk)
             }
             #expect(stored == payload)
+        }
+    }
+
+    /// Expiry was `ttl.components.seconds` from now: a TTL under a second
+    /// made every upload expired the moment it was created.
+    @Test("a TTL's fraction of a second counts")
+    func fractionalTTL() async throws {
+        try await withUploads(ttl: .milliseconds(1800)) { app in
+            let before = Date()
+            let created = await app.client.tus(.post, "/uploads", headers: [.uploadLength: "10"])
+            #expect(created.status == .created)
+            let location = try #require(created.headers[.location])
+            let id = String(location.dropFirst("/uploads/".count))
+            let expires = try #require(try await app.store.info(id)?.expires)
+            #expect(expires.timeIntervalSince(before) > 1.5)
         }
     }
 

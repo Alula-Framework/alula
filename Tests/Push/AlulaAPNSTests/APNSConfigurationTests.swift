@@ -158,9 +158,23 @@ struct APNSEndpointTests {
         #expect(try configuration("https://apns-gateway.internal").baseURL == "https://apns-gateway.internal")
     }
 
+    /// The APNs copy of the loopback check compared the host as written:
+    /// `LOCALHOST`, `[::1]` and `*.localhost` were refused as insecure. It is
+    /// now the one the JWKS fetcher uses.
+    @Test(
+        "loopback is recognised however it is spelled",
+        arguments: [
+            "http://localhost:56500", "HTTP://LOCALHOST:56500", "http://[::1]:56500",
+            "http://emulator.localhost:56500",
+        ])
+    func loopbackSpellings(endpoint: String) throws {
+        _ = try configuration(endpoint)
+    }
+
     @Test("plain http anywhere else is refused: every request carries the provider token")
     func insecureRefused() {
         #expect(throws: APNSConfigurationError.self) { try configuration("http://apns-emulator.internal:8080") }
         #expect(throws: APNSConfigurationError.self) { try configuration("not a url") }
+        #expect(throws: APNSConfigurationError.self) { try configuration("http://localhost.example.com") }
     }
 }

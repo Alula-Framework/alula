@@ -1,3 +1,4 @@
+import AlulaSupport
 import Crypto
 import AlulaSessions
 import AlulaWeb
@@ -75,15 +76,15 @@ public struct OneTimeTokens: Sendable {
     ///
     /// Issuing does not void earlier tokens for the same subject and purpose;
     /// each works until used or expired, unless a `binding` has since
-    /// changed. Expiry is checked in whole seconds of `lifetime`. Rethrows
-    /// the store's error when it cannot save, and no token is returned.
+    /// changed. Rethrows the store's error when it cannot save, and no token
+    /// is returned.
     public func issue(
         for subject: String, purpose: Purpose, lifetime: Duration, binding: String? = nil
     ) async throws -> String {
         let token = Self.randomToken()
         let record = Record(
             subject: subject, purpose: purpose, bindingDigest: binding.map(Self.digest),
-            expiresAt: now().addingTimeInterval(Double(lifetime.components.seconds)))
+            expiresAt: now().addingTimeInterval(lifetime.inSeconds))
         try await store.put(Self.key(for: token), try JSONEncoder().encode(record), ttl: lifetime)
         Telemetry.emit(SignInEvents.TokenIssued.self) { .init(purpose: purpose.name) }
         return token
@@ -135,23 +136,14 @@ public struct OneTimeTokens: Sendable {
     }
 
     static func randomToken() -> String {
-        var generator = SystemRandomNumberGenerator()
-        return base64URL(
-            Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }))
+        SecureRandom.token()
     }
 
     /// The store key: a digest, never the token.
     static func key(for token: String) -> String { "alula-ott:" + digest(token) }
 
     static func digest(_ value: String) -> String {
-        base64URL(Data(SHA256.hash(data: Data(value.utf8))))
-    }
-
-    private static func base64URL(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        SHA256Digest.base64URL(value)
     }
 }
 

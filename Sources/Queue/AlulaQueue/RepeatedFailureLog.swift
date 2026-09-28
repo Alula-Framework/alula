@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Logging
 import Synchronization
@@ -103,8 +104,6 @@ final class RepeatedFailureLog: Sendable {
 
     /// "42.0 seconds", not "42.028647206 seconds".
     static func seconds(_ duration: Duration) -> String {
-        let (whole, fraction) = duration.components
-        let value = Double(whole) + Double(fraction) / 1e18
-        return String(format: "%.1f seconds", value)
+        String(format: "%.1f seconds", duration.inSeconds)
     }
 }

@@ -1,3 +1,4 @@
+import AlulaSupport
 import AlulaCore
 import Foundation
 import Logging
@@ -90,7 +91,7 @@ struct QueueWorkerService: Service {
                         let start = now()
                         let claimed = try await store.claim(
                             queue: queue, kinds: kinds, limit: free, now: start,
-                            leaseUntil: start.addingTimeInterval(settings.lease.queueSeconds))
+                            leaseUntil: start.addingTimeInterval(settings.lease.inSeconds))
                         for job in claimed {
                             inFlight.count.add(1, ordering: .relaxed)
                             running.jobs.withLock { $0[job.id] = (job.attempt, job.kind) }
@@ -130,7 +131,7 @@ struct QueueWorkerService: Service {
             if !held.isEmpty {
                 do {
                     try await store.extendLeases(
-                        held, until: now().addingTimeInterval(settings.lease.queueSeconds))
+                        held, until: now().addingTimeInterval(settings.lease.inSeconds))
                     failures.succeeded()
                 } catch {
                     QueueTelemetry.leaseRenewalFailed()
@@ -161,8 +162,8 @@ struct QueueWorkerService: Service {
             let at = now()
             do {
                 let removed = try await store.prune(
-                    completedBefore: at.addingTimeInterval(-settings.retainCompleted.queueSeconds),
-                    discardedBefore: at.addingTimeInterval(-settings.retainDiscarded.queueSeconds))
+                    completedBefore: at.addingTimeInterval(-settings.retainCompleted.inSeconds),
+                    discardedBefore: at.addingTimeInterval(-settings.retainDiscarded.inSeconds))
                 if removed > 0 {
                     logger.debug("pruned finished jobs", metadata: ["count": "\(removed)"])
                 }

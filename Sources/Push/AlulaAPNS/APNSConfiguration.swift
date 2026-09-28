@@ -1,3 +1,4 @@
+import AlulaSupportFoundation
 import AlulaCore
 import Foundation
 import JWTKit
@@ -121,9 +122,8 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
         self.environment = environment
         self.requestTimeout = requestTimeout
         if let endpoint {
-            let host = endpoint.host ?? ""
-            let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
-            guard endpoint.scheme == "https" || (endpoint.scheme == "http" && loopback) else {
+            let scheme = endpoint.scheme?.lowercased()
+            guard scheme == "https" || (scheme == "http" && endpoint.hostIsLoopback) else {
                 throw APNSConfigurationError.insecureEndpoint(endpoint.absoluteString)
             }
         }

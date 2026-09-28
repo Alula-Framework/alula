@@ -91,6 +91,21 @@ struct ClientCredentialsTests {
         #expect(try await tokens.token() == "token-2")
     }
 
+    /// `renewBefore` was read as whole seconds: 1.5 s acted as 1 s, and
+    /// anything under a second as no margin at all.
+    @Test("a sub-second part of the renewal margin counts")
+    func fractionalRenewalMargin() async throws {
+        let server = Server(expiresIn: 10)
+        let clock = Clock()
+        var settings = settings()
+        settings.renewBefore = .milliseconds(1500)
+        let tokens = ClientCredentialsTokenSource(
+            settings: settings, http: OutboundHTTPClient(transport: server.transport), now: clock.now)
+        #expect(try await tokens.token() == "token-1")
+        clock.advance(8.75)  // 1.25 s left: inside 1.5 s, outside a truncated 1 s
+        #expect(try await tokens.token() == "token-2")
+    }
+
     @Test("a 401 renews the token once and retries; a second 401 is the answer")
     func unauthorizedRenewsOnce() async throws {
         let server = Server()
@@ -123,6 +138,30 @@ struct ClientCredentialsTests {
         let posted = String(decoding: try #require(post.tokenRequests.first).body ?? Data(), as: UTF8.self)
         #expect(posted.contains("client_id=billing%20worker&client_secret=s3cr%26t"))
         #expect(try #require(post.tokenRequests.first).headers[.authorization] == nil)
+    }
+
+    /// `CharacterSet.alphanumerics` is every Unicode letter and digit, so a
+    /// non-ASCII secret went out unencoded in a body that must be ASCII.
+    @Test("a non-ASCII client id or secret is percent-encoded as UTF-8")
+    func nonASCIIFormEncoding() async throws {
+        let post = Server()
+        _ = try await ClientCredentialsTokenSource(
+            settings: ClientCredentialsSettings(
+                endpoint: .tokenURL(Self.tokenURL), clientID: "façade", clientSecret: "秘密",
+                clientAuthentication: .post),
+            http: OutboundHTTPClient(transport: post.transport)
+        ).token()
+        let posted = String(decoding: try #require(post.tokenRequests.first).body ?? Data(), as: UTF8.self)
+        #expect(posted.contains("client_id=fa%C3%A7ade&client_secret=%E7%A7%98%E5%AF%86"))
+
+        let basic = Server()
+        _ = try await ClientCredentialsTokenSource(
+            settings: ClientCredentialsSettings(
+                endpoint: .tokenURL(Self.tokenURL), clientID: "façade", clientSecret: "秘密"),
+            http: OutboundHTTPClient(transport: basic.transport)
+        ).token()
+        let expected = Data("fa%C3%A7ade:%E7%A7%98%E5%AF%86".utf8).base64EncodedString()
+        #expect(try #require(basic.tokenRequests.first).headers[.authorization] == "Basic \(expected)")
     }
 
     @Test("an issuer's token endpoint is discovered once")

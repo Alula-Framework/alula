@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import AlulaCore
 import AlulaSessions
+import AlulaSupportFoundation
 import AlulaWeb
 import Foundation
 import Logging

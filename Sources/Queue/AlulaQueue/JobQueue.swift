@@ -1,3 +1,4 @@
+import AlulaSupport
 import Foundation
 import Synchronization
 
@@ -101,7 +102,7 @@ public struct JobQueue: Sendable {
     public static func prepare<Job: QueuedJob>(
         _ job: Job, options: EnqueueOptions = EnqueueOptions(), now: Date = Date()
     ) throws -> NewQueuedJob {
-        let runAt = options.runAt ?? now.addingTimeInterval(options.delay?.queueSeconds ?? 0)
+        let runAt = options.runAt ?? now.addingTimeInterval(options.delay?.inSeconds ?? 0)
         return NewQueuedJob(
             kind: Job.kind, queue: options.queue ?? Job.queue,
             payload: try QueueCoding.encoder.encode(job), priority: options.priority,

@@ -192,6 +192,23 @@ struct EndToEndTests {
         }
     }
 
+    /// The description used to drop only the query, so a URL carrying
+    /// `user:password@` put the password in the log line.
+    @Test("a refused handshake's description carries neither credentials nor a query")
+    func refusedHandshakeRedacts() async throws {
+        try await withRunningChannelServer { port in
+            do {
+                _ = try await WebSocketChannelTransport().connect(
+                    to: URL(string: "ws://ada:hunter2@127.0.0.1:\(port)/no-such-socket?token=abc")!)
+                Issue.record("connected to a route that does not exist")
+            } catch let error as WebSocketChannelTransportError {
+                #expect(!error.description.contains("hunter2"))
+                #expect(!error.description.contains("token=abc"))
+                #expect(error.description.hasPrefix("could not open a WebSocket to ws://127.0.0.1:\(port)/no-such-socket"))
+            }
+        }
+    }
+
     @Test("two real clients share a room through the full stack")
     func broadcastOverTCP() async throws {
         try await withRunningChannelServer { port in

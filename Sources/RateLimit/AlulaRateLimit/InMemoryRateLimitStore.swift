@@ -1,3 +1,4 @@
+import AlulaSupport
 import Synchronization
 
 /// The default store: one timestamp per key in a bounded dictionary.
@@ -58,7 +59,12 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
             let outcome = GCRA.decide(now: now, tat: state.arrivals[key], cost: cost, quota: quota)
             if outcome.isAllowed && cost > 0 {
                 state.arrivals[key] = outcome.tat
-                enforceBound(&state, now: now)
+                // Keys whose arrival time has passed are back at full
+                // allowance and carry no information, so they go first;
+                // then the keys closest to expiring.
+                BoundedEviction.enforce(
+                    &state.arrivals, maxEntries: maxEntries, isExpired: { $0 <= now },
+                    order: { $0 })
             }
             return RateLimitDecision(
                 isAllowed: outcome.isAllowed,
@@ -71,20 +77,6 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
     /// Live keys, expired ones included until swept. Introspection for tests.
     public var count: Int {
         state.withLock { $0.arrivals.count }
-    }
-
-    /// Runs under the lock. Keys whose arrival time has passed are back at
-    /// full allowance and carry no information, so they go first; if that is
-    /// not enough, the keys closest to expiring go in a batch, so the sort is
-    /// paid once per batch rather than once per call.
-    private func enforceBound(_ state: inout State, now: Int64) {
-        guard state.arrivals.count > maxEntries else { return }
-        state.arrivals = state.arrivals.filter { $0.value > now }
-        guard state.arrivals.count > maxEntries else { return }
-        let excess = state.arrivals.count - maxEntries + max(1, maxEntries / 16)
-        for (key, _) in state.arrivals.sorted(by: { $0.value < $1.value }).prefix(excess) {
-            state.arrivals.removeValue(forKey: key)
-        }
     }
 
     private static let started = ContinuousClock.now

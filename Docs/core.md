@@ -219,9 +219,9 @@ give the types different names. In the module that lists both providers:
 
 ```swift
 struct AppModule: AlulaModule {
-    static let includedModules: [any AlulaModule.Type] = [
-        PrimaryPoolModule.self, ReplicaPoolModule.self,
-    ]
+    static var dependencies: [any AlulaModule.Type] {
+        [PrimaryPoolModule.self, ReplicaPoolModule.self]
+    }
     // What an unqualified @Inject of a doubly-provided type resolves to.
     static var defaultProviders: [any AlulaModule.Type] { [PrimaryPoolModule.self] }
 }

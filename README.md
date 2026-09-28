@@ -48,8 +48,12 @@ on it.
 ## Getting started
 
 ```swift
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.59.0",
+         traits: ["Web"])
 ```
+
+No trait is on by default, and without `Web` the web modules refuse to build
+(see [Traits](#traits)).
 
 ```swift
 .target(name: "App", dependencies: [

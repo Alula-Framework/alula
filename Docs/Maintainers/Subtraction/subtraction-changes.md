@@ -1,0 +1,102 @@
+# Subtraction Changes
+
+What the subtraction audit changed, and why. Each entry names the capability
+the change touched and where that capability lives now. Item numbers
+(R1–R39) refer to
+[subtraction-recommendations.md](subtraction-recommendations.md).
+
+## Pass 3 — safe and mechanical
+
+### Products (R2, R3)
+
+AlulaConfigCore, AlulaConfig, AlulaPresenceProtocol and AlulaCronCore are no
+longer products; their targets are unchanged. That leaves 33 library
+products, down from 37.
+
+- **Capability:** every module is still reachable. AlulaCore re-exports
+  AlulaConfig, which re-exports AlulaConfigCore. AlulaScheduler re-exports
+  AlulaCronCore. AlulaPresence and AlulaPresenceClient re-export
+  AlulaPresenceProtocol; the client's re-export is new, added because its
+  public API returns `PresenceEntry` and `PresenceMeta`.
+- **Consumers:** none of the four products appears in any consumer manifest
+  (alula-data, alula-cli and its templates, fledge, relay).
+
+### Manifest (R34, R35)
+
+- Removed 55 `swiftSettings: [.swiftLanguageMode(.v6)]` entries. Tools-version
+  6.3 already builds in Swift 6 mode, and `swift package dump-package` shows
+  those settings were the only difference.
+- The swift-syntax products for the three macro implementations and the
+  three macro test targets are now two constants,
+  `macroImplementationDependencies` and `macroTestDependencies`. Every target's
+  dependency set is unchanged, checked against the dumped manifest.
+- `Logging` and `ServiceLifecycle` were left as they are. A name for a
+  one-line product reference would not make the manifest clearer.
+
+### Macro machinery (R36)
+
+`@Inject` collection, attribute-argument helpers, `registrationAccess` and
+three validators moved into `AlulaMacroSupport/InjectionScanning.swift`.
+The copies in Component, Controller, Middleware, Settings and Scheduler are
+gone, including Scheduler's `Injection.swift`. That is 518 net source lines.
+
+- **Capability:** every pinned macro expansion is byte-identical.
+- **Divergences resolved, each pinned by a test:**
+  - A `static` `@Inject` is now ALU-DI-1019 in all four macro families.
+  - A `package` `@Scheduler` gets `package` access.
+  - Scheduler scans the first binding, as the generator does.
+  - Scheduler now reports an untyped `@Inject` (ALU-DI-1016) and a keyless
+    `@ConfigValue` (ALU-CONFIG-5001), which it used to skip.
+
+### Shared rules and their bugs (R37, R38)
+
+Two internal targets now hold rules that were written several times:
+- **`AlulaSupport`:** standard library only, so Foundation-free modules
+  stay that way.
+- **`AlulaSupportFoundation`:** the helpers that need Foundation.
+
+Moved there: base64url, secure random bytes, constant-time compare,
+`Duration` to seconds, rounded `Retry-After`, HTTP-date, loopback detection,
+URL redaction for logs, OAuth form encoding and Basic auth, and bounded-map
+eviction. Configured positive numbers are checked by
+`Configuration.positive(...)`, `positiveSeconds(...)` and
+`secondsOrDisabled(...)`.
+
+- **Capability:** public API is unchanged. AlulaWeb's `HTTPDate` stays as a
+  facade over the shared codec.
+- **Bugs fixed on the way, each with a regression test:**
+  - `web.request-timeout-seconds: inf` or `nan` crashed at startup. A finite
+    `1e300` crashed the channels, presence and lifecycle intervals the same
+    way.
+  - Sub-second lifetimes were truncated to whole seconds in four places, so
+    a value under a second expired on issue.
+  - A WebSocket client error logged `user:password`.
+  - APNs refused a plain-HTTP emulator on `[::1]` or `*.localhost`.
+  - Non-ASCII OAuth credentials went out unencoded.
+  - The in-memory one-time-token store sorted every record on each `put`
+    once full.
+- **Not merged: capped backoff.** The three implementations differ on
+  purpose in type, truncation and jitter, and `RetryPolicy.baseDelay` is
+  public and pinned to its arithmetic.
+
+### Documents and dead code (R8–R13, R21, R25)
+
+- **Removed:** the deprecated `ConnectionUpgradeHandler`, `UpgradedConnection`
+  and `APNSError.deviceTokenIsInvalid`. Nothing used them; their
+  replacements are the names the deprecations pointed to.
+- **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`,** keeping only the items
+  still open. `git show v0.59.0:GAPS.md` has the history.
+- **Source comments:** 14 comments cited the untracked
+  `COMPOSITION-MIGRATION.md`. They now cite DECISIONS entries or give their
+  reason inline.
+- **Doc fixes:**
+  - DECISIONS.md's opening now describes what it is.
+  - The README's traits table lists all traits, and its first snippet
+    builds.
+  - `Docs/core.md` uses `dependencies`.
+  - `AlulaModule`'s ordering docs say what is true.
+- **Dead code:** the generator's `scheduler` check is gone. It never matched.
+- **Local only:** the untracked `Benchmarks/` and `docs/` leftovers are
+  deleted.
+- **Format debt re-measured:** 4,267 violations. The figure it replaced,
+  1,725, dated from 2026-09-18.

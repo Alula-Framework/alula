@@ -13,14 +13,29 @@ import PackageDescription
 // Backend drivers deliberately live elsewhere: alula-data carries the
 // Postgres and Valkey stories so that nothing here forces a database or cache
 // driver onto an application that does not use one.
+// The swift-syntax products every macro implementation links, and the ones
+// every macro test target links to expand macros under test.
+let macroImplementationDependencies: [Target.Dependency] = [
+    .product(name: "SwiftSyntax", package: "swift-syntax"),
+    .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+    .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+    .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+    .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+]
+let macroTestDependencies: [Target.Dependency] = [
+    .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+    // MacroSpec — carries declared conformances into assertMacroExpansion.
+    .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+    .product(name: "SwiftSyntaxMacrosGenericTestSupport", package: "swift-syntax"),
+]
+
 let package = Package(
     name: "alula",
     platforms: [.macOS(.v15)],
     products: [
-        // Configuration: the parser and vocabulary (dependency-free) and the
-        // runtime facade over swift-configuration.
-        .library(name: "AlulaConfigCore", targets: ["AlulaConfigCore"]),
-        .library(name: "AlulaConfig", targets: ["AlulaConfig"]),
+        // Configuration (AlulaConfig, AlulaConfigCore) has no product of its
+        // own: AlulaCore re-exports AlulaConfig, which re-exports
+        // AlulaConfigCore, and nothing outside this package lists either.
 
         // Stable diagnostic codes, their pages, and the compiler-format
         // renderer — dependency-free, for the build tool and `alula explain`.
@@ -52,7 +67,8 @@ let package = Package(
 
         // Presence: CRDT-merged "who is here", on top of PubSub and Channels.
         .library(name: "AlulaPresence", targets: ["AlulaPresence"]),
-        .library(name: "AlulaPresenceProtocol", targets: ["AlulaPresenceProtocol"]),
+        // AlulaPresenceProtocol has no product: AlulaPresence (server) and
+        // AlulaPresenceClient (client) both re-export it.
         .library(name: "AlulaPresenceClient", targets: ["AlulaPresenceClient"]),
 
         // Sessions: the store seam, the session a handler works with, and the
@@ -73,7 +89,8 @@ let package = Package(
 
         // MARK: Scheduler
         .library(name: "AlulaScheduler", targets: ["AlulaScheduler"]),
-        .library(name: "AlulaCronCore", targets: ["AlulaCronCore"]),
+        // AlulaCronCore has no product: AlulaScheduler re-exports it, and its
+        // macro depends on the target directly.
         .library(name: "AlulaSchedulerTesting", targets: ["AlulaSchedulerTesting"]),
 
         // MARK: HTTP client
@@ -208,19 +225,16 @@ let package = Package(
         // MARK: Configuration
 
         .target(
-            name: "AlulaConfigCore", path: "Sources/Config/AlulaConfigCore",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaConfigCore", path: "Sources/Config/AlulaConfigCore"),
         .target(
-            name: "AlulaDiagnostics", path: "Sources/Core/AlulaDiagnostics",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaDiagnostics", path: "Sources/Core/AlulaDiagnostics"),
         .target(
             name: "AlulaConfig",
             dependencies: [
                 "AlulaConfigCore",
                 .product(name: "Configuration", package: "swift-configuration"),
             ],
-            path: "Sources/Config/AlulaConfig",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Config/AlulaConfig"
         ),
 
         // MARK: Core
@@ -232,11 +246,9 @@ let package = Package(
         // anywhere can use it; the helpers that need Foundation (HTTP dates,
         // URL loopback and redaction, form encoding) are the second target.
         .target(
-            name: "AlulaSupport", path: "Sources/Core/AlulaSupport",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaSupport", path: "Sources/Core/AlulaSupport"),
         .target(
-            name: "AlulaSupportFoundation", path: "Sources/Core/AlulaSupportFoundation",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaSupportFoundation", path: "Sources/Core/AlulaSupportFoundation"),
 
         // The registration macros' shared model: one `InjectedProperty`, one
         // parenthesisation rule, one constructor-injection generator. It was
@@ -258,12 +270,7 @@ let package = Package(
             dependencies: [
                 "AlulaMacroSupport",
                 "AlulaConfigCore",
-                .product(name: "SwiftSyntax", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-            ],
+            ] + macroImplementationDependencies,
             path: "Sources/Core/AlulaCoreMacrosImpl"
         ),
         // Code generator invoked by the build tool plugin. Kept free of
@@ -299,10 +306,7 @@ let package = Package(
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            // Strict concurrency is the default under tools 6.x; kept explicit
-            // as documentation of intent.
-            path: "Sources/Core/AlulaCore",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Core/AlulaCore"
         ),
 
         // MARK: Web
@@ -327,12 +331,7 @@ let package = Package(
             dependencies: [
                 "AlulaMacroSupport",
                 "AlulaRouteScan",
-                .product(name: "SwiftSyntax", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-            ],
+            ] + macroImplementationDependencies,
             path: "Sources/Web/AlulaWebMacrosImpl"
         ),
         .target(
@@ -359,8 +358,7 @@ let package = Package(
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .target(name: "CAlulaZlib", condition: .when(traits: ["Web"])),
             ],
-            path: "Sources/Web/AlulaWeb",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Web/AlulaWeb"
         ),
         // The system zlib, for `ResponseCompression`. A systemLibrary rather
         // than a package: zlib is present wherever Swift is (corelibs
@@ -398,8 +396,7 @@ let package = Package(
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Web/AlulaTransport",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Web/AlulaTransport"
         ),
         .target(
             name: "AlulaWebTesting",
@@ -408,8 +405,7 @@ let package = Package(
                 "AlulaCore",
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Web/AlulaWebTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Web/AlulaWebTesting"
         ),
 
         // MARK: PubSub
@@ -421,21 +417,18 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Sources/PubSub/AlulaPubSub",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/PubSub/AlulaPubSub"
         ),
         .target(
             name: "AlulaPubSubTesting",
             dependencies: ["AlulaPubSub"],
-            path: "Sources/PubSub/AlulaPubSubTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/PubSub/AlulaPubSubTesting"
         ),
 
         // MARK: Channels
 
         .target(
-            name: "AlulaChannelsProtocol", path: "Sources/Channels/AlulaChannelsProtocol",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaChannelsProtocol", path: "Sources/Channels/AlulaChannelsProtocol"),
         .target(
             name: "AlulaChannels",
             dependencies: [
@@ -443,8 +436,7 @@ let package = Package(
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Channels/AlulaChannels",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Channels/AlulaChannels"
         ),
         .target(
             name: "AlulaChannelsClient",
@@ -452,8 +444,7 @@ let package = Package(
                 "AlulaChannelsProtocol",
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Channels/AlulaChannelsClient",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Channels/AlulaChannelsClient"
         ),
         .target(
             name: "AlulaChannelsTransport",
@@ -468,8 +459,7 @@ let package = Package(
                     name: "HummingbirdWSClient", package: "hummingbird-websocket",
                     condition: .when(traits: ["Web"])),
             ],
-            path: "Sources/Channels/AlulaChannelsTransport",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Channels/AlulaChannelsTransport"
         ),
         .target(
             name: "AlulaChannelsTesting",
@@ -478,8 +468,7 @@ let package = Package(
                 "AlulaChannelsClient",
                 .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
             ],
-            path: "Sources/Channels/AlulaChannelsTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Channels/AlulaChannelsTesting"
         ),
 
         // MARK: Presence
@@ -487,8 +476,7 @@ let package = Package(
         .target(
             name: "AlulaPresenceProtocol",
             dependencies: ["AlulaChannelsProtocol"],
-            path: "Sources/Presence/AlulaPresenceProtocol",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Presence/AlulaPresenceProtocol"
         ),
         .target(
             name: "AlulaPresence",
@@ -498,34 +486,25 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Sources/Presence/AlulaPresence",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Presence/AlulaPresence"
         ),
         .target(
             name: "AlulaPresenceClient",
             dependencies: ["AlulaPresenceProtocol", "AlulaChannelsClient"],
-            path: "Sources/Presence/AlulaPresenceClient",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Presence/AlulaPresenceClient"
         ),
 
         // MARK: Scheduler
 
         .target(
-            name: "AlulaCronCore", path: "Sources/Scheduler/AlulaCronCore",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            name: "AlulaCronCore", path: "Sources/Scheduler/AlulaCronCore"),
         .macro(
             name: "AlulaSchedulerMacrosImpl",
             dependencies: [
                 "AlulaMacroSupport",
                 "AlulaCronCore",
-                .product(name: "SwiftSyntax", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-            ],
-            path: "Sources/Scheduler/AlulaSchedulerMacrosImpl",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            ] + macroImplementationDependencies,
+            path: "Sources/Scheduler/AlulaSchedulerMacrosImpl"
         ),
         .target(
             name: "AlulaScheduler",
@@ -537,15 +516,13 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Sources/Scheduler/AlulaScheduler",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Scheduler/AlulaScheduler"
         ),
 
         .target(
             name: "AlulaSchedulerTesting",
             dependencies: ["AlulaScheduler", "AlulaSupport"],
-            path: "Sources/Scheduler/AlulaSchedulerTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Scheduler/AlulaSchedulerTesting"
         ),
 
         // MARK: Queue
@@ -559,14 +536,12 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Sources/Queue/AlulaQueue",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Queue/AlulaQueue"
         ),
         .target(
             name: "AlulaQueueTesting",
             dependencies: ["AlulaQueue", "AlulaSupport"],
-            path: "Sources/Queue/AlulaQueueTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Queue/AlulaQueueTesting"
         ),
 
         // MARK: OpenAPI
@@ -578,8 +553,7 @@ let package = Package(
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])),
                 .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["Web"])),
             ],
-            path: "Sources/Web/AlulaOpenAPI",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Web/AlulaOpenAPI"
         ),
 
         // MARK: HTTP client
@@ -599,8 +573,7 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(traits: ["HTTPClient"])),
                 .product(name: "NIOFoundationCompat", package: "swift-nio", condition: .when(traits: ["HTTPClient"])),
             ],
-            path: "Sources/HTTPClient/AlulaHTTPClient",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/HTTPClient/AlulaHTTPClient"
         ),
         .target(
             name: "AlulaHTTPClientTesting",
@@ -608,8 +581,7 @@ let package = Package(
                 .target(name: "AlulaHTTPClient", condition: .when(traits: ["HTTPClient"])),
                 .product(name: "HTTPTypes", package: "swift-http-types", condition: .when(traits: ["HTTPClient"])),
             ],
-            path: "Sources/HTTPClient/AlulaHTTPClientTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/HTTPClient/AlulaHTTPClientTesting"
         ),
 
         // MARK: Mail
@@ -620,14 +592,12 @@ let package = Package(
                 "AlulaCore", "AlulaQueue",
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Mail/AlulaMail",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Mail/AlulaMail"
         ),
         .target(
             name: "AlulaMailTesting",
             dependencies: ["AlulaMail"],
-            path: "Sources/Mail/AlulaMailTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Mail/AlulaMailTesting"
         ),
         .target(
             name: "AlulaMailSMTP",
@@ -639,8 +609,7 @@ let package = Package(
                 .product(
                     name: "NIOSSL", package: "swift-nio-ssl", condition: .when(traits: ["SMTP"])),
             ],
-            path: "Sources/Mail/AlulaMailSMTP",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Mail/AlulaMailSMTP"
         ),
 
         // MARK: Sessions
@@ -653,13 +622,11 @@ let package = Package(
         // seam. (AlulaSupport is this package's own, with no dependencies.)
         .target(
             name: "AlulaSessions", dependencies: ["AlulaSupport"],
-            path: "Sources/Sessions/AlulaSessions",
-            swiftSettings: [.swiftLanguageMode(.v6)]),
+            path: "Sources/Sessions/AlulaSessions"),
         .target(
             name: "AlulaSessionsTesting",
             dependencies: ["AlulaSessions"],
-            path: "Sources/Sessions/AlulaSessionsTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Sessions/AlulaSessionsTesting"
         ),
 
         // MARK: Rate limiting
@@ -671,14 +638,12 @@ let package = Package(
         .target(
             name: "AlulaRateLimit",
             dependencies: ["AlulaCore", "AlulaSupport"],
-            path: "Sources/RateLimit/AlulaRateLimit",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/RateLimit/AlulaRateLimit"
         ),
         .target(
             name: "AlulaRateLimitTesting",
             dependencies: ["AlulaRateLimit"],
-            path: "Sources/RateLimit/AlulaRateLimitTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/RateLimit/AlulaRateLimitTesting"
         ),
 
         // MARK: Actuator
@@ -688,8 +653,7 @@ let package = Package(
             dependencies: [
                 .target(name: "AlulaWeb", condition: .when(traits: ["Web"])), "AlulaCore",
             ],
-            path: "Sources/Actuator/AlulaActuator",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Actuator/AlulaActuator"
         ),
 
         // MARK: Telemetry
@@ -711,8 +675,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Sources/Telemetry/AlulaTelemetryBridges",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Telemetry/AlulaTelemetryBridges"
         ),
         .testTarget(
             name: "AlulaTelemetryBridgesTests",
@@ -724,8 +687,7 @@ let package = Package(
                 .product(name: "Tracing", package: "swift-distributed-tracing", condition: .when(traits: ["Telemetry"])),
                 .product(name: "InMemoryTracing", package: "swift-distributed-tracing", condition: .when(traits: ["Telemetry"])),
             ],
-            path: "Tests/Telemetry/AlulaTelemetryBridgesTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Telemetry/AlulaTelemetryBridgesTests"
         ),
 
         // MARK: Security
@@ -756,8 +718,7 @@ let package = Package(
                     name: "NIOFoundationCompat", package: "swift-nio",
                     condition: .when(traits: ["Web"])),
             ],
-            path: "Sources/Security/AlulaSecurityCore",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Security/AlulaSecurityCore"
         ),
         // The Argon2 reference implementation (RFC 9106, winner of the
         // Password Hashing Competition), vendored rather than depended on:
@@ -801,14 +762,12 @@ let package = Package(
                     condition: .when(traits: ["APNS"])),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/Push/AlulaAPNS",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Push/AlulaAPNS"
         ),
         .target(
             name: "AlulaAPNSTesting",
             dependencies: [.target(name: "AlulaAPNS", condition: .when(traits: ["APNS"]))],
-            path: "Sources/Push/AlulaAPNSTesting",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Sources/Push/AlulaAPNSTesting"
         ),
 
         // MARK: Tests
@@ -822,8 +781,7 @@ let package = Package(
                 .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
                 "AlulaConfigCore",
             ],
-            path: "Tests/Web/AlulaOpenAPITests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Web/AlulaOpenAPITests"
         ),
         .testTarget(
             name: "AlulaHTTPClientTests",
@@ -839,16 +797,14 @@ let package = Package(
                 .product(name: "Instrumentation", package: "swift-distributed-tracing", condition: .when(traits: ["HTTPClient"])),
                 .product(name: "ServiceContextModule", package: "swift-service-context", condition: .when(traits: ["HTTPClient"])),
             ],
-            path: "Tests/HTTPClient/AlulaHTTPClientTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/HTTPClient/AlulaHTTPClientTests"
         ),
         .testTarget(
             name: "AlulaMailTests",
             dependencies: [
                 "AlulaMail", "AlulaMailTesting", "AlulaQueue", "AlulaQueueTesting", "AlulaCore",
             ],
-            path: "Tests/Mail/AlulaMailTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Mail/AlulaMailTests"
         ),
         .testTarget(
             name: "AlulaMailSMTPTests",
@@ -858,8 +814,7 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio", condition: .when(traits: ["SMTP"])),
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(traits: ["SMTP"])),
             ],
-            path: "Tests/Mail/AlulaMailSMTPTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Mail/AlulaMailSMTPTests"
         ),
         .testTarget(
             name: "AlulaQueueTests",
@@ -871,14 +826,12 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
-            path: "Tests/Queue/AlulaQueueTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Queue/AlulaQueueTests"
         ),
         .testTarget(
             name: "AlulaConfigTests",
             dependencies: ["AlulaConfig"],
-            path: "Tests/Config/AlulaConfigTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Config/AlulaConfigTests"
         ),
         .testTarget(
             name: "AlulaCoreTests",
@@ -903,24 +856,18 @@ let package = Package(
             dependencies: [
                 "AlulaDiagnostics",
                 "AlulaCoreMacrosImpl",
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                // MacroSpec — carries declared conformances into assertMacroExpansion.
-                .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacrosGenericTestSupport", package: "swift-syntax"),
-            ],
+            ] + macroTestDependencies,
             path: "Tests/Core/AlulaCoreMacroTests"
         ),
         .testTarget(
             name: "AlulaDiagnosticsTests",
             dependencies: ["AlulaDiagnostics"],
-            path: "Tests/Core/AlulaDiagnosticsTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Core/AlulaDiagnosticsTests"
         ),
         .testTarget(
             name: "AlulaSupportTests",
             dependencies: ["AlulaSupport", "AlulaSupportFoundation"],
-            path: "Tests/Core/AlulaSupportTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Core/AlulaSupportTests"
         ),
         .testTarget(
             name: "AlulaRegistrationGenTests",
@@ -928,8 +875,7 @@ let package = Package(
             path: "Tests/Core/AlulaRegistrationGenTests",
             // Golden diagnostic fixtures: source the generator reads, not
             // source this target compiles.
-            exclude: ["Diagnostics"],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            exclude: ["Diagnostics"]
         ),
         .testTarget(
             name: "AlulaWebTests",
@@ -982,10 +928,7 @@ let package = Package(
                 "AlulaDiagnostics",
                 .target(name: "AlulaWebMacrosImpl", condition: .when(traits: ["Web"])),
                 "AlulaCoreMacrosImpl",
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacrosGenericTestSupport", package: "swift-syntax"),
-            ],
+            ] + macroTestDependencies,
             path: "Tests/Web/AlulaWebMacroTests"
         ),
         .testTarget(
@@ -1064,29 +1007,23 @@ let package = Package(
             dependencies: [
                 "AlulaDiagnostics",
                 "AlulaSchedulerMacrosImpl",
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacrosGenericTestSupport", package: "swift-syntax"),
-            ],
+            ] + macroTestDependencies,
             path: "Tests/Scheduler/AlulaSchedulerMacroTests"
         ),
         .testTarget(
             name: "AlulaSchedulerTests",
             dependencies: ["AlulaScheduler", "AlulaSchedulerTesting"],
-            path: "Tests/Scheduler/AlulaSchedulerTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Scheduler/AlulaSchedulerTests"
         ),
         .testTarget(
             name: "AlulaRateLimitTests",
             dependencies: ["AlulaRateLimit", "AlulaRateLimitTesting", "AlulaCore"],
-            path: "Tests/RateLimit/AlulaRateLimitTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/RateLimit/AlulaRateLimitTests"
         ),
         .testTarget(
             name: "AlulaSessionsTests",
             dependencies: ["AlulaSessions", "AlulaSessionsTesting"],
-            path: "Tests/Sessions/AlulaSessionsTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Sessions/AlulaSessionsTests"
         ),
         .testTarget(
             name: "AlulaAPNSTests",
@@ -1098,8 +1035,7 @@ let package = Package(
                 "AlulaCore",
                 .product(name: "JWTKit", package: "jwt-kit", condition: .when(traits: ["APNS"])),
             ],
-            path: "Tests/Push/AlulaAPNSTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Push/AlulaAPNSTests"
         ),
         .testTarget(
             name: "AlulaSecurityCoreTests",
@@ -1117,8 +1053,7 @@ let package = Package(
                     name: "HTTPTypes", package: "swift-http-types",
                     condition: .when(traits: ["Web"])),
             ],
-            path: "Tests/Security/AlulaSecurityCoreTests",
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            path: "Tests/Security/AlulaSecurityCoreTests"
         ),
     ]
 )

@@ -96,7 +96,42 @@ real modules, for exactly this reason.
 
 ## Testing the layers
 
-Each layer ships its own test support, and none of them need a server.
+Each layer ships its own test support, and none of them need a server. One
+product brings all of it:
+
+```swift
+// Package.swift
+.testTarget(name: "AppTests", dependencies: [
+    "App",
+    .product(name: "AlulaTesting", package: "alula"),
+])
+```
+
+```swift
+import AlulaTesting
+```
+
+`AlulaTesting` re-exports every testing module the package's traits allow. A
+module whose trait is off is left out along with its dependencies, so a
+`traits: []` build gets the six trait-free modules and nothing from the HTTP
+stack.
+
+| Module | What it gives a test | Trait |
+|---|---|---|
+| `AlulaWebTesting` | `TestClient` (in-process requests and WebSockets), `RequestContext.mock`, `InMemoryTransport` | `Web` |
+| `AlulaChannelsTesting` | `InMemoryChannelTransport` (a real `ChannelClient` against the real server, no socket), `ChannelWireClient` | `Web` |
+| `AlulaSessionsTesting` | `RecordingSessionStore`: a working store that records every load, save and delete | — |
+| `AlulaRateLimitTesting` | `RecordingRateLimitStore`: a working store on a clock the test moves, recording what was consumed; `misbehave()` for an outage | — |
+| `AlulaQueueTesting` | `QueueTestHarness`: runs due jobs on demand with `drain()`, on a clock the test advances past retries | — |
+| `AlulaMailTesting` | `RecordingMailTransport`: keeps what was sent, and fails on request | — |
+| `AlulaPubSubTesting` | `InMemoryCluster` (several nodes, no wire), `RecordingAdapter` | — |
+| `AlulaSchedulerTesting` | `TestSchedulerClock` (records sleeps, never sleeps), `StubJobCoordinator` | — |
+| `AlulaHTTPClientTesting` | `StubHTTPTransport`: answers outbound requests from a closure and records them | `HTTPClient` |
+| `AlulaAPNSTesting` | `RecordingAPNSTransport`: records each push and answers from a script | `APNS` |
+
+Each module is also its own product. List one directly instead of
+`AlulaTesting` when a build should compile only what it uses: a lean CI job,
+or a package that tests one seam.
 
 ### HTTP — `AlulaWebTesting`
 
@@ -152,6 +187,61 @@ diverges.
 and read the record back. `SessionRuntime` takes a clock, so sliding
 renewal and expiry are tested by moving it rather than by sleeping. A handler
 called directly gets an empty session from `RequestContext.mock(session:)`.
+
+### Rate limiting — `AlulaRateLimitTesting`
+
+`RecordingRateLimitStore` is a working store with its own clock. A test
+exhausts a limit, asserts the `429`, then calls `advance(by:)` instead of
+waiting. `consumed` lists every key that was charged. `misbehave()` makes
+every call throw, which exercises the middleware's fail-open path.
+
+### Queue and mail — `AlulaQueueTesting`, `AlulaMailTesting`
+
+`QueueTestHarness` runs queued jobs when the test says so. There is no
+worker, no polling and no sleeping. `drain()` runs every due job in the order
+a worker would, and a retry becomes due only once the test advances the
+clock past it. `RecordingMailTransport` keeps every message a `Mailer` sent.
+`fail(with:)` makes the next sends throw, so a queued delivery can be walked
+through its retries:
+
+```swift
+let transport = RecordingMailTransport()
+let mailer = Mailer(transport: transport, defaultFrom: try MailAddress("app@example.com"))
+try await PasswordReset(mailer: mailer, jobs: harness.queue).request(for: ada, link: link)
+await harness.drain()
+#expect(transport.sent.first?.subject == "Reset your password")
+```
+
+### Scheduler — `AlulaSchedulerTesting`
+
+`TestSchedulerClock` is a `SchedulerClock` that records each sleep and
+returns at once. A question like "does the daily job fire on the day the
+clocks go back" takes microseconds. `StubJobCoordinator` claims each run, or
+declines or fails as told, to stand in for the cluster's single-runner
+coordination.
+
+### Outbound HTTP — `AlulaHTTPClientTesting`
+
+`StubHTTPTransport` answers from a closure, or from a list of responses, and
+records every request. Code that calls other services is tested with no
+network:
+
+```swift
+let stub = StubHTTPTransport { request in
+    request.url.path == "/forecast"
+        ? .init(status: .ok, body: Data(#"{"high":21}"#.utf8))
+        : .init(status: .notFound)
+}
+let weather = Weather(http: OutboundHTTPClient(transport: stub))
+#expect(try await weather.forecast(for: "Oslo").high == 21)
+```
+
+### Push — `AlulaAPNSTesting`
+
+`RecordingAPNSTransport` records every request, including its headers,
+topic and payload. Pass it to `APNSClient(configuration:transport:)`. It
+answers `200` until told otherwise. `respond(with:)` queues answers in order,
+and `misbehave()` makes every call throw like a dropped connection.
 
 ### Cache — `AlulaCacheTesting`
 

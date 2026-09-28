@@ -36,9 +36,7 @@ targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
-            .product(name: "AlulaTransport", package: "alula"),
             .product(name: "AlulaChannels", package: "alula"),
             .product(name: "AlulaPubSub", package: "alula"),
         ],
@@ -92,7 +90,7 @@ dependency DAG. A module you write can declare framework modules in its own
 | Product | What | Depends on |
 |---|---|---|
 | `AlulaChannels` | Server: `Channel`, `Socket`, `ChannelRouter`, `ChannelBroadcaster`, `ChannelSocketHandler`, `AlulaChannelsModule` | Core, PubSub, Web |
-| `AlulaChannelsProtocol` | The wire protocol alone: `Envelope`, `JSONValue`, reserved events, error reasons, close codes | nothing |
+| `AlulaChannelsProtocol` (target, no product) | The wire protocol alone: `Envelope`, `JSONValue`, reserved events, error reasons, close codes. `AlulaChannels` and `AlulaChannelsClient` re-export it, so you import one of those | nothing |
 | `AlulaChannelsClient` | Swift reference client: `ChannelClient`, `ChannelHandle`, transport seam, reconnect-with-backoff-and-rejoin | Protocol, swift-log |
 | `AlulaChannelsTransport` | `WebSocketChannelTransport`: swift-websocket's client as the client's transport, with handshake headers (trait `Web`) | Client, hummingbird-websocket |
 | `AlulaChannelsTesting` | `InMemoryChannelTransport` (client ↔ in-process server, no socket), `ChannelWireClient` (raw-envelope driver) | the above + WebTesting |

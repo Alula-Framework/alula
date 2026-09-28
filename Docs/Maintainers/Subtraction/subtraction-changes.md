@@ -122,3 +122,77 @@ annotation, and `@Repository` stays beside it for data access.
 - **Generator:** it no longer scans `@Component`. Its messages, the
   diagnostic pages, DocC and Docs now say `@Service`. No new rule restricts
   what a controller injects.
+
+### `AlulaChannelsProtocol` product (R4)
+
+The product is removed; the target stays.
+
+- **Capability:** unchanged. `AlulaChannels` and `AlulaChannelsClient` both
+  `@_exported import AlulaChannelsProtocol`, so `Envelope`, `JSONValue`,
+  `ReservedEvent` and the error reasons arrive with either. Presence's protocol
+  target still depends on the target directly. DocC still builds for it.
+- **Migration:** delete the product line from the manifest. A file that
+  imported `AlulaChannelsProtocol` imports `AlulaChannels` (server) or
+  `AlulaChannelsClient` (client) instead.
+- **Manifest:** a comment where the product was, like the ones for the hidden
+  Config, PresenceProtocol and CronCore products.
+
+### `AlulaWeb` product includes `AlulaTransport` (R5)
+
+The `AlulaWeb` product is now `targets: ["AlulaWeb", "AlulaTransport"]`.
+
+- **Capability:** unchanged. `AlulaTransport` is still its own target and
+  still depends on `AlulaWeb`, not the reverse. `ServerTransport` is
+  untouched, and a third-party transport is still a peer. A scratch consumer
+  listing only `AlulaWeb` compiled and linked `import AlulaTransport`,
+  `AlulaWebModule<AlulaTransport>.self` and a custom `ServerTransport`.
+- **Migration:** delete the `AlulaTransport` product line. The product is kept
+  for one more release so existing manifests resolve, marked in the manifest
+  for removal in the release after next. SwiftPM accepts two products that
+  share a target.
+- **Docs:** the README's Getting started, `Docs/web.md`'s "Adding this
+  module", and the manifest snippets in the sessions, security-core,
+  presence, channels and actuator pages list `AlulaWeb` only.
+- **Still open (Pass 5):** `Main.swift` still imports `AlulaTransport` and
+  names it. Removing that needs a default-transport typealias and a design
+  note.
+
+### `AlulaCore` beside `AlulaWeb` (R6)
+
+Docs only. The manifest snippets in `Docs/web.md`, `sessions.md`,
+`security-core.md`, `presence.md`, `channels.md` and `actuator.md` no longer
+list `AlulaCore` next to `AlulaWeb`.
+
+- **Capability:** unchanged. `AlulaWeb` depends on `AlulaCore`, so
+  `import AlulaCore` resolves with `AlulaWeb` alone; the R5 scratch consumer
+  does exactly that. Pages whose snippet lists `AlulaCore` without `AlulaWeb`
+  (scheduler, pubsub, apns, core) are unchanged.
+- **Templates:** they live in alula-cli and are changed there.
+
+### `AlulaTesting` umbrella (R26)
+
+A new `AlulaTesting` product and target (`Sources/Testing/AlulaTesting`),
+whose one file `@_exported import`s the testing modules.
+
+- **Capability:** nothing removed. All ten `*Testing` products stay for lean
+  or single-seam builds; the umbrella is only compiled when a package lists
+  it.
+- **Gating:** Mail, PubSub, Queue, RateLimit, Scheduler and Sessions testing
+  are re-exported unconditionally. Web and Channels testing sit behind
+  `#if Web`, HTTPClient testing behind `#if HTTPClient`, APNS testing behind
+  `#if APNS`. Each matching dependency has the same `.when(traits:)`
+  condition. A scratch `traits: []` consumer listing `AlulaTesting` built,
+  ran its test, and resolved the same 7 packages as the lean consumer.
+- **Coverage:** `AlulaTestingTests` imports only `AlulaTesting` and touches a
+  type from every re-exported module, so CI compiles the umbrella. A one-page
+  DocC catalog is in the docs job's target list.
+- **alula-data's** testing modules are not included: they are another
+  package's.
+
+### `Docs/testing.md` module section (R27)
+
+"Testing the layers" now opens with `import AlulaTesting` and a table of the
+ten modules, what each gives a test, and the trait each needs, with a note on
+when to list one module directly. New sections cover rate limiting, Queue and
+Mail, the Scheduler, outbound HTTP and APNs, which the page had not
+mentioned. The existing sections are kept.

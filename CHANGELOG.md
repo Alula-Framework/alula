@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`AlulaTesting`: every testing module behind one import.** List
+  `.product(name: "AlulaTesting", package: "alula")` in a test target and
+  `import AlulaTesting` to get `TestClient`, `RecordingSessionStore`,
+  `QueueTestHarness`, `RecordingMailTransport` and the rest. Each module is
+  re-exported only when the trait it needs is on (`Web` for Web and Channels
+  testing, `HTTPClient`, `APNS`), and its dependency is gated the same way,
+  so a `traits: []` package resolves nothing extra through it. The individual
+  `*Testing` products stay for builds that want only one. `Docs/testing.md`
+  now opens its module section with it, and covers the Queue, Mail, rate
+  limiting, Scheduler, HTTP client and APNs testing modules it did not
+  mention.
+
 ### Fixed
 
 - **An undeclared environment no longer logs mail instead of sending it.**
@@ -72,6 +86,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the deprecations already pointed to.
 - **`APNSError.deviceTokenIsInvalid`**, deprecated since 0.33.0. Use
   `shouldForgetDeviceToken(registeredAt:)` or `deviceTokenProblem`.
+- **The `AlulaChannelsProtocol` product.** The target stays; `AlulaChannels`
+  (server) and `AlulaChannelsClient` (Swift client) both re-export it, so
+  listing it beside either was redundant. Migration: delete
+  `.product(name: "AlulaChannelsProtocol", package: "alula")` from your
+  manifest, and `import AlulaChannels` or `import AlulaChannelsClient` where
+  you imported `AlulaChannelsProtocol`.
 
 ### Changed
 
@@ -105,6 +125,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the environment loaded into the configuration
   (`Configuration.load(environment:)`); `ActuatorModule(environment:…)` and
   `ActuatorModule(environment:exposure:…)` compile unchanged.
+- **The `AlulaWeb` product includes the default transport.** It is now
+  `.library(name: "AlulaWeb", targets: ["AlulaWeb", "AlulaTransport"])`, so an
+  HTTP app lists one product instead of two; `Main.swift` still `import`s
+  `AlulaTransport` and names `AlulaWebModule<AlulaTransport>.self`.
+  `AlulaTransport` stays a separate target, so the `ServerTransport` seam is
+  unchanged and a third-party transport is still a peer. Migration: delete
+  `.product(name: "AlulaTransport", package: "alula")`. The `AlulaTransport`
+  product is kept for this release and the next so existing manifests still
+  resolve, and is removed in the release after that.
 - **`GAPS.md` moved to `Docs/Maintainers/GAPS.md`** and now lists only the
   open gaps, each re-checked against 0.59.0. The full historical file is at
   `git show v0.59.0:GAPS.md`.

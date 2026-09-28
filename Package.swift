@@ -48,7 +48,15 @@ let package = Package(
         // Web: routing, middleware, RequestContext, Response, WebSocket/SSE,
         // the ServerTransport seam, and the default HummingbirdCore-backed
         // transport as a peer of any third-party one.
-        .library(name: "AlulaWeb", targets: ["AlulaWeb"]),
+        //
+        // One product, two targets: listing AlulaWeb makes `import
+        // AlulaTransport` available, so an app names one product rather than
+        // two. AlulaTransport stays its own *target* (it depends on AlulaWeb,
+        // not the reverse), so the ServerTransport seam is unchanged and a
+        // third-party transport is still a peer.
+        .library(name: "AlulaWeb", targets: ["AlulaWeb", "AlulaTransport"]),
+        // Kept for compatibility so manifests that list it still resolve.
+        // AlulaWeb now contains it. Remove in the release after next.
         .library(name: "AlulaTransport", targets: ["AlulaTransport"]),
         .library(name: "AlulaWebTesting", targets: ["AlulaWebTesting"]),
         .library(name: "AlulaOpenAPI", targets: ["AlulaOpenAPI"]),
@@ -59,7 +67,8 @@ let package = Package(
 
         // Channels: per-connection lifecycle over PubSub and Web.
         .library(name: "AlulaChannels", targets: ["AlulaChannels"]),
-        .library(name: "AlulaChannelsProtocol", targets: ["AlulaChannelsProtocol"]),
+        // AlulaChannelsProtocol has no product: AlulaChannels (server) and
+        // AlulaChannelsClient (client) both re-export it.
         .library(name: "AlulaChannelsClient", targets: ["AlulaChannelsClient"]),
         // A WebSocket for ChannelClient, with headers (Relay #30).
         .library(name: "AlulaChannelsTransport", targets: ["AlulaChannelsTransport"]),
@@ -126,6 +135,11 @@ let package = Package(
         // Not gated on Web: a worker sending pushes needs no HTTP server.
         .library(name: "AlulaAPNS", targets: ["AlulaAPNS"]),
         .library(name: "AlulaAPNSTesting", targets: ["AlulaAPNSTesting"]),
+
+        // MARK: Testing
+        // One import for every testing module the enabled traits allow. The
+        // individual `*Testing` products above stay for lean builds.
+        .library(name: "AlulaTesting", targets: ["AlulaTesting"]),
     ],
     traits: [
         // Opt-in: a consumer names what it wants, and resolves nothing else.
@@ -770,7 +784,32 @@ let package = Package(
             path: "Sources/Push/AlulaAPNSTesting"
         ),
 
+        // MARK: Testing umbrella
+
+        // Re-exports every testing module. Each dependency is gated on the
+        // trait its module needs, matching the `#if` around its re-export, so
+        // a `traits: []` consumer resolves nothing from Web, HTTPClient or
+        // APNS through this.
+        .target(
+            name: "AlulaTesting",
+            dependencies: [
+                "AlulaMailTesting", "AlulaPubSubTesting", "AlulaQueueTesting",
+                "AlulaRateLimitTesting", "AlulaSchedulerTesting", "AlulaSessionsTesting",
+                .target(name: "AlulaWebTesting", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaChannelsTesting", condition: .when(traits: ["Web"])),
+                .target(name: "AlulaHTTPClientTesting", condition: .when(traits: ["HTTPClient"])),
+                .target(name: "AlulaAPNSTesting", condition: .when(traits: ["APNS"])),
+            ],
+            path: "Sources/Testing/AlulaTesting"
+        ),
+
         // MARK: Tests
+
+        .testTarget(
+            name: "AlulaTestingTests",
+            dependencies: ["AlulaTesting"],
+            path: "Tests/Testing/AlulaTestingTests"
+        ),
 
         .testTarget(
             name: "AlulaOpenAPITests",

@@ -208,7 +208,7 @@ jobs:
                         AlulaQueue AlulaQueueTesting \
                         AlulaMail AlulaMailTesting AlulaMailSMTP \
                         AlulaHTTPClient AlulaHTTPClientTesting \
-                        AlulaOpenAPI; do
+                        AlulaOpenAPI AlulaTesting; do
             targets+=(--target "$target")
           done
           # One invocation for all of them. It used to be one per module:

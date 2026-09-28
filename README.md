@@ -5,7 +5,7 @@ application lifecycle at the bottom, HTTP and WebSockets above it, and
 real-time layers — PubSub, Channels, Presence — on top of those.
 
 One package, many products. Take only what you use: a JSON API needs
-`AlulaWeb` and `AlulaTransport`; a collaborative app adds `AlulaChannels`
+`AlulaWeb`; a collaborative app adds `AlulaChannels`
 and `AlulaPresence`; a service behind an existing identity provider adds
 `AlulaSecurityCore`.
 
@@ -16,7 +16,7 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `AlulaCore` | Modules, compile-time composition, application lifecycle. Everything else builds on this. |
 | `AlulaConfig` / `AlulaConfigCore` | Layered configuration over swift-configuration; `AlulaConfigCore` is the dependency-free parser and vocabulary. |
 | `AlulaWeb` | Routing, middleware, `RequestContext`, `Response`, WebSocket and SSE, and the `ServerTransport` seam. |
-| `AlulaTransport` | The default transport, wrapping HummingbirdCore. A peer of any third-party transport — the only target that knows what the transport wraps. |
+| `AlulaTransport` | The default transport, wrapping HummingbirdCore. A peer of any third-party transport — the only target that knows what the transport wraps. Part of the `AlulaWeb` product, so it needs no line of its own; the separate product is kept for one release for existing manifests. |
 | `AlulaPubSub` | Topic-based publish/subscribe with a `DistributedPubSubAdapter` seam for cluster fan-out. |
 | `AlulaChannels` | Per-connection lifecycle over PubSub and Web: join, leave, push, broadcast. |
 | `AlulaPresence` | CRDT-merged "who is here", correct across a cluster without central coordination. |
@@ -38,7 +38,7 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
 | `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
 | `AlulaChannelsTransport` | A WebSocket for `AlulaChannelsClient`, with the handshake headers a server needs — a session cookie, a bearer token. Requires the `Web` trait. |
-| `*Testing` | Test support for Web, PubSub, Channels, Sessions, rate limiting, APNs, and the Scheduler — in-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
+| `AlulaTesting` | Test support behind one import: re-exports every `*Testing` module the enabled traits allow — Web, Channels, Sessions, rate limiting, Queue, Mail, PubSub, the Scheduler, the HTTP client and APNs. In-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Each `*Testing` module is also its own product. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
 Per-product documentation lives in [Docs/](Docs/README.md), indexed by concept
 rather than by target, and
@@ -58,9 +58,12 @@ No trait is on by default, and without `Web` the web modules refuse to build
 ```swift
 .target(name: "App", dependencies: [
     .product(name: "AlulaWeb", package: "alula"),
-    .product(name: "AlulaTransport", package: "alula"),
 ])
 ```
+
+The `AlulaWeb` product includes the default transport, so `Main.swift` can
+still `import AlulaTransport` and name `AlulaWebModule<AlulaTransport>.self`
+without a second product line. It also brings `AlulaCore`.
 
 ## Diagnostics
 

@@ -35,9 +35,7 @@ targets: [
     .executableTarget(
         name: "App",
         dependencies: [
-            .product(name: "AlulaCore", package: "alula"),
             .product(name: "AlulaWeb", package: "alula"),
-            .product(name: "AlulaTransport", package: "alula"),
             .product(name: "AlulaSecurityCore", package: "alula"),
         ],
         // Required. It scans this target for the Alula macros and writes

@@ -34,6 +34,8 @@ public final class SchedulerStatus: Sendable {
     private let jobs = Mutex<[String: JobStatus]>([:])
     private let modeBox = Mutex<SchedulerMode>(.singleProcess)
 
+    /// An empty status, in ``SchedulerMode/singleProcess`` until a scheduler
+    /// reports otherwise. ``AlulaSchedulerModule`` holds the application's.
     public init() {}
 
     /// How coordination is decided, as reported at startup.
@@ -46,6 +48,8 @@ public final class SchedulerStatus: Sendable {
         jobs.withLock { Array($0.values) }.sorted { $0.name < $1.name }
     }
 
+    /// One job's status by its ``ScheduledJobRegistration/name``, or nil for
+    /// a name the scheduler does not run.
     public func status(of job: String) -> JobStatus? {
         jobs.withLock { $0[job] }
     }

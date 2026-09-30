@@ -16,9 +16,17 @@ public struct SchedulerService: Service, Sendable {
     private let clock: any SchedulerClock
     private let logger: Logger
 
-    /// Takes what it runs. It used to hold a `Container` and collect the jobs
-    /// at `run()`, because they were registrations gathered post-`freeze()`;
-    /// the module owns them now.
+    /// A service running `jobs`. ``AlulaSchedulerModule`` builds it; build
+    /// one directly to drive jobs with a test clock.
+    ///
+    /// - Parameters:
+    ///   - jobs: What to run.
+    ///   - coordinator: Arbitrates ``JobScope/once`` firings across
+    ///     processes. Nil is single-process: ``LocalJobCoordinator``, logged
+    ///     as such at startup.
+    ///   - status: Where each job's ``JobStatus`` is published; nil keeps none.
+    ///   - clock: The scheduler's time; a test passes its own.
+    ///   - logger: Startup, skipped and failed firings.
     public init(
         jobs: [ScheduledJobRegistration],
         coordinator: (any JobCoordinator)? = nil,
@@ -33,6 +41,10 @@ public struct SchedulerService: Service, Sendable {
         self.logger = logger
     }
 
+    /// Runs every job, one task each, until graceful shutdown. Throws
+    /// ``SchedulerStartupError/nonPositiveInterval(job:period:)`` before any
+    /// job starts; a job that throws is logged and runs again at its next
+    /// firing, and never ends this.
     public func run() async throws {
         // Absent coordinator = single-process deployment, the common case.
         let coordinator = self.coordinator ?? LocalJobCoordinator()
@@ -154,6 +166,7 @@ public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable {
     /// A time zone identifier this machine's Foundation does not know.
     case unknownTimeZone(job: String, identifier: String)
 
+    /// Names the job and says how to fix it.
     public var description: String {
         switch self {
         case .nonPositiveInterval(let job, let period):
@@ -178,7 +191,10 @@ public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable {
 /// Foundation does not know, so this fires only when the build machine's
 /// time zone database and the deployment's disagree — a slim but real case,
 /// and one that used to resolve silently to GMT and run the job at the wrong
-/// hour. Failing at composition puts it in the startup log instead.
+/// hour. The generated code calls it with `try!` while building the job
+/// values at composition, so the process stops before serving, with
+/// ``SchedulerStartupError/unknownTimeZone(job:identifier:)`` in the trap
+/// message.
 public func _alulaTimeZone(_ identifier: String, job: String) throws -> TimeZone {
     guard let zone = TimeZone(identifier: identifier) else {
         throw SchedulerStartupError.unknownTimeZone(job: job, identifier: identifier)

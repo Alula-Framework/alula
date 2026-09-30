@@ -46,9 +46,13 @@ public protocol JobCoordinator: Sendable {
 /// says so at startup when it finds `.once` jobs and no distributed
 /// coordinator.
 public struct LocalJobCoordinator: JobCoordinator {
+    /// The coordinator the scheduler uses when none is provided.
     public init() {}
+    /// Always `true`.
     public func claim(job: String, scheduledFor: Date) async throws -> Bool { true }
+    /// Does nothing: there is no claim to give up.
     public func release(job: String, scheduledFor: Date) async {}
+    /// `"single-process"`.
     public var describedKind: String { "single-process" }
 }
 
@@ -67,6 +71,7 @@ public enum SchedulerMode: Sendable, Equatable {
     /// A ``JobCoordinator`` is provided, named here for the log line.
     case coordinated(String)
 
+    /// `single-process`, or the coordinator's `describedKind`.
     public var description: String {
         switch self {
         case .singleProcess: return "single-process"

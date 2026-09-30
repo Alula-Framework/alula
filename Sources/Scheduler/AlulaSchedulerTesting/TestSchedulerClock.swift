@@ -17,16 +17,19 @@ import Synchronization
 ///
 /// A scheduler tested against the real clock is a slow suite and a flaky
 /// one — the two properties worth having least, and the reason
-/// ``AlulaScheduler/SchedulerClock`` is a seam at all.
+/// `SchedulerClock` is a seam at all.
 public final class TestSchedulerClock: SchedulerClock, Sendable {
     private let current: Mutex<Date>
     private let recorded: Mutex<[Date]>
 
+    /// A clock stopped at `now`.
     public init(now: Date) {
         self.current = Mutex(now)
         self.recorded = Mutex([])
     }
 
+    /// Where the clock stands: its start, moved on by every `advance` and
+    /// `sleep(until:)`.
     public var now: Date { current.withLock { $0 } }
 
     /// Every instant slept to, in order — the firing sequence, assertable.
@@ -38,6 +41,7 @@ public final class TestSchedulerClock: SchedulerClock, Sendable {
         current.withLock { $0 = max($0, instant) }
     }
 
+    /// Moves time forward by `duration`, sub-second parts included.
     public func advance(by duration: Duration) {
         // Attoseconds included: reading whole seconds alone made
         // `advance(by: .milliseconds(500))` a no-op, so a test written
@@ -45,6 +49,10 @@ public final class TestSchedulerClock: SchedulerClock, Sendable {
         current.withLock { $0 = $0.addingTimeInterval(duration.inSeconds) }
     }
 
+    /// Records `instant` in ``sleeps`` and jumps to it without waiting (an
+    /// instant already past leaves the clock where it is). Throws
+    /// `CancellationError` if the task is cancelled, before or after the
+    /// jump.
     public func sleep(until instant: Date) async throws {
         try Task.checkCancellation()
         recorded.withLock { $0.append(instant) }
@@ -79,23 +87,32 @@ public final class StubJobCoordinator: JobCoordinator, Sendable {
         StubJobCoordinator(claims: false, failsWith: error)
     }
 
+    /// A coordinator whose every claim returns `claims`, or throws `error`
+    /// when one is given.
     public init(claims: Bool = true, failsWith error: (any Error)? = nil) {
         self.answer = claims
         self.error = error
     }
 
+    /// Every job name a claim was asked for and answered (granted or
+    /// refused), in order. A claim that threw is not recorded.
     public var claimedJobs: [String] { claimed.withLock { $0 } }
+    /// Every job name released, in order. The scheduler releases only what
+    /// it was granted.
     public var releasedJobs: [String] { released.withLock { $0 } }
 
+    /// Records `job` and returns the fixed answer, or throws the fixed error.
     public func claim(job: String, scheduledFor: Date) async throws -> Bool {
         if let error { throw error }
         claimed.withLock { $0.append(job) }
         return answer
     }
 
+    /// Records `job`.
     public func release(job: String, scheduledFor: Date) async {
         released.withLock { $0.append(job) }
     }
 
+    /// `"stub"`.
     public var describedKind: String { "stub" }
 }

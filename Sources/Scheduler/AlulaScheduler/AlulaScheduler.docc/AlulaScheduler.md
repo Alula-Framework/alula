@@ -87,9 +87,13 @@ That line exists because the failure it describes is otherwise silent: an
 operator who believes once means once finds out from duplicated data, which
 is the worst available place to learn it.
 
-**No distributed coordinator ships yet.** ``LocalJobCoordinator`` is not a
-stub — on a single process it is the correct implementation — but it cannot
-span processes, and the scheduler does not pretend otherwise.
+**alula itself ships no distributed coordinator.** ``LocalJobCoordinator`` is
+not a stub — on a single process it is the correct implementation — but it
+cannot span processes, and the scheduler does not pretend otherwise.
+alula-data's `PostgresJobCoordinator` is one that does: a module provides it
+as `any JobCoordinator`, the composition root hands it to
+``AlulaSchedulerModule``, and the startup line names it instead of
+`single-process`.
 
 ## When things go wrong
 
@@ -155,6 +159,7 @@ and a suite that would otherwise go red on a loaded machine does not.
 
 - ``AlulaSchedulerModule``
 - ``SchedulerService``
+- ``SchedulerStartupError``
 - ``SchedulerClock``
 - ``SystemSchedulerClock``
 

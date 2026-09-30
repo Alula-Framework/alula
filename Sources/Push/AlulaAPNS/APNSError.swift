@@ -52,6 +52,7 @@ public struct APNSError: Error, Sendable, Equatable, CustomStringConvertible {
 
     /// The HTTP status, or 0 when the gateway never answered.
     public let status: Int
+    /// The refusal, classified: Apple's reason, or one of this package's own.
     public let reason: Reason
     /// The gateway's `reason` verbatim, or the local description.
     public let rawReason: String
@@ -62,6 +63,8 @@ public struct APNSError: Error, Sendable, Equatable, CustomStringConvertible {
     /// this moment is alive — see ``shouldForgetDeviceToken(registeredAt:)``.
     public let timestamp: Date?
 
+    /// An error as the client builds it from a gateway response; public so
+    /// a test or a custom ``APNSTransport`` can build one too.
     public init(
         status: Int, reason: Reason, rawReason: String, apnsID: String? = nil,
         timestamp: Date? = nil
@@ -143,6 +146,8 @@ public struct APNSError: Error, Sendable, Equatable, CustomStringConvertible {
         case reconnect
     }
 
+    /// How trying again could help, from `reason` and, for a reason this
+    /// package does not classify, the status (5xx backs off).
     public var retryAdvice: RetryAdvice {
         switch reason {
         case .tooManyRequests, .tooManyProviderTokenUpdates: return .throttled
@@ -155,6 +160,8 @@ public struct APNSError: Error, Sendable, Equatable, CustomStringConvertible {
     /// The same request may succeed later. ``retryAdvice`` says how.
     public var isRetryable: Bool { retryAdvice != .never }
 
+    /// The status, the reason and the `apns-id`, for a log line. Never
+    /// the device token.
     public var description: String {
         var parts = ["APNs refused the push"]
         if status > 0 { parts.append("HTTP \(status)") }

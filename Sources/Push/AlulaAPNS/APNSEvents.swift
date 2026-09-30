@@ -9,10 +9,12 @@ public enum APNSEvents {
     /// One per `send`, after the one protocol retry.
     @TelemetryEvent("alula.apns.send")
     public enum Send {
+        /// The call's timing.
         public struct Measurements {
             /// The whole call, provider token and retry included.
             public var duration: Duration
         }
+        /// How the call ended.
         public struct Metadata {
             /// `delivered`, or Apple's reason string (`Unregistered`,
             /// `TooManyRequests`, …, or this package's own

@@ -6,6 +6,7 @@ import Foundation
 /// Validated to be hex and non-empty, and nothing else: Apple has changed
 /// the length before and says not to assume one.
 public struct DeviceToken: Sendable, Hashable, CustomStringConvertible {
+    /// The token as lowercase hexadecimal, the form the request path takes.
     public let hex: String
 
     /// `nil` unless `hex` is a non-empty string of hexadecimal digits.
@@ -19,6 +20,8 @@ public struct DeviceToken: Sendable, Hashable, CustomStringConvertible {
         self.hex = bytes.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The hex. A device token identifies a device, so treat it as
+    /// personal data where it is logged.
     public var description: String { hex }
 }
 
@@ -74,12 +77,19 @@ public enum PushPriority: Int, Sendable, Equatable {
 /// exact keys Apple reads — `content-available`, `mutable-content` and the
 /// rest are hyphenated on the wire, and that is spelled here once.
 public struct APS: Sendable, Equatable, Encodable {
+    /// The user-visible text of an alert.
     public struct Alert: Sendable, Equatable, Encodable {
+        /// A short title, shown above the body.
         public var title: String?
+        /// A line shown between the title and the body.
         public var subtitle: String?
+        /// The message.
         public var body: String?
+        /// An image in the app bundle to show as the launch image
+        /// (`launch-image`).
         public var launchImage: String?
 
+        /// An alert; only the fields set are encoded.
         public init(
             title: String? = nil, subtitle: String? = nil, body: String? = nil,
             launchImage: String? = nil
@@ -96,6 +106,8 @@ public struct APS: Sendable, Equatable, Encodable {
         }
     }
 
+    /// How insistently the notification may interrupt (`interruption-level`).
+    /// `time-sensitive` and `critical` need entitlements on the app.
     public enum InterruptionLevel: String, Sendable, Equatable, Encodable {
         case passive
         case active
@@ -103,7 +115,9 @@ public struct APS: Sendable, Equatable, Encodable {
         case critical
     }
 
+    /// The text to show. Nil for a background push.
     public var alert: Alert?
+    /// The number on the app icon; `0` clears it, nil leaves it alone.
     public var badge: Int?
     /// A sound file in the app bundle, or `"default"`.
     public var sound: String?
@@ -111,13 +125,19 @@ public struct APS: Sendable, Equatable, Encodable {
     public var contentAvailable: Bool
     /// `mutable-content: 1` — run the notification service extension.
     public var mutableContent: Bool
+    /// The notification category the app registered, for its actions.
     public var category: String?
+    /// Groups notifications on the device (`thread-id`).
     public var threadID: String?
+    /// How insistently it may interrupt.
     public var interruptionLevel: InterruptionLevel?
     /// 0…1, how the system sorts notifications in a summary.
     public var relevanceScore: Double?
+    /// Which window or content to bring forward (`target-content-id`).
     public var targetContentID: String?
 
+    /// An `aps` dictionary; only the fields set (and the flags that are
+    /// true) are encoded.
     public init(
         alert: Alert? = nil,
         badge: Int? = nil,
@@ -152,6 +172,7 @@ public struct APS: Sendable, Equatable, Encodable {
         case targetContentID = "target-content-id"
     }
 
+    /// Apple's keys, fields that are nil or false left out.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(alert, forKey: .alert)
@@ -174,9 +195,14 @@ public struct APS: Sendable, Equatable, Encodable {
 /// reads custom data in — so it must encode as an object with keys. Use
 /// `Never` when there is none.
 public struct APNSNotification<Custom: Encodable & Sendable>: Sendable {
+    /// What the system does with it.
     public var aps: APS
+    /// The application's own keys, encoded beside `aps`.
     public var custom: Custom?
+    /// The `apns-push-type` header; also picks the topic suffix and the
+    /// payload ceiling (5 KB for VoIP, 4 KB otherwise).
     public var pushType: PushType
+    /// The `apns-priority` header.
     public var priority: PushPriority
     /// When the gateway may stop trying. `nil` is "try once, now".
     public var expiration: Date?
@@ -189,6 +215,8 @@ public struct APNSNotification<Custom: Encodable & Sendable>: Sendable {
     /// when this is `nil`, and the receipt carries it either way.
     public var id: UUID?
 
+    /// A notification; each parameter sets the property of the same name.
+    /// The defaults are an `alert` at `immediate` priority, tried once.
     public init(
         aps: APS,
         custom: Custom? = nil,

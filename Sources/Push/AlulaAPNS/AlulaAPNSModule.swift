@@ -42,12 +42,18 @@ public struct AlulaAPNSModule: AlulaModule {
     /// ``APNSMetrics/definitions``, for `AlulaTelemetryModule` to report.
     public let telemetryMetrics: [TelemetryMetric] = APNSMetrics.definitions
 
+    /// The composition root's initializer: reads `apns.*` and parses the key.
+    ///
+    /// - Throws: ``APNSConfigurationError``, or a configuration error for a
+    ///   missing required key.
     public init(configuration: Configuration) throws {
         let settings = try APNSConfiguration(configuration: configuration)
         self.settings = settings
         self.client = APNSClient(configuration: settings)
     }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaAPNSModule takes its configuration in init(configuration:), so it cannot be "

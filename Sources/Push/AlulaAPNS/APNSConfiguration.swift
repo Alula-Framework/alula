@@ -5,6 +5,7 @@ import JWTKit
 
 /// The `apns.*` configuration vocabulary (env-var form `ALULA_APNS_*`).
 public enum APNSConfigKey {
+    /// `apns`, the prefix of every key here.
     public static let root = "apns"
     /// `apns.key-id` — the ten-character id of the signing key, from the
     /// Apple developer portal.
@@ -27,15 +28,21 @@ public enum APNSConfigKey {
     /// `apns.endpoint` — a gateway other than Apple's, such as an emulator in
     /// an integration environment (`http://127.0.0.1:56500`). Overrides
     /// `environment`. `https` anywhere; plain `http` only on loopback, since
-    /// every request carries the provider token.
+    /// every request carries the provider token. Loopback is `localhost`, any
+    /// `*.localhost`, `127.0.0.1` or `::1` (bracketed or not), in any case —
+    /// the same check the JWKS fetcher makes.
     public static let endpoint = "apns.endpoint"
 }
 
 /// Which of Apple's two gateways to talk to.
 public enum APNSEnvironment: String, Sendable, Equatable, ConfigDecodable {
+    /// `api.push.apple.com`: apps from the App Store, TestFlight and
+    /// distribution builds.
     case production
+    /// `api.sandbox.push.apple.com`: development builds.
     case sandbox
 
+    /// `production` or `sandbox`, in any case, surrounding spaces ignored.
     public init?(configValue: String) {
         self.init(rawValue: configValue.trimmingCharacters(in: .whitespaces).lowercased())
     }
@@ -57,11 +64,17 @@ public enum APNSEnvironment: String, Sendable, Equatable, ConfigDecodable {
 /// The private key is parsed here, into JWTKit's `ES256PrivateKey`, and the
 /// PEM is not kept. `description` names everything but the key.
 public struct APNSConfiguration: Sendable, CustomStringConvertible {
+    /// The signing key's id; the provider token's `kid`.
     public let keyID: String
+    /// The team id; the provider token's `iss`.
     public let teamID: String
+    /// The parsed `.p8` key the provider token is signed with.
     public let privateKey: ES256PrivateKey
+    /// The default `apns-topic`, the app's bundle identifier.
     public let topic: String
+    /// Which gateway, when `endpoint` is nil.
     public let environment: APNSEnvironment
+    /// The limit on one request, connection included.
     public let requestTimeout: Duration
     /// Set when `apns.endpoint` names a gateway other than Apple's.
     public let endpoint: URL?
@@ -76,8 +89,11 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
         return "https://\(environment.host)"
     }
 
+    /// What an absent key means.
     public enum Defaults {
+        /// ``APNSEnvironment/production``.
         public static let environment = APNSEnvironment.production
+        /// Ten seconds.
         public static let requestTimeout: Duration = .seconds(10)
     }
 
@@ -90,6 +106,9 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
     ///   - environment: Production or sandbox.
     ///   - requestTimeout: One request, connection included.
     ///   - endpoint: A gateway other than Apple's; see `apns.endpoint`.
+    ///     `https`, or `http` on a loopback host.
+    /// - Throws: ``APNSConfigurationError`` for an empty id or topic, a
+    ///   non-positive timeout, an unusable key, or an insecure endpoint.
     public init(
         keyID: String,
         teamID: String,
@@ -178,15 +197,22 @@ public struct APNSConfiguration: Sendable, CustomStringConvertible {
 
 /// An `apns.*` value that cannot be used. Thrown at composition.
 public enum APNSConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// Neither `apns.private-key` nor `apns.private-key-path` is set.
     case missingPrivateKey
+    /// Both are set.
     case bothPrivateKeySources
+    /// `apns.private-key-path` names a file that could not be read.
     case unreadablePrivateKeyFile(path: String, reason: String)
+    /// The key is not a PEM-encoded P-256 private key.
     case invalidPrivateKey(reason: String)
+    /// This key is set to an empty string.
     case emptyValue(key: String)
+    /// `apns.request-timeout` is zero or negative.
     case nonPositiveTimeout(Duration)
     /// `apns.endpoint` is not a URL, or is plain `http` off loopback.
     case insecureEndpoint(String)
 
+    /// Names the key and the fix.
     public var description: String {
         switch self {
         case .missingPrivateKey:

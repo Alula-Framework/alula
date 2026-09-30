@@ -23,3 +23,4 @@ await #expect(throws: APNSError.self) { try await client.send(.alert(body: "hi")
 ## Topics
 
 - ``RecordingAPNSTransport``
+- ``RecordingAPNSTransportError``

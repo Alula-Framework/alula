@@ -13,6 +13,7 @@ gateway's answer into an ``APNSReceipt`` or an ``APNSError``:
 @Service
 struct Notifier {
     @Inject var apns: APNSClient
+    @Inject var tokens: DeviceTokenRepository   // the application's own store
 
     func remind(_ token: DeviceToken, registeredAt: Date) async throws {
         do {

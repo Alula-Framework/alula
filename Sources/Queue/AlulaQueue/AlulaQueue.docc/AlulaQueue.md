@@ -37,6 +37,13 @@ renews it while the job is running. If the worker dies, the lease lapses and
 another worker runs the job again. So a handler must be safe to repeat: check
 before sending, write with a unique key, and treat "already done" as done.
 
+Stopping is not a failure. At shutdown the worker stops claiming, lets
+running jobs finish until shortly before the shutdown deadline
+(`lifecycle.shutdown-timeout-seconds`), and then hands
+back whatever is still running: each job returns to the queue due at once,
+with its attempt given back (``QueueStore/handBack(_:attempt:runAt:error:)``),
+so a job stopped on its last attempt still gets that attempt.
+
 The alternative, at most once, is what the scheduler's `.once` offers, and it
 is the wrong trade for work that must happen: a crash there loses the work
 silently.
@@ -54,7 +61,9 @@ discarded rather than retried, because no retry will change it.
 
 With no store configured, jobs live in memory. That is fine in development
 and tests, and anywhere else ``AlulaQueueModule`` warns at startup that a
-restart loses every waiting job. alula-data's `AlulaQueuePostgresModule` keeps
+restart loses every waiting job. "Development and tests" means a declared
+environment, `ALULA_ENV` set to `dev`, `development`, `test` or `local`: an
+unset `ALULA_ENV` warns, since it may be a production box that forgot it. alula-data's `AlulaQueuePostgresModule` keeps
 them in Postgres, and can enqueue inside the same transaction as the change
 that caused the job.
 
@@ -92,3 +101,8 @@ that caused the job.
 - ``ClaimedJob``
 - ``QueuedJobID``
 - ``QueueCounts``
+
+### Telemetry
+
+- ``QueueEvents``
+- ``QueueMetrics``

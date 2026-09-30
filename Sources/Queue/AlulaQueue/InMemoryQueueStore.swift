@@ -6,11 +6,12 @@ import Synchronization
 /// **Not durable.** Jobs are gone when the process exits, and a second
 /// process has its own. That is right for development and tests and wrong
 /// for anything whose work must survive a deploy — which is why
-/// ``AlulaQueueModule`` warns when it falls back to this outside development.
-/// alula-data's `PostgresQueueStore` is the durable one.
+/// ``AlulaQueueModule`` warns when it falls back to this anywhere but a
+/// declared development or test environment (`ALULA_ENV=dev`, say; an unset
+/// `ALULA_ENV` warns). alula-data's `PostgresQueueStore` is the durable one.
 ///
 /// It keeps the full ``QueueStore`` contract (atomic claim, lease expiry,
-/// attempt fencing, uniqueness), so behaviour tested against it holds against
+/// attempt fencing, uniqueness, and `handBack` giving the attempt back), so behaviour tested against it holds against
 /// a durable store.
 public final class InMemoryQueueStore: QueueStore {
     enum State: Sendable, Equatable {
@@ -29,6 +30,7 @@ public final class InMemoryQueueStore: QueueStore {
 
     private let entries = Mutex<[QueuedJobID: Entry]>([:])
 
+    /// An empty store.
     public init() {}
 
     public func enqueue(_ job: NewQueuedJob) async throws -> EnqueueResult {

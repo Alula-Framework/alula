@@ -21,6 +21,7 @@ public struct EnqueueOptions: Sendable, Equatable {
     /// discarded on its first claim without running.
     public var maxAttempts: Int?
 
+    /// Options; the defaults change nothing the job's type says.
     public init(
         delay: Duration? = nil, runAt: Date? = nil, priority: Int = 0, uniqueKey: String? = nil,
         queue: String? = nil, maxAttempts: Int? = nil
@@ -50,10 +51,15 @@ public struct EnqueueOptions: Sendable, Equatable {
 /// ``AlulaQueueModule`` provides it. Enqueueing writes to the store and
 /// returns; a worker — in this process or another — runs the job.
 public struct JobQueue: Sendable {
+    /// Where jobs are written, and where the worker claims them from.
     public let store: any QueueStore
     let now: @Sendable () -> Date
     let wake: QueueWakeup
 
+    /// A queue over `store`. `now` is the application's clock, which stamps
+    /// `enqueuedAt` and resolves `EnqueueOptions.delay`; a test passes its own.
+    /// ``AlulaQueueModule`` builds the application's; build one directly only
+    /// in a test or a tool.
     public init(store: any QueueStore, now: @escaping @Sendable () -> Date = { Date() }) {
         self.init(store: store, now: now, wake: QueueWakeup())
     }

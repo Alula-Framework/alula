@@ -20,7 +20,11 @@ import Synchronization
 /// in the order a worker would, until none is. A retry is due only once the
 /// test has advanced the clock past it.
 public final class QueueTestHarness: Sendable {
+    /// The store behind ``queue``: read it for `counts(queue:)`, or enqueue
+    /// into it directly.
     public let store: InMemoryQueueStore
+    /// The queue to give the code under test. Enqueues through it are
+    /// stamped with the harness's clock.
     public let queue: JobQueue
     private let handlers: [String: QueueHandler]
     private let clock: TestClock
@@ -47,8 +51,12 @@ public final class QueueTestHarness: Sendable {
         self.queue = JobQueue(store: store, now: { clock.now })
     }
 
+    /// The harness's clock. It starts at `start` and moves only when
+    /// ``advance(by:)`` moves it.
     public var now: Date { clock.now }
 
+    /// Moves the clock forward, so jobs scheduled or backing off until then
+    /// become due for the next ``drain(limit:)``.
     public func advance(by duration: Duration) {
         clock.value.withLock { $0 = $0.addingTimeInterval(duration.inSeconds) }
     }

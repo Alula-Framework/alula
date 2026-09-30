@@ -36,7 +36,11 @@ python3 CI/check-diagnostic-quotes.py --docs README.md Docs Diagnostics Sources 
 
 The last one fails when documentation quotes a diagnostic whose wording has
 since changed: every run of three or more fixed words in a quoted
-`[ALU-…]` message must still appear in `Sources`.
+`[ALU-…]` message must still appear in `Sources`. CI also builds
+alula-data and the alula-cli starter templates against the commit, and runs
+`python3 CI/docs-report.py --docs README.md Docs`, an advisory list of
+undocumented public declarations, paraphrase-only comments and doc pins
+behind the latest release.
 
 The documentation job builds every DocC catalog with `--warnings-as-errors`;
 run it as `.github/workflows/ci.yml`'s `docs` job does, with
@@ -46,6 +50,14 @@ undocumented parameter or a cross-module ``double-backtick`` link fails it.
 The consumer checks and the docs plugin rewrite `Package.resolved` and
 `CI/lean-consumer/Package.resolved`; revert them rather than committing the
 churn.
+
+### Documentation
+
+Readers use the README, `Docs/*.md`, Xcode quick help, and the DocC reference
+Fledge publishes weekly. `Docs/README.md` indexes the guides by concept, so a
+new page gets a line there. Code in a guide should compile against the
+current release; the API shapes a guide shows belong in a `Snippets/` file,
+which `swift build --enable-all-traits` compiles.
 
 ### Diagnostics
 
@@ -75,8 +87,11 @@ construction at composition catches the rest during startup — every component
 is built once, up front, so nothing is left to fail for wiring reasons at
 request time.
 
-**Composition will not wire a data race.** A singleton is shared across every
-task in the process, so it must be `Sendable`, and the compiler enforces it.
+**Components are `Sendable`.** A singleton is shared across every task in the
+process, so it must be `Sendable`. The compiler checks this only where
+something `Sendable` stores the component (a controller's route closure, for
+one); `@Service` adds no conformance, so declare it. See
+[Docs/core.md](Docs/core.md#components-should-be-sendable).
 
 **Traps are for programmer errors that cannot be recovered from.** Runtime code
 may not crash on input, configuration or a dependency's state; every
@@ -96,5 +111,5 @@ change.
 
 `AlulaRegistrationGenTests` drives the generator end to end: a manifest in, a
 generated file and diagnostics out, with the diagnostics pinned as golden files
-under `Diagnostics/`. That is the contract a broken build would break, so test
+under `Tests/Core/AlulaRegistrationGenTests/Diagnostics/`. That is the contract a broken build would break, so test
 it there rather than through internal functions.

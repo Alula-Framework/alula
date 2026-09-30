@@ -1,7 +1,8 @@
 # What is missing
 
 The still-open gaps across the Alula ecosystem, re-checked against the code
-on 2026-09-28 at alula 0.59.0, alula-data 0.24.0 and hangar 0.16.1. Each
+on 2026-09-28 at alula 0.59.0, alula-data 0.24.0 and hangar 0.16.1, and
+again on 2026-09-30 at alula 0.60.0 (no gap closed in between). Each
 entry says what is absent and roughly how big it is, so the list can be
 argued with rather than just worked through.
 
@@ -103,7 +104,7 @@ point-in-time revocation, and issuing tokens to third parties.
   introspection refuses to describe a composite foreign key. *Medium, and
   nobody has asked.*
 
-### alula-web
+### alula: Web
 
 - **No HTTP/2 or HTTP/3.** The transport serves HTTP/1.1 only. On one
   Hummingbird listener, HTTP/2 and WebSockets are mutually exclusive: there is
@@ -119,7 +120,7 @@ point-in-time revocation, and issuing tokens to third parties.
 - No templating or SSR. *Deliberate; out of scope.*
 - No runtime route-registration API. *Deliberate.*
 
-### alula-actuator
+### alula: Actuator
 
 - No live-updating dashboard and no historical metrics. *Deliberate.*
 

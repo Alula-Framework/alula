@@ -472,7 +472,7 @@ final class ModuleVisitor: SyntaxVisitor {
                     // `AlulaSchedulerModule` shipped that way —
                     // `public let status = SchedulerStatus()` — so
                     // `@Inject var scheduler: SchedulerStatus`, which
-                    // Actuator's own documentation shows, could not be
+                    // the scheduler's own documentation shows, could not be
                     // satisfied by any application. Nothing said anything.
                     if let initializer = binding.initializer {
                         // `LabState()` or `LabState.init(…)`: the type the

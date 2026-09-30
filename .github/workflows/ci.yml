@@ -200,7 +200,7 @@ jobs:
                         AlulaPubSub AlulaPubSubTesting AlulaPresence \
                         AlulaPresenceProtocol AlulaPresenceClient \
                         AlulaActuator AlulaSecurityCore AlulaWebTesting \
-                        AlulaTransport AlulaScheduler \
+                        AlulaTransport AlulaScheduler AlulaSchedulerTesting \
                         AlulaSessions AlulaSessionsTesting \
                         AlulaAPNS AlulaAPNSTesting \
                         AlulaRateLimit AlulaRateLimitTesting \

@@ -1702,7 +1702,7 @@ struct GeneratorTests {
         // `AlulaSchedulerModule` shipped as `public let status = SchedulerStatus()`.
         // Matching needs the type as written, so the module provided
         // `SchedulerStatus` in fact and not in the composer's view, and
-        // `@Inject var scheduler: SchedulerStatus` — which Actuator's own
+        // `@Inject var scheduler: SchedulerStatus` — which the scheduler's own
         // documentation shows — could not be satisfied by any application.
         // Nothing said anything, which is the part worth fixing.
         let result = try generate([

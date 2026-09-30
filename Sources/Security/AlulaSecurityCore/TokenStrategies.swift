@@ -99,12 +99,10 @@ public struct AlulaAPIKeyModule: AlulaModule {
         self.tokenStrategies = [validator.strategy]
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaAPIKeyModule takes the application's `any APIKeyStore` in "
-                + "init(configuration:store:). Pass `composedBy: alulaComposeModules` to Alula.run."
-        )
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaAPIKeyModule takes the application's `any APIKeyStore` in init(configuration:store:). Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }
 
 struct APIKeyConfigurationError: Error, CustomStringConvertible {

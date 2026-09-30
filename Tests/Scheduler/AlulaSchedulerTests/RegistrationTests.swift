@@ -31,13 +31,13 @@ struct SchedulerRegistrationTests {
     /// The jobs as values — what the composition root's `alulaScheduledJobs`
     /// collects. `@Scheduler` emits one factory returning them all, built from
     /// a component the caller supplies.
-    private func scheduledJobs() -> [ScheduledJobRegistration] {
-        Jobs._alulaScheduledJobs { Jobs() }
+    private func scheduledJobs() throws -> [ScheduledJobRegistration] {
+        try Jobs._alulaScheduledJobs { Jobs() }
     }
 
     @Test("every @Scheduled method becomes a registration")
     func bothJobsRegister() throws {
-        let jobs = scheduledJobs()
+        let jobs = try scheduledJobs()
         #expect(jobs.count == 2)
         // Names are fully qualified, so two schedulers may share a method name.
         #expect(jobs.allSatisfy { $0.name.contains("Jobs.") })
@@ -45,7 +45,7 @@ struct SchedulerRegistrationTests {
 
     @Test("the default scope is once, and onEveryNode opts out of it")
     func scopes() throws {
-        let jobs = scheduledJobs()
+        let jobs = try scheduledJobs()
         let nightly = try #require(jobs.first { $0.name.hasSuffix(".nightly") })
         let refresh = try #require(jobs.first { $0.name.hasSuffix(".refresh") })
         #expect(nightly.scope == .once, "a job that says nothing must run once")
@@ -54,7 +54,7 @@ struct SchedulerRegistrationTests {
 
     @Test("a cron job carries its parsed expression and time zone")
     func cronTrigger() throws {
-        let jobs = scheduledJobs()
+        let jobs = try scheduledJobs()
         let nightly = try #require(jobs.first { $0.name.hasSuffix(".nightly") })
         guard case .cron(let expression, let zone) = nightly.trigger else {
             Issue.record("expected a cron trigger"); return
@@ -69,7 +69,7 @@ struct SchedulerRegistrationTests {
 
     @Test("an interval job carries its period")
     func intervalTrigger() throws {
-        let jobs = scheduledJobs()
+        let jobs = try scheduledJobs()
         let refresh = try #require(jobs.first { $0.name.hasSuffix(".refresh") })
         guard case .interval(let period, _) = refresh.trigger else {
             Issue.record("expected an interval trigger"); return
@@ -80,7 +80,7 @@ struct SchedulerRegistrationTests {
     @Test("running a registration calls the method")
     func runCallsTheMethod() async throws {
         Jobs.ran.withLock { $0.removeAll() }
-        let jobs = scheduledJobs()
+        let jobs = try scheduledJobs()
         for job in jobs { try await job.run() }
         #expect(Jobs.ran.withLock { $0.sorted() } == ["nightly", "refresh"])
     }
@@ -89,7 +89,7 @@ struct SchedulerRegistrationTests {
     func handRegistered() throws {
         // A job declared as a plain value, the way a module contributes one
         // that isn't attached to a `@Scheduler` type.
-        var all = scheduledJobs()
+        var all = try scheduledJobs()
         all.append(
             ScheduledJobRegistration(
                 name: "reconcile",

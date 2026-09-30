@@ -85,7 +85,7 @@ struct EndToEndTests {
         ])
         let oidc = try InMemoryOIDCModule(
             configuration: configuration, source: source, clock: clock)
-        let security = AlulaSecurityModule(validator: oidc.tokenValidator)
+        let security = try AlulaSecurityModule(validator: oidc.tokenValidator)
         // The routes and the security middleware are values the composition
         // root hands AlulaWebModule; a client that must run them is handed
         // them too.
@@ -228,7 +228,7 @@ struct DeclarativeRoleTests {
         ])
         let oidc = try InMemoryOIDCModule(
             configuration: configuration, source: source, clock: clock)
-        let security = AlulaSecurityModule(validator: oidc.tokenValidator)
+        let security = try AlulaSecurityModule(validator: oidc.tokenValidator)
         return try TestClient(
             routes: DeclaredRolesController.alulaRoutes { _ in DeclaredRolesController() },
             middleware: security.middleware)

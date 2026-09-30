@@ -86,11 +86,8 @@ public struct AlulaHTTPClientModule: AlulaModule {
             transport: AsyncHTTPTransport(), policy: try OutboundHTTPPolicy(configuration: configuration))
     }
 
-    /// Traps: this module needs its configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaHTTPClientModule takes its configuration in init(configuration:), so it cannot be "
-                + "instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaHTTPClientModule takes its configuration in init(configuration:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }

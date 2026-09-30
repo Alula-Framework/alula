@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaDiagnostics
 import Foundation
 import Logging
 import Synchronization
@@ -215,5 +216,21 @@ struct SchedulerStatusTests {
             ).fire(scheduledFor: epoch)
         }
         #expect(status.snapshot().map(\.name) == ["alpha", "middle", "zeta"])
+    }
+
+    @Test("a time zone this machine lacks is ALU-SCHED-9001 at startup, naming the job")
+    func unknownTimeZoneIsCoded() throws {
+        // What the `@Scheduler` factory throws when the deployment's time
+        // zone database disagrees with the build machine's. It used to be
+        // reached through `try!`, so the report was a trap and a backtrace.
+        let error = try #require(
+            throws: SchedulerStartupError.self,
+            performing: { try _alulaTimeZone("Nowhere/Atlantis", job: "App.Jobs.nightly") })
+        let diagnostic: any StartupDiagnostic = error
+        let code = try #require(diagnostic.diagnosticCode)
+        #expect(Diagnostic(code, diagnostic.startupDiagnostic, at: nil).rendered.contains("[ALU-SCHED-9001]"))
+        #expect(diagnostic.startupDiagnostic.contains("App.Jobs.nightly"))
+        #expect(diagnostic.startupDiagnostic.contains("\"Nowhere/Atlantis\""))
+        #expect(try _alulaTimeZone("Europe/London", job: "App.Jobs.nightly").identifier == "Europe/London")
     }
 }

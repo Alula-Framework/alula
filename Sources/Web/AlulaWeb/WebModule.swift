@@ -137,14 +137,10 @@ public final class AlulaWebModule<Transport: ServerTransport>: AlulaModule, @unc
             logger: Logger(label: "alula.web"))
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaWebModule takes its configuration and the application's routes in "
-                + "init(configuration:routes:middleware:assetMounts:), so it cannot be "
-                + "instantiated from its type. Pass `composedBy: alulaComposeModules` to "
-                + "Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaWebModule takes its configuration and the application's routes in init(configuration:routes:middleware:assetMounts:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 
     public var service: (any Service)? {
         WebHostService<Transport>(dispatch: dispatch, configuration: configuration)

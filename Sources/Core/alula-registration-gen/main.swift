@@ -323,6 +323,22 @@ final class ModuleVisitor: SyntaxVisitor {
         return isApplicationModule
     }
 
+    /// Whether an initializer is `@available(*, unavailable…)`. A framework
+    /// module marks its `init()` so, to say "compose me". Counted as a
+    /// candidate it is always satisfiable, so a module whose real
+    /// initializer lacked a value was composed through it: a trap at startup
+    /// (a compile error, once marked) where ALU-LIFE-8002 belonged.
+    private func isUnavailable(_ attributes: AttributeListSyntax) -> Bool {
+        attributes.contains { element in
+            guard let attribute = element.as(AttributeSyntax.self),
+                  attribute.attributeName.trimmedDescription == "available",
+                  let arguments = attribute.arguments?.as(AvailabilityArgumentListSyntax.self)
+            else { return false }
+            let tokens = arguments.map { $0.argument.trimmedDescription }
+            return tokens.first == "*" && tokens.contains("unavailable")
+        }
+    }
+
     /// Whether this is the application target the composition root is
     /// generated into.
     let isApplicationModule: Bool
@@ -427,7 +443,8 @@ final class ModuleVisitor: SyntaxVisitor {
         var initializers: [(labels: [String], types: [String], defaulted: [Bool], throws: Bool)] = []
         for member in members.members {
             guard let initializer = member.decl.as(InitializerDeclSyntax.self),
-                  isCallableFromCompositionRoot(initializer.modifiers)
+                  isCallableFromCompositionRoot(initializer.modifiers),
+                  !isUnavailable(initializer.attributes)
             else { continue }
             let parameters = initializer.signature.parameterClause.parameters
             initializers.append(
@@ -2616,81 +2633,88 @@ func emitAlulaGraph(into out: inout String) {
     // supplies is *how the controller is obtained* — a closure that constructs
     // the controller from the graph on every request, so a controller's
     // per-request state stays per request.
-    guard !routes.isEmpty else { return }
-    let componentsByName = Dictionary(
-        registrable.map { (baseName($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
+    // Not a guard: a target with scheduled jobs and no routes — a worker —
+    // still needs `alulaScheduledJobs`, below. Returning here left its
+    // scheduler composed with no jobs, silently.
+    if !routes.isEmpty {
+        let componentsByName = Dictionary(
+            registrable.map { (baseName($0.typeName), $0) }, uniquingKeysWith: { a, _ in a })
 
-    out += "\n"
-    out += "/// Every route this target declares, with its controller\n"
-    out += "/// constructed per request from ``AlulaGraph`` rather than\n"
-    out += "/// resolved once.\n"
-    out += "///\n"
-    out += "/// A value, handed to `AlulaWebModule` by the composition root\n"
-    out += "/// alongside whatever routes other modules declare. The controllers\n"
-    out += "/// themselves are scanned components, so they still show on an\n"
-    out += "/// Actuator dashboard; only their routes flow through here.\n"
-    emittedRouteValues = true
-    if !terminalSupplied.isEmpty {
+        out += "\n"
+        out += "/// Every route this target declares, with its controller\n"
+        out += "/// constructed per request from ``AlulaGraph`` rather than\n"
+        out += "/// resolved once.\n"
         out += "///\n"
-        out += "/// The extra parameters are values only a *controller* needs —\n"
-        out += "/// no stored component shares them, so they are not graph\n"
-        out += "/// properties. Keeping them here is what lets a module provide\n"
-        out += "/// one *and* be built from the graph.\n"
-    }
-    let terminalParameters =
-        terminalSupplied.map {
-            ", \(suppliedBinding($0.type, from: $0.from)): \($0.type)"
-        }.joined()
-    out += "func alulaRoutes(_ graph: AlulaGraph\(terminalParameters))\n"
-    out += "    -> [AlulaWeb.RouteRegistration]\n"
-    out += "{\n"
-    out += "    [\n"
-    for route in routes {
-        guard let controller = componentsByName[baseName(route.controllerTypeName)] else { continue }
-        let type = qualified(controller)
-        var arguments: [String] = []
-        if !controller.configValues.isEmpty {
-            arguments.append("_alulaConfiguration: graph.configuration")
+        out += "/// A value, handed to `AlulaWebModule` by the composition root\n"
+        out += "/// alongside whatever routes other modules declare. The controllers\n"
+        out += "/// themselves are scanned components, so they still show on an\n"
+        out += "/// Actuator dashboard; only their routes flow through here.\n"
+        emittedRouteValues = true
+        if !terminalSupplied.isEmpty {
+            out += "///\n"
+            out += "/// The extra parameters are values only a *controller* needs —\n"
+            out += "/// no stored component shares them, so they are not graph\n"
+            out += "/// properties. Keeping them here is what lets a module provide\n"
+            out += "/// one *and* be built from the graph.\n"
         }
-        let edges = controller.dependencyOrder
-        for edge in edges {
-            let rootName = suppliedBinding(edge.type, from: edge.from)
-            if let source = provider(of: edge.type) {
-                arguments.append("\(edge.label): graph.\(binding(source))")
-            } else if terminalSupplied.contains(where: {
-                rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
-            }) {
-                arguments.append("\(edge.label): \(rootName)")
-            } else {
-                arguments.append("\(edge.label): graph.\(rootName)")
+        let terminalParameters =
+            terminalSupplied.map {
+                ", \(suppliedBinding($0.type, from: $0.from)): \($0.type)"
+            }.joined()
+        out += "func alulaRoutes(_ graph: AlulaGraph\(terminalParameters))\n"
+        out += "    -> [AlulaWeb.RouteRegistration]\n"
+        out += "{\n"
+        out += "    [\n"
+        for route in routes {
+            guard let controller = componentsByName[baseName(route.controllerTypeName)] else { continue }
+            let type = qualified(controller)
+            var arguments: [String] = []
+            if !controller.configValues.isEmpty {
+                arguments.append("_alulaConfiguration: graph.configuration")
             }
+            let edges = controller.dependencyOrder
+            for edge in edges {
+                let rootName = suppliedBinding(edge.type, from: edge.from)
+                if let source = provider(of: edge.type) {
+                    arguments.append("\(edge.label): graph.\(binding(source))")
+                } else if terminalSupplied.contains(where: {
+                    rootKey($0.type, $0.from) == rootKey(edge.type, edge.from)
+                }) {
+                    arguments.append("\(edge.label): \(rootName)")
+                } else {
+                    arguments.append("\(edge.label): graph.\(rootName)")
+                }
+            }
+            let construction =
+                "\(controller.configValues.isEmpty ? "" : "try ")\(type)(\(arguments.joined(separator: ", ")))"
+            let factory = "_alulaRoute_\(route.methodName)_\(route.indexInController)"
+            out += "        \(type).\(factory) { _ in \(construction) },\n"
         }
-        let construction =
-            "\(controller.configValues.isEmpty ? "" : "try ")\(type)(\(arguments.joined(separator: ", ")))"
-        let factory = "_alulaRoute_\(route.methodName)_\(route.indexInController)"
-        out += "        \(type).\(factory) { _ in \(construction) },\n"
+        out += "    ]\n"
+        out += "}\n"
     }
-    out += "    ]\n"
-    out += "}\n"
 
     // Scheduled jobs, the same way: the macro generated a value form beside
     // its registration form, and this closes it over the component the graph
-    // built at composition rather than one resolved when the job fires.
+    // built at composition rather than one resolved when the job fires. It
+    // throws when a job's time zone is missing from this machine's database,
+    // which the composer passes on to `Alula.run` as ALU-SCHED-9001.
     let schedulers = ordered.filter { $0.attributeName == "Scheduler" }
     guard !schedulers.isEmpty else { return }
     emittedScheduledJobValues = true
     out += "\n"
     out += "/// Every scheduled job this target declares, bound to the\n"
     out += "/// components ``AlulaGraph`` already built.\n"
-    out += "func alulaScheduledJobs(_ graph: AlulaGraph)\n"
+    out += "func alulaScheduledJobs(_ graph: AlulaGraph) throws\n"
     out += "    -> [AlulaScheduler.ScheduledJobRegistration]\n"
     out += "{\n"
+    out += "    try "
     for scheduler in schedulers {
         out +=
-            "    \(qualified(scheduler))._alulaScheduledJobs { graph.\(binding(scheduler)) }\n"
-        out += "        + \n"
+            "\(qualified(scheduler))._alulaScheduledJobs { graph.\(binding(scheduler)) }\n"
+        out += "        + "
     }
-    out = String(out.dropLast("        + \n".count)) + "}\n"
+    out = String(out.dropLast("        + ".count)) + "}\n"
 }
 
 // MARK: - The composition root
@@ -3106,7 +3130,9 @@ func emitComposer(into out: inout String) {
             }
             if emittedScheduledJobValues, providedTypeKey(element) == "ScheduledJobRegistration" {
                 needed.insert("AlulaGraph")
-                expressions.append("alulaScheduledJobs(alulaGraph)")
+                // Parenthesized: `try` may not follow `+` bare, and other
+                // contributions can precede this one.
+                expressions.append("(try alulaScheduledJobs(alulaGraph))")
             }
             if emittedComponentDescriptors, providedTypeKey(element) == "ComponentDescriptor" {
                 expressions.append("alulaComponentDescriptors()")

@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaDiagnostics
 import AlulaWeb
 import AlulaWebTesting
 import Foundation
@@ -84,7 +85,7 @@ struct ModuleTests {
     func securityModuleRegistersAuthenticationOnly() throws {
         // Declared as values now: the composition root hands them to
         // AlulaWebModule alongside every other module's.
-        let module = AlulaSecurityModule(validator: StubValidator(principalsByToken: [:]))
+        let module = try AlulaSecurityModule(validator: StubValidator(principalsByToken: [:]))
 
         // The principal needs no registration at all: it rides
         // `RequestContext.identity` as a typed value the authentication
@@ -95,6 +96,21 @@ struct ModuleTests {
             Set(module.middleware.map(\.lane)) == [.default, .authentication, .authenticated])
 
         #expect(module.service == nil, "JWKS maintenance belongs to AlulaOIDCModule")
+    }
+
+    @Test("no validator, no strategies and no sessions stops the start with ALU-SEC-6003")
+    func nothingAuthenticatesIsCoded() throws {
+        // This was a `precondition`: the documented "composition stops at
+        // startup saying so" was a trap and a backtrace, not a report.
+        let error = try #require(throws: NothingAuthenticatesError.self) {
+            try AlulaSecurityModule(validator: nil)
+        }
+        let diagnostic: any StartupDiagnostic = error
+        let code = try #require(diagnostic.diagnosticCode)
+        let rendered = Diagnostic(code, diagnostic.startupDiagnostic, at: nil).rendered
+        #expect(rendered.contains("[ALU-SEC-6003]"))
+        #expect(rendered.contains("AlulaOIDCModule"))
+        #expect(rendered.contains("AlulaSessionsModule"))
     }
 
     @Test("AlulaOIDCModule supplies the validator and owns JWKS maintenance")
@@ -109,7 +125,7 @@ struct ModuleTests {
         // And the security module built from that validator declares its
         // middleware.
         #expect(
-            AlulaSecurityModule(validator: oidc.tokenValidator).middleware
+            try AlulaSecurityModule(validator: oidc.tokenValidator).middleware
                 .contains { $0.name.contains("Authentication") }
         )
     }
@@ -137,7 +153,7 @@ struct ModuleTests {
         // security.oidc.* configuration is demanded when AlulaOIDCModule is
         // not composed. "No validator" is not a state the module can reach:
         // the initializer requires one.
-        let security = AlulaSecurityModule(validator: stub)
+        let security = try AlulaSecurityModule(validator: stub)
         #expect(
             security.middleware.contains { $0.name.contains("Authentication") },
             "middleware still declared"

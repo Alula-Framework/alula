@@ -528,6 +528,7 @@ let package = Package(
             dependencies: [
                 "AlulaCore",
                 "AlulaCronCore",
+                "AlulaDiagnostics",
                 "AlulaSchedulerMacrosImpl",
                 "AlulaSupport",
                 .product(name: "Logging", package: "swift-log"),
@@ -712,7 +713,7 @@ let package = Package(
         .target(
             name: "AlulaSecurityCore",
             dependencies: [
-                "AlulaCore", "AlulaSessions", "AlulaRateLimit", "AlulaSupport",
+                "AlulaCore", "AlulaDiagnostics", "AlulaSessions", "AlulaRateLimit", "AlulaSupport",
                 "AlulaSupportFoundation",
                 .product(name: "TelemetryMacros", package: "swift-telemetry", condition: .when(traits: ["Security"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Security"])),
@@ -1054,7 +1055,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AlulaSchedulerTests",
-            dependencies: ["AlulaScheduler", "AlulaSchedulerTesting"],
+            dependencies: ["AlulaDiagnostics", "AlulaScheduler", "AlulaSchedulerTesting"],
             path: "Tests/Scheduler/AlulaSchedulerTests"
         ),
         .testTarget(
@@ -1082,6 +1083,7 @@ let package = Package(
         .testTarget(
             name: "AlulaSecurityCoreTests",
             dependencies: [
+                "AlulaDiagnostics",
                 .target(name: "AlulaSecurityCore", condition: .when(traits: ["Security"])),
                 .product(name: "TelemetryCore", package: "swift-telemetry", condition: .when(traits: ["Security"])),
                 .product(name: "TelemetryTesting", package: "swift-telemetry", condition: .when(traits: ["Security"])),

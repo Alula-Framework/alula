@@ -4,6 +4,60 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **ALU-SEC-6003: the security module has no way to authenticate anyone.**
+  `AlulaSecurityModule` with no token validator, no token strategies and no
+  sessions now stops the start with this code and a message naming the
+  modules to list.
+
+### Fixed
+
+- **`AlulaSecurityModule` with nothing to authenticate with no longer
+  crashes.** Its documentation promised that composition "stops at startup
+  saying so". It trapped in a `precondition` with a backtrace instead. Its
+  initializer now throws `NothingAuthenticatesError`, which `Alula.run`
+  reports as ALU-SEC-6003 and exits 1. **Breaking for hand-built modules:**
+  `init(validator:tokenStrategies:sessions:)` throws, so a direct call needs
+  `try`. Generated compositions are unaffected.
+- **An unknown `@Scheduled` time zone no longer crashes composition.** The
+  macro checks the zone against the build machine's time zone database. The
+  expansion then resolved it again with `try!`, so a deployment whose
+  database lacked the zone (an image without `tzdata`) trapped at startup.
+  The expansion now uses `try`, and `_alulaScheduledJobs` and the generated
+  `alulaScheduledJobs(_:)` throw. `SchedulerStartupError` conforms to
+  `StartupDiagnostic`, so `Alula.run` reports `unknownTimeZone` as
+  ALU-SCHED-9001, naming the job, and exits 1.
+- **Scheduled jobs in a target with no routes are scheduled.** The generator
+  emitted `alulaScheduledJobs(_:)` only after emitting routes, and returned
+  early when there were none. A worker application with `@Scheduler` jobs and
+  no controllers composed `AlulaSchedulerModule` with no jobs, and said
+  nothing.
+- **A framework module that cannot be composed is a build error, not a
+  startup trap.** Twenty framework modules (`AlulaWebModule`,
+  `AlulaSessionsModule`, `AlulaOpenAPIModule`, `AlulaSecurityModule`,
+  `AlulaOIDCModule`, `AlulaAPIKeyModule`, the sign-in modules and others)
+  declared a public `init()` whose body was `preconditionFailure("…compose
+  it…")`. `AlulaModule` does not require `init()`. Since 0.60.0 the composer
+  counts every public initializer of a module from another package, and
+  `init()` is always satisfiable. So when a module's real initializer lacked
+  a value, the composer built it through `init()`: no ALU-LIFE-8002 at build
+  time, and a trap at startup. These initializers are now
+  `@available(*, unavailable, message:)` with the same message, and the
+  composer ignores unavailable initializers. A hand-written `AlulaWebModule()`
+  is now a compile error that says how to build the module. Before, it
+  crashed at runtime.
+- **The Swift channel client no longer handles an inbound `alula:close`.**
+  The server never sends one. It ends a socket with a WebSocket close code.
+  The client treated an inbound `alula:close` as a terminal disconnect: a
+  second way to end a session, untested, and not shared by the JavaScript
+  client. It is now ignored like the other events the server never
+  initiates. Every server close (`1000`, `1001`, `4000`, `4400`, `4408`,
+  `4410`) is a drop, handled by the reconnect policy, and a test pins each
+  code. The outbound `alula:close` sent by `disconnect()` is unchanged.
+
 ## [0.60.0] - 2026-09-28
 
 A subtraction release: less to learn, nothing a working application needs

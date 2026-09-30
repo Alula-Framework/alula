@@ -185,15 +185,10 @@ public struct AlulaTelemetryModule: AlulaModule {
         self.service = TelemetryAttachments(tokens, late: late)
     }
 
-    /// Traps: this module needs its configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaTelemetryModule takes its configuration in init(configuration:metrics:), so "
-                + "it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` "
-                + "to Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaTelemetryModule takes its configuration in init(configuration:metrics:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 
     /// This module's own metrics (the telemetry runtime's failures,
     /// counted), and the job queue's. The queue's are here rather

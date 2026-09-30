@@ -439,9 +439,10 @@ List it alongside `AlulaSecurityModule` — **order does not matter**, and no
 `security.oidc.*` configuration is required when `AlulaOIDCModule` isn't
 listed.
 
-With neither, there is no `(any TokenValidator)` to supply, and
-`AlulaSecurityModule` cannot be built — its initializer requires one, so
-composition fails at startup, naming the type.
+A validator is optional when something else authenticates: token strategies
+(`AlulaAPIKeyModule`), or sessions with a sign-in module. With none of the
+three, nobody could ever be authenticated, and the start stops with
+ALU-SEC-6003, naming the modules to list.
 
 > **Changed.** Previously `AlulaSecurityModule` registered OIDC *unless* it
 > found that you had already registered your own, by scanning the container.

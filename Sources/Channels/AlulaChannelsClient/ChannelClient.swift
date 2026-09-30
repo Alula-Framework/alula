@@ -386,14 +386,12 @@ public actor ChannelClient {
                 // message stream so the application can react.
                 deliver(envelope, topic: envelope.topic)
             }
-        case .close:
-            // Treated as terminal, no reconnect. The Alula server never
-            // sends `alula:close` — it ends a socket with a WebSocket close
-            // frame — so this is reached only by another server speaking
-            // the protocol.
-            Task { await self.disconnect() }
-        case .join, .leave, .heartbeat:
-            break // server never initiates these; tolerate and ignore
+        case .join, .leave, .heartbeat, .close:
+            // The server never initiates these; tolerate and ignore. It ends
+            // a socket with a WebSocket close frame, not `alula:close`, and
+            // the read loop's end is what `connectionEnded` handles, for
+            // every close code alike.
+            break
         case nil:
             deliver(envelope, topic: envelope.topic)
         }

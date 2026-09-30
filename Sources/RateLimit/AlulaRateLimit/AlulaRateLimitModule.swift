@@ -69,15 +69,10 @@ public struct AlulaRateLimitModule: AlulaModule {
         self.limiter = RateLimiter(store: store ?? InMemoryRateLimitStore(maxEntries: maxEntries))
     }
 
-    /// Traps: this module needs its configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaRateLimitModule takes its configuration in init(configuration:store:), so it "
-                + "cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` "
-                + "to Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaRateLimitModule takes its configuration in init(configuration:store:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 }
 
 /// A `rate-limit.*` value that cannot be used. Thrown at composition.

@@ -239,14 +239,10 @@ public struct AlulaMailModule: AlulaModule {
         self.mailer = Mailer(transport: LoggingMailTransport(logBody: logBody), defaultFrom: from)
     }
 
-    /// Traps: this module needs its configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaMailModule takes its configuration in init(configuration:transport:), so it "
-                + "cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` "
-                + "to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaMailModule takes its configuration in init(configuration:transport:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }
 
 /// Why ``AlulaMailModule`` refused to compose.

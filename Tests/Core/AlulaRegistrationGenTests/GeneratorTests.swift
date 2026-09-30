@@ -1227,6 +1227,45 @@ struct GeneratorTests {
         #expect(result.generated.contains("KitModule()"), "\(result.generated)")
     }
 
+    @Test("an unavailable init() is not a fallback that hides an unsatisfiable module")
+    func unavailableInitializerIgnored() throws {
+        // Framework modules kept a public `init()` whose body was
+        // `preconditionFailure("… compose with alulaComposeModules")`. Since
+        // 0.60.0 every public initializer is a candidate, and `init()` is
+        // always satisfiable, so a module whose real initializer lacked a
+        // value composed through it: no ALU-LIFE-8002 at build time, a trap
+        // at startup. Marked unavailable, it is no candidate at all.
+        let result = try generate(
+            [
+                "Main.swift": """
+                import AlulaCore
+                import Kit
+                @main struct Main {
+                static func main() async {
+                await Alula.run(configuration: Configuration.load(), modules: [KitModule.self])
+                }
+                }
+                """
+            ],
+            dependencyModules: [
+                "Kit": [
+                    "Kit.swift": """
+                    import AlulaCore
+                    public struct Warehouse {}
+                    public struct KitModule: AlulaModule {
+                    public init(warehouse: Warehouse) {}
+                    @available(*, unavailable, message: "KitModule takes a Warehouse; compose it")
+                    public init() { fatalError() }
+                    }
+                    """
+                ]
+            ])
+        #expect(result.exitCode != 0)
+        #expect(result.diagnostics.contains("[ALU-LIFE-8002]"), "\(result.diagnostics)")
+        #expect(result.diagnostics.contains("init(warehouse:) needs:"), "\(result.diagnostics)")
+        #expect(!result.generated.contains("KitModule()"), "\(result.generated)")
+    }
+
     @Test("a module's property is wired into another module's parameter")
     func composerWiresProvidedProperties() throws {
         // The adapter shape: the provider declares no dependency on the
@@ -1300,6 +1339,45 @@ struct GeneratorTests {
         let chat = try #require(result.generated.range(of: "let chatModule ="))
         let channels = try #require(result.generated.range(of: "let alulaChannelsModule ="))
         #expect(chat.lowerBound < channels.lowerBound)
+    }
+
+    @Test("scheduled jobs are built with try, so an unknown time zone is a thrown error")
+    func scheduledJobsThrow() throws {
+        // `@Scheduler` resolves each job's time zone at composition, where
+        // the deployment's database may lack one the build machine had. The
+        // factory throws rather than trapping, so this chain has to carry
+        // the `try` through to the module that collects the jobs, even with
+        // another contribution after it.
+        let result = try generate([
+            "Main.swift": """
+            import AlulaScheduler
+            @Scheduler struct Nightly: Sendable {
+            @Scheduled("0 0 3 * * *", timeZone: "Europe/London") func run() {}
+            }
+            @Scheduler struct Hourly: Sendable {
+            @Scheduled("0 0 * * * *") func run() {}
+            }
+            struct ExtraJobsModule: AlulaModule {
+            let jobs: [ScheduledJobRegistration]
+            }
+            struct AlulaSchedulerModule: AlulaModule {
+            init(jobs: [ScheduledJobRegistration] = []) {}
+            }
+            @main struct Main {
+            static func main() async {
+            await Alula.run(configuration: .load(), modules: [AlulaSchedulerModule.self, ExtraJobsModule.self])
+            }
+            }
+            """
+        ])
+        #expect(result.exitCode == 0, "\(result.diagnostics)")
+        #expect(result.generated.contains("func alulaScheduledJobs(_ graph: AlulaGraph) throws\n"))
+        #expect(result.generated.contains("    try Nightly._alulaScheduledJobs { graph.nightly }\n        + Hourly._alulaScheduledJobs { graph.hourly }\n}"), "\(result.generated)")
+        #expect(!result.generated.contains("+ try"), "`try` to the right of `+` does not compile")
+        #expect(
+            result.generated.contains(
+                "AlulaSchedulerModule(jobs: (try alulaScheduledJobs(alulaGraph)) + extraJobsModule.jobs)"),
+            "\(result.generated)")
     }
 
     @Test("an aggregate nobody contributes to is omitted")

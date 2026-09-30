@@ -186,7 +186,7 @@ struct ScheduledDiagnosticTests {
 
                     package static func _alulaScheduledJobs(
                         _ make: @escaping @Sendable () -> Self
-                    ) -> [AlulaScheduler.ScheduledJobRegistration] {
+                    ) throws -> [AlulaScheduler.ScheduledJobRegistration] {
                         [
                             AlulaScheduler.ScheduledJobRegistration(
                                 name: String(reflecting: Self.self) + ".run",
@@ -196,6 +196,47 @@ struct ScheduledDiagnosticTests {
                             ) {
                                 let component = make()
                                 component.run()
+                            },
+                        ]
+                    }
+                }
+                """,
+            macroSpecs: testMacros)
+    }
+
+    // The time zone was checked against the build machine's database; the
+    // deployment's may lack it. The expansion used `try!`, so that crashed
+    // at composition with a backtrace. It is `try` now, in a throwing
+    // factory, and `Alula.run` reports ALU-SCHED-9001.
+    @Test("a cron job's time zone is resolved with try, never try!")
+    func cronTimeZoneThrows() {
+        assertMacroExpansion(
+            """
+            @Scheduler
+            struct Jobs {
+                @Scheduled("0 0 3 * * *", timeZone: "America/New_York")
+                func nightly() {}
+            }
+            """,
+            expandedSource: """
+                struct Jobs {
+                    func nightly() {}
+
+                    init() {
+                    }
+
+                    static func _alulaScheduledJobs(
+                        _ make: @escaping @Sendable () -> Self
+                    ) throws -> [AlulaScheduler.ScheduledJobRegistration] {
+                        [
+                            AlulaScheduler.ScheduledJobRegistration(
+                                name: String(reflecting: Self.self) + ".nightly",
+                                trigger: AlulaScheduler.JobTrigger.cron(try AlulaScheduler.CronExpression("0 0 3 * * *"), timeZone: try AlulaScheduler._alulaTimeZone("America/New_York", job: String(reflecting: Self.self) + ".nightly")),
+                                scope: .once,
+                                overlap: .skip
+                            ) {
+                                let component = make()
+                                component.nightly()
                             },
                         ]
                     }

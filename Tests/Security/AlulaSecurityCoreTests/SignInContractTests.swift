@@ -96,7 +96,7 @@ struct SignInContractTests {
         let sessions = try AlulaSessionsModule(
             configuration: Configuration(values: ["sessions.cookie-secure": "false"]),
             store: sessionStore)
-        let security = AlulaSecurityModule(validator: nil, sessions: sessions.runtime)
+        let security = try AlulaSecurityModule(validator: nil, sessions: sessions.runtime)
         return try TestClient(
             routes: SignInController.alulaRoutes { _ in SignInController(provider: provider) },
             middleware: sessions.middleware + security.middleware)

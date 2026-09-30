@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaDiagnostics
 import AlulaSessions
 import AlulaTelemetryBridges
 import AlulaWeb
@@ -28,8 +29,9 @@ import TelemetryCore
 /// signs browsers in (``AlulaPasswordSignInModule``,
 /// ``AlulaOIDCSignInModule``) and has no bearer API needs none. With
 /// neither a validator nor sessions, nobody could ever be authenticated, and
-/// composition stops at startup saying so rather than serving a site where
-/// every protected route answers 401.
+/// composition stops at startup with ``NothingAuthenticatesError``
+/// (ALU-SEC-6003) rather than serving a site where every protected route
+/// answers 401.
 ///
 /// ``RequireAuthentication`` is deliberately *not* in the **default** lane —
 /// unlike authentication itself, enforcement is not something every route
@@ -81,8 +83,9 @@ public struct AlulaSecurityModule: AlulaModule {
     ///     people in and has no bearer API: a password or OIDC sign-in
     ///     module puts the principal in the session, and a bearer token
     ///     presented anyway is an invalid credential, since nothing here can
-    ///     check it. One of `validator` and `sessions` is required — with
-    ///     neither, nobody could ever be authenticated.
+    ///     check it. One of `validator`, `tokenStrategies` and `sessions` is
+    ///     required — with none, nobody could ever be authenticated, and this
+    ///     throws ``NothingAuthenticatesError``.
     ///   - sessions: The session runtime, when `AlulaSessionsModule` is
     ///     listed — matched by type in composition. With it, every lane this
     ///     module declares runs `Sessions` ahead of `Authentication`, so a
@@ -98,14 +101,13 @@ public struct AlulaSecurityModule: AlulaModule {
     public init(
         validator: (any TokenValidator)?, tokenStrategies: [TokenStrategy] = [],
         sessions: SessionRuntime? = nil
-    ) {
-        precondition(
-            validator != nil || sessions != nil || !tokenStrategies.isEmpty,
-            """
-            AlulaSecurityModule has neither a token validator nor sessions, so no request could \
-            ever be authenticated. List AlulaOIDCModule (or provide `any TokenValidator`) for \
-            bearer tokens, and/or AlulaSessionsModule with a sign-in module for browsers.
-            """)
+    ) throws {
+        // Depends only on which modules are listed, so it fails the first
+        // start of a misassembled application — thrown, so `Alula.run`
+        // reports it with its code instead of trapping.
+        guard validator != nil || sessions != nil || !tokenStrategies.isEmpty else {
+            throw NothingAuthenticatesError()
+        }
         let bearer: any TokenValidator =
             tokenStrategies.isEmpty
             ? validator ?? RejectingTokenValidator()
@@ -122,13 +124,29 @@ public struct AlulaSecurityModule: AlulaModule {
             + MiddlewareRegistration.lane(.authenticated, session + [authentication, require])
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaSecurityModule takes a token validator and/or sessions in init(validator:sessions:), so it cannot be "
-                + "instantiated from its type. List AlulaOIDCModule, or a module of your own that "
-                + "provides `(any TokenValidator)`, and let the composition root wire it.")
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaSecurityModule takes a token validator, token strategies and/or sessions in init(validator:tokenStrategies:sessions:), so it cannot be instantiated from its type. List AlulaOIDCModule, or a module of your own that provides `(any TokenValidator)`, and let the composition root wire it.")
+    public init() { fatalError("unavailable") }
+
+}
+
+/// `AlulaSecurityModule` was given no token validator, no token strategies
+/// and no sessions, so no request could ever be authenticated.
+///
+/// `Alula.run` reports it as ALU-SEC-6003.
+public struct NothingAuthenticatesError: Error, StartupDiagnostic, CustomStringConvertible {
+    public var description: String {
+        """
+        AlulaSecurityModule has no token validator, no token strategies and no sessions, so no \
+        request could ever be authenticated. List AlulaOIDCModule (or a module that provides \
+        `any TokenValidator`) for bearer tokens, AlulaAPIKeyModule for API keys, and/or \
+        AlulaSessionsModule with a sign-in module for browsers.
+        """
     }
 
+    public var startupDiagnostic: String { description }
+    public var diagnosticCode: DiagnosticCode? { .nothingAuthenticates }
 }
 
 /// Stands in when an application has no bearer-token validator: every token
@@ -188,13 +206,10 @@ public final class AlulaOIDCModule: AlulaModule {
         self.tokenValidator = validator
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaOIDCModule takes its configuration in init(configuration:), so it cannot be "
-                + "instantiated from its type. Pass `composedBy: alulaComposeModules` to "
-                + "Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaOIDCModule takes its configuration in init(configuration:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 
     public var service: (any Service)? {
         JWKSMaintenanceService(validator: validator)

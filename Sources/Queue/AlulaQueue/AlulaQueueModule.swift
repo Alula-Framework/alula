@@ -48,15 +48,10 @@ public struct AlulaQueueModule: AlulaModule {
         self.queue = JobQueue(store: store ?? InMemoryQueueStore())
     }
 
-    /// Traps: this module needs its configuration. It exists only because
-    /// `AlulaModule` requires it; compose with `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaQueueModule takes its configuration in init(configuration:store:), so it cannot "
-                + "be instantiated from its type. Pass `composedBy: alulaComposeModules` to "
-                + "Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaQueueModule takes its configuration in init(configuration:store:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 }
 
 /// Runs queued jobs, with every ``QueueHandler`` any module contributes.
@@ -114,14 +109,10 @@ public struct AlulaQueueWorkerModule: AlulaModule {
             wake: queue.wake, now: queue.now, logger: logger)
     }
 
-    /// Traps: this module needs its configuration, queue and handlers.
-    /// Compose with `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaQueueWorkerModule takes its configuration, queue and handlers in "
-                + "init(configuration:queue:handlers:), so it cannot be instantiated from its "
-                + "type. Pass `composedBy: alulaComposeModules` to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaQueueWorkerModule takes its configuration, queue and handlers in init(configuration:queue:handlers:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 
     /// The worker, or nil when this process runs no queues
     /// (`queue.worker.enabled: false`, no handlers, or `queue.worker.only`

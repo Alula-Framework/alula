@@ -64,7 +64,7 @@ struct TokenStrategyTests {
         let issued = APIKeys.issue(prefix: "sk", subject: "svc-billing")
         store.save(issued.stored)
         let keys = try AlulaAPIKeyModule(configuration: Configuration(), store: store)
-        let security = AlulaSecurityModule(
+        let security = try AlulaSecurityModule(
             validator: People(), tokenStrategies: keys.tokenStrategies)
         let route = RouteRegistration(
             method: .get, path: "/me", source: "t", pipelines: [.authenticated]

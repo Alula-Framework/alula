@@ -68,10 +68,12 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
         // The jobs as values, built from a component the caller supplies —
         // the composition root fills `make` with the component the graph
         // built. This is the whole of what @Scheduler emits for wiring.
+        // Throwing, because a time zone is resolved here, at composition, and
+        // the deployment's database may lack one the build machine had.
         let jobValues: DeclSyntax = """
             \(raw: access)static func _alulaScheduledJobs(
                 _ make: @escaping @Sendable () -> Self
-            ) -> [AlulaScheduler.ScheduledJobRegistration] {
+            ) throws -> [AlulaScheduler.ScheduledJobRegistration] {
                 [
             \(raw: jobValueLines.map { "        " + $0 }.joined(separator: "\n"))
                 ]
@@ -107,14 +109,16 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
     private static func trigger(for job: ScannedJob) -> String {
         switch job.schedule {
         case .cron(let text, let timeZone):
-            // Force-try is safe here and nowhere else: the expression was
-            // parsed by this same parser at compile time, so a throw is
-            // impossible unless the macro and the runtime disagree — which
-            // sharing one parser rules out.
+            // Neither throws in practice for the expression: it was parsed
+            // by this same parser at compile time. The time zone can: it was
+            // checked against the build machine's database, and the
+            // deployment's may lack it (a container image without tzdata).
+            // So both are `try`, and a failure stops composition with a coded
+            // error instead of a trap.
             return
                 "AlulaScheduler.JobTrigger.cron("
-                + "try! AlulaScheduler.CronExpression(\"\(text)\"), "
-                + "timeZone: try! AlulaScheduler._alulaTimeZone("
+                + "try AlulaScheduler.CronExpression(\"\(text)\"), "
+                + "timeZone: try AlulaScheduler._alulaTimeZone("
                 + "\(timeZone), job: String(reflecting: Self.self) + \".\(job.methodName)\"))"
         case .interval(let every, let initialDelay):
             let delay = initialDelay ?? ".seconds(0)"

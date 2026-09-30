@@ -562,13 +562,10 @@ public struct AlulaMailSMTPModule: AlulaModule {
     /// fail with `MailError.transient`, and queued jobs are retried.
     public var serviceShutdownPhase: ServiceShutdownPhase { .infrastructure }
 
-    /// Traps: this module needs its configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaMailSMTPModule takes its configuration in init(configuration:), so it cannot be "
-                + "instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaMailSMTPModule takes its configuration in init(configuration:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }
 
 extension SMTPConfigurationError: ModuleConfigurationError {}

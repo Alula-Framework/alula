@@ -215,8 +215,6 @@ public struct MyAdapterModule: AlulaModule {
         self.adapter = MyAdapter(url: try configuration.get("pubsub.mine.url", as: String.self))
     }
 
-    public init() { preconditionFailure("MyAdapterModule takes its configuration.") }
-
     // Provides `adapter` as a value; the composition root matches it to
     // AlulaPubSubModule's `adapter:` parameter by type. Nothing is registered.
 

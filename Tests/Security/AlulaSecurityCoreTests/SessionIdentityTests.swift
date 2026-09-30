@@ -161,7 +161,7 @@ struct SessionIdentityTests {
 
     @Test("given a runtime, every security lane runs Sessions ahead of Authentication")
     func moduleLanes() throws {
-        let module = AlulaSecurityModule(validator: validator, sessions: runtime)
+        let module = try AlulaSecurityModule(validator: validator, sessions: runtime)
         for lane in [PipelineLane.default, .authentication, .authenticated] {
             let names = module.middleware.filter { $0.lane == lane && $0.name != "__lane" }.map(
                 \.name)
@@ -169,7 +169,7 @@ struct SessionIdentityTests {
             #expect(
                 names.dropFirst().first?.hasSuffix(".Authentication") == true, "\(lane): \(names)")
         }
-        let without = AlulaSecurityModule(validator: validator)
+        let without = try AlulaSecurityModule(validator: validator)
         #expect(!without.middleware.contains { $0.name.hasSuffix(".Sessions") })
     }
 

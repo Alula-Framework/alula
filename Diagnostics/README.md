@@ -82,6 +82,7 @@ and alula-data's cache and migration codes, `ALD-…`, in
 |---|---|---|
 | [ALU-SEC-6001](ALU-SEC-6001.md) | error | A route requires roles but authenticates no one |
 | [ALU-SEC-6002](ALU-SEC-6002.md) | error | Several modules provide the bearer-token validator |
+| [ALU-SEC-6003](ALU-SEC-6003.md) | error | The security module has no way to authenticate anyone |
 
 ## Commands
 

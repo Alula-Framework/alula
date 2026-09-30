@@ -76,16 +76,10 @@ public struct AlulaPubSubModule: AlulaModule {
         self.bus = clustered
     }
 
-    /// The backstop the generated composer falls back to when it emits
-    /// `AlulaPubSubModule()`: a caller that reaches this gets a message
-    /// saying what to do rather than trapping anonymously.
-    public init() {
-        preconditionFailure(
-            "AlulaPubSubModule takes its configuration in init(configuration:adapter:), so it "
-                + "cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` "
-                + "to Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaPubSubModule takes its configuration in init(configuration:adapter:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 
     /// The relay, when clustered; nil on a single node. It belongs here rather than to the adapter
     /// module because this is what has both halves — the adapter to drain and

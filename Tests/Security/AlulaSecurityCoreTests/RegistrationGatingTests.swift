@@ -17,7 +17,7 @@ struct RegistrationGatingTests {
     func moduleRegistersBothMiddleware() throws {
         // They used to be container registrations resolved per request. The
         // module holds the instances now, so this reads what it declares.
-        let module = AlulaSecurityModule(validator: StubValidator(principalsByToken: [:]))
+        let module = try AlulaSecurityModule(validator: StubValidator(principalsByToken: [:]))
         let names = Set(module.middleware.map(\.name))
         #expect(names.contains { $0.hasSuffix(".Authentication") })
         #expect(names.contains { $0.hasSuffix(".RequireAuthentication") })

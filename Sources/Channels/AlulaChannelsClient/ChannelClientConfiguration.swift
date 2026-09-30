@@ -87,8 +87,8 @@ public enum ConnectionState: Sendable, Equatable {
     /// Dropped; reconnection pending per policy.
     case disconnected
     /// Terminal: `disconnect()` was called, or the reconnect policy gave up.
-    /// (An inbound `alula:close` would also end here, but the Alula server
-    /// never sends one.) `connect()` starts fresh from here.
+    /// A server close, whatever its code, is a drop and goes through
+    /// ``ConnectionState/disconnected`` first. `connect()` starts fresh from here.
     case closed
 }
 

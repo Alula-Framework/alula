@@ -93,7 +93,11 @@ and validates with it. There is no second implementation to drift.
 
 The time zone is checked the same way, against Foundation's own database: a
 missing underscore used to compile cleanly and run the job in GMT with
-nothing said, which is the 3am surprise this section is named for.
+nothing said, which is the 3am surprise this section is named for. That
+check uses the build machine's database, so the zone is resolved once more
+when the application composes. A deployment without the zone, such as a
+container image without `tzdata`, stops before serving with ALU-SCHED-9001
+naming the job, rather than running it at the wrong hour.
 
 Six fields, seconds first; the classic five-field crontab shape means the
 same schedule at second zero.

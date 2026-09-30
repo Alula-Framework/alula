@@ -135,10 +135,8 @@ public struct AlulaOpenAPIModule: AlulaModule {
         ]
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaOpenAPIModule takes its configuration and the generated document in "
-                + "init(configuration:document:), so it cannot be instantiated from its type. "
-                + "Pass `composedBy: alulaComposeModules` to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaOpenAPIModule takes its configuration and the generated document in init(configuration:document:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }

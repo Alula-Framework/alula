@@ -91,16 +91,10 @@ public struct AlulaPresenceModule: AlulaModule {
         self.gossipBus = gossipBus
     }
 
-    /// Traps: this module needs its buses and configuration. Compose with
-    /// `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaPresenceModule takes its buses and configuration in "
-                + "init(configuration:localBus:gossipBus:adapter:membershipMonitor:), so it cannot "
-                + "be instantiated from its type. Pass `composedBy: alulaComposeModules` to "
-                + "Alula.run — `alula new` writes that argument — or construct the module "
-                + "yourself and use the entry point taking module instances.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaPresenceModule takes its buses and configuration in init(configuration:localBus:gossipBus:adapter:membershipMonitor:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run — `alula new` writes that argument — or construct the module yourself and use the entry point taking module instances.")
+    public init() { fatalError("unavailable") }
 
     /// A ``PresenceService`` over this module's tracker, gossip bus and
     /// monitor; nothing is looked up.

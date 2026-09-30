@@ -367,12 +367,8 @@ public struct AlulaClientCredentialsModule: AlulaModule {
         self.authorizedHTTPClient = AuthorizedHTTPClient(http: httpClient, tokens: tokens)
     }
 
-    /// Traps: this module needs its configuration and the HTTP client.
-    /// Compose with `alulaComposeModules`.
-    public init() {
-        preconditionFailure(
-            "AlulaClientCredentialsModule takes its configuration and the HTTP client in "
-                + "init(configuration:httpClient:), so it cannot be instantiated from its type. "
-                + "Pass `composedBy: alulaComposeModules` to Alula.run.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaClientCredentialsModule takes its configuration and the HTTP client in init(configuration:httpClient:), so it cannot be instantiated from its type. Pass `composedBy: alulaComposeModules` to Alula.run.")
+    public init() { fatalError("unavailable") }
 }

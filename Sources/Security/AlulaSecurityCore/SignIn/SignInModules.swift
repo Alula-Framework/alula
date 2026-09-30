@@ -42,13 +42,10 @@ public final class AlulaPasswordSignInModule: AlulaModule {
         self.signInProvider = PasswordSignIn(authenticator: authenticator)
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaPasswordSignInModule takes a credential store and a rate limiter in "
-                + "init(configuration:store:limiter:). Provide `any CredentialStore` from one of "
-                + "your modules, list AlulaRateLimitModule, and compose with alulaComposeModules."
-        )
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaPasswordSignInModule takes a credential store and a rate limiter in init(configuration:store:limiter:). Provide `any CredentialStore` from one of your modules, list AlulaRateLimitModule, and compose with alulaComposeModules.")
+    public init() { fatalError("unavailable") }
 }
 
 /// Sign-in through an external OpenID Connect provider — Keycloak, Auth0,
@@ -73,9 +70,8 @@ public final class AlulaOIDCSignInModule: AlulaModule {
         self.signInProvider = OIDCSignIn(configuration: settings)
     }
 
-    public init() {
-        preconditionFailure(
-            "AlulaOIDCSignInModule takes its configuration in init(configuration:). Compose with "
-                + "alulaComposeModules.")
-    }
+    /// Unavailable: a hand-written call is a compile error saying how to
+    /// build this module, and the composer never counts it as a candidate.
+    @available(*, unavailable, message: "AlulaOIDCSignInModule takes its configuration in init(configuration:). Compose with alulaComposeModules.")
+    public init() { fatalError("unavailable") }
 }

@@ -320,7 +320,10 @@ for await message in await room.messages() {            // server pushes, as a s
 Reconnection is client-driven: on a drop the client re-dials with
 `ReconnectPolicy` backoff and rejoins every joined topic; the fresh initial
 state arrives on `messages()` as a `alula:join` message. In-flight pushes
-fail fast with `.disconnected`. Heartbeats run automatically; an unanswered
+fail fast with `.disconnected`. A drop is anything that ends the socket
+other than `disconnect()`: the network, or a server close with any code
+(`1000`, `1001`, `4000`, `4400`, `4408`, `4410`), all handled alike.
+Heartbeats run automatically; an unanswered
 heartbeat is treated as a dead connection. The default policy re-dials
 forever, and a refused handshake counts as a failed dial like any other, so
 pass `maxAttempts` where a revoked credential should stop the client.
@@ -357,7 +360,9 @@ One envelope, both directions, JSON text frames in v1:
   All four keys are always present.
 - Reserved events: `alula:join`, `alula:leave`, `alula:reply`,
   `alula:error` (payload `{"reason": "…"}`), `alula:heartbeat`,
-  `alula:close`. Everything else routes to the channel's `handle`.
+  `alula:close` (client to server only: the server ends a socket with a
+  close code, never with an envelope). Everything else routes to the
+  channel's `handle`.
 - Socket-level control events travel on the reserved topic `"alula"`,
   which can never be joined.
 - Correlated success is `alula:reply` with the ref; correlated failure

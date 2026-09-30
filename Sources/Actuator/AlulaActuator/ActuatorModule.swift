@@ -35,11 +35,6 @@ import class Foundation.ProcessInfo
 public struct ActuatorModule: AlulaModule {
     public static var dependencies: [any AlulaModule.Type] { [] }
 
-    /// Qualifier under which the gate's environment is registered for the
-    /// controller to report — namespaced so it can never collide with an
-    /// app's own unqualified `AlulaEnvironment` registration.
-    static let environmentQualifier = "alula.actuator"
-
     /// Holds the controller the routes serve from.
     ///
     /// The routes are values, built when the module is; the controller they

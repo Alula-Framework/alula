@@ -1,4 +1,5 @@
 import AlulaCore
+import AlulaDiagnostics
 import Foundation
 import Logging
 import ServiceLifecycle
@@ -160,7 +161,7 @@ public struct SchedulerService: Service, Sendable {
 
 /// A job the scheduler refuses to start, reported before it runs rather than
 /// as a symptom afterwards.
-public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable {
+public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable, StartupDiagnostic {
     /// `@Scheduled(every:)` with a period of zero or less.
     case nonPositiveInterval(job: String, period: Duration)
     /// A time zone identifier this machine's Foundation does not know.
@@ -183,6 +184,17 @@ public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable {
                 """
         }
     }
+
+    /// ``unknownTimeZone(job:identifier:)`` is ALU-SCHED-9001 at startup —
+    /// the time zone the build checked, missing where the application runs.
+    public var diagnosticCode: DiagnosticCode? {
+        switch self {
+        case .nonPositiveInterval: nil
+        case .unknownTimeZone: .invalidSchedule
+        }
+    }
+
+    public var startupDiagnostic: String { description }
 }
 
 /// Resolves a `@Scheduled` time zone identifier at composition.
@@ -191,10 +203,10 @@ public enum SchedulerStartupError: Error, CustomStringConvertible, Sendable {
 /// Foundation does not know, so this fires only when the build machine's
 /// time zone database and the deployment's disagree — a slim but real case,
 /// and one that used to resolve silently to GMT and run the job at the wrong
-/// hour. The generated code calls it with `try!` while building the job
-/// values at composition, so the process stops before serving, with
-/// ``SchedulerStartupError/unknownTimeZone(job:identifier:)`` in the trap
-/// message.
+/// hour. The generated code calls it while building the job values at
+/// composition, so the process stops before serving: `Alula.run` reports
+/// ``SchedulerStartupError/unknownTimeZone(job:identifier:)`` as
+/// ALU-SCHED-9001 and exits 1.
 public func _alulaTimeZone(_ identifier: String, job: String) throws -> TimeZone {
     guard let zone = TimeZone(identifier: identifier) else {
         throw SchedulerStartupError.unknownTimeZone(job: job, identifier: identifier)

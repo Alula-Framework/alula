@@ -74,11 +74,11 @@ struct Main {
 
 A socket has to be served, so an application using Channels also runs a web
 module and a transport — `AlulaWebModule<AlulaTransport>.self` — and mounts
-the socket with a `@WebSocketRoute`. See `Docs/web.md`.
+the socket with a `@WebSocketRoute`. See [web.md](web.md).
 
 **Depend on the products of what it pulls in, too.** The generated composition
 root names every module in the DAG, so a target that lists only
-`AlulaChannels` fails to build with `cannot find `AlulaPubSubModule` in scope`
+`AlulaChannels` fails to build with `cannot find 'AlulaPubSubModule' in scope`
 — from generated code, which is a confusing place to read it.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -125,7 +125,7 @@ order, so nothing downstream depends on the old guarantee.
 Two consequences worth knowing:
 
 - The in-flight bound is what the frame loop waits on when it is reached.
-  Because inbound frames pull rather than buffer (see `Docs/web.md`), that
+  Because inbound frames pull rather than buffer (see [web.md](web.md#design-notes)), that
   wait reaches the socket — a client flooding one connection is slowed by TCP
   rather than handed unbounded work to queue.
 - A teardown — `alula:close`, a heartbeat timeout, a protocol violation —
@@ -188,6 +188,7 @@ import AlulaChannels
 
 struct RoomChannel: Channel {
     let broadcaster: ChannelBroadcaster
+    let chat: ChatRepository
 
     // The join is the authorization gate. Identity was established
     // during the HTTP upgrade, before the WebSocket existed.
@@ -385,9 +386,10 @@ socket's pump, with a warning each. Code that deliberately watches channel
 traffic from outside subscribes through `ChannelProtocol.busTopic("room:42")`.
 
 Semantics inherited from PubSub: at-most-once, no durability, no
-replay. Per-socket inbound processing is serial (one envelope fully handled
-before the next), and all outbound writes funnel through one per-socket
-queue — a slow client never blocks a handler, and frames never interleave.
+replay. Inbound envelopes are handled in order within a topic and
+concurrently across topics ([Ordering and concurrency](#ordering-and-concurrency)),
+and all outbound writes funnel through one per-socket queue — a slow client
+never blocks a handler, and frames never interleave.
 
 ## Who may join what
 
@@ -524,10 +526,10 @@ wire-level assertions. Multi-node behavior is testable with
 2. **`JoinResult`/`HandleResult` are structs with static constructors**,
    not enums — the design's call sites (`.ok`, `.ok(initialState:)`) need
    an overload an enum case can't provide; the shapes are otherwise the
-   doc's.
+   design's.
 3. **`alula:error` answers correlated failures** (join rejected, handler
    error) carrying the originating `ref`; `alula:reply` is success-only.
-   The doc lists both events without pinning the correlation rule; this
+   The design lists both events without pinning the correlation rule; this
    split keeps "one obvious meaning per event" and lets clients reject the
    awaited promise/continuation directly.
 4. **`HandleResult.none` on a ref-carrying message sends nothing** — the
@@ -542,7 +544,7 @@ wire-level assertions. Multi-node behavior is testable with
    finishes the outbound queue; the writer drains what was already queued
    (a graceful `alula:close` ack is flushed before the close frame), then
    everything is joined deterministically.
-6. **`ChannelBroadcaster.broadcast(…, excluding:)`** — not in the doc, but
+6. **`ChannelBroadcaster.broadcast(…, excluding:)`** — not in the design, but
    the "tell everyone else" shape every chat-like handler wants. Carried
    as PubSub metadata (`channels.origin`), filtered at the
    subscription pump, so it works across nodes unchanged.

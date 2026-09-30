@@ -137,7 +137,9 @@ Singleton is the only lifetime: a component is built **once**, by the
 composition root, and shared for the application's lifetime. There is no
 `.scoped` or `.transient` — per-request state rides `RequestContext`, and a
 pooled connection is leased per operation, so nothing needed them and their
-captive-dependency class of bug went with them. See <doc:Lifetimes>.
+captive-dependency class of bug went with them. See
+[Lifetimes](../Sources/Core/AlulaCore/AlulaCore.docc/Lifetimes.md) in the
+AlulaCore documentation.
 
 ## Compile-time wiring
 
@@ -195,7 +197,7 @@ initializer:
 
 ```swift
 struct DataModule: AlulaModule {
-    static let dependencies: [any AlulaModule.Type] = [ConfigModule.self]
+    static var dependencies: [any AlulaModule.Type] { [ConfigModule.self] }
 
     let dataSource: DataSource
     init(configuration: Configuration) throws {
@@ -261,7 +263,7 @@ type instead:
 struct AuthSettings {
     var issuer: String = "myapp"
     @Secret var signingKey: String           // required — no default
-    var tokenLifetime: Duration = .hours(12) // "12h", "500ms", ...
+    var tokenLifetime: Duration = .seconds(12 * 3600) // "12h", "500ms", ...
 
     func validate() throws {
         guard signingKey.count >= 32 else { throw AuthError.signingKeyTooShort }

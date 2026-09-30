@@ -14,7 +14,7 @@ conflict-free merge semantics and the diffing that make a distributed
 | **Trait** | `Web` |
 | **Products** | `AlulaPresence` |
 | **Module** | `AlulaPresenceModule.self` |
-| **Pulls in** | `AlulaPubSubModule and AlulaChannelsModule` |
+| **Pulls in** | `AlulaPubSubModule`, `AlulaChannelsModule` |
 
 ```swift
 // Package.swift
@@ -70,7 +70,7 @@ is enough: the dependency DAG builds all three.
 
 **Depend on the products of what it pulls in, too.** The generated composition
 root names every module in the DAG, so a target that lists only
-`AlulaPresence` fails to build with `cannot find `AlulaPubSubModule` in scope`
+`AlulaPresence` fails to build with `cannot find 'AlulaPubSubModule' in scope`
 — from generated code, which is a confusing place to read it.
 
 The `modules:` list names roots, not an order — the build resolves the
@@ -188,8 +188,9 @@ is the backstop: a replica silent for that long is hidden the way degraded
 mode would hide it, and the event is logged at **error** level, because
 reaching it means the monitor is broken, not that a node left. It defaults
 to four heartbeat-to-down cycles (`down-after × 4`, at least a minute), far
-enough out that a healthy monitor always wins the race. Set it to `nil` to
-disable the backstop entirely.
+enough out that a healthy monitor always wins the race. Set
+`presence.membership-fallback-after-seconds: 0` (`nil` in
+`PresenceConfiguration`) to disable the backstop entirely.
 
 Relatedly, the gossip-intake and membership-event tasks are treated as
 load-bearing: if either stream ends unexpectedly, `PresenceService` logs at
@@ -220,7 +221,7 @@ variable, stops the start with
 `AlulaPresenceModule` is built from PubSub's two buses and holds the tracker:
 
 ```swift
-AlulaPresenceModule(
+try AlulaPresenceModule(
     configuration: configuration,
     localBus: alulaPubSubModule.local,
     gossipBus: alulaPubSubModule.bus,
@@ -295,7 +296,7 @@ scale is worse than an honest limit.
 ## Design notes
 
 - **One gossip topic, not `alula:presence:<topic>`.** PubSub is
-  exact-match with no wildcards (PubSub), and every node needs all
+  exact-match with no wildcards ([pubsub.md](pubsub.md)), and every node needs all
   presence gossip (full replication), so per-channel-topic gossip
   topics are unsubscribable in aggregate. Gossip rides one reserved topic,
   `alula:presence`, with per-topic payloads inside — still "PubSub's
@@ -337,7 +338,7 @@ scale is worse than an honest limit.
 
 ## Testing
 
-`swift test --enable-all-traits` — 79 tests (the convergence properties
+`swift test --enable-all-traits` — 90 tests (the convergence properties
 alone cover 120 randomized cases):
 
 - **Local semantics** (`TrackerTests`, `PresenceSyncTests`): metas per

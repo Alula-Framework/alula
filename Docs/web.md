@@ -3,11 +3,11 @@
 The HTTP request lifecycle layer of Alula — routing, middleware, request and
 response representation, WebSocket and Server-Sent Events, and the
 `ServerTransport` seam a concrete server plugs in underneath (the
-Phoenix/Bandit relationship, not bring-your-own-framework). Implements the
-alula-web design doc (as revised: §5.2 wraps a maintained low-level
-transport instead of hand-rolling HTTP; §5.6 containment) on top of Alula
-Core's `AlulaModule` composition — through exactly one channel,
-`AlulaModule`, like every other Alula package.
+Phoenix/Bandit relationship, not bring-your-own-framework). The default
+transport wraps a maintained low-level HTTP server rather than hand-rolling
+HTTP, and it is the only target that knows what it wraps. Everything here
+reaches the application the way every other Alula package does: through
+`AlulaModule` composition.
 
 ## Adding this module
 
@@ -73,8 +73,8 @@ dependency DAG. A module you write can declare framework modules in its own
 | Product | Contents |
 |---|---|
 | `AlulaWeb` | `RequestContext`, `Request`/`Response`, middleware lanes, `Router`, `@Controller`/`@GetRoute`/…/`@WebSocketRoute` macros, `ResponseEncodable`, cookies, SSE, streaming bodies, multipart, resumable uploads, static assets, `serveContent`'s conditional/range engine, `WebSocketUpgradeHandler`/`WebSocketConnection`, `ServerTransport` protocol, `AlulaWebModule`, `Sessions`/`AlulaSessionsModule` (see [sessions.md](sessions.md)), `RateLimiting` (see [rate-limiting.md](rate-limiting.md)), `TrustedProxies`/`clientAddress` (see [client-address.md](client-address.md)) |
-| `AlulaTransport` | Shipped in the `AlulaWeb` product. The default transport (§5.2): wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Alula that knows what it wraps (§5.6) |
-| `AlulaWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (§5.4's socket-free transport) |
+| `AlulaTransport` | Shipped in the `AlulaWeb` product. The default transport: wraps **HummingbirdCore** — a mature, versioned low-level HTTP transport — for HTTP/1.1 (keep-alive, pipelining, 100-continue), streaming bodies, and WebSocket protocol handling. The only target in all of Alula that knows what it wraps |
+| `AlulaWebTesting` | `RequestContext.mock`, `TestClient` (in-process dispatch + in-process WebSocket), `InMemoryTransport` (a socket-free transport) |
 
 ## Using it
 
@@ -97,12 +97,12 @@ struct UserController {
         try await userService.create(body)
     }
 
-    @WebSocketRoute("/chat/:roomId")               // §6.1 — same route table
+    @WebSocketRoute("/chat/:roomId")               // same route table
     func chat(_ context: RequestContext, roomId: String) throws -> any WebSocketUpgradeHandler {
         ChatRoomHandler(roomId: roomId)
     }
 
-    @GetRoute("/events")                           // §6.2 — SSE is a response shape
+    @GetRoute("/events")                           // SSE is a response shape
     func events(_ context: RequestContext) -> Response {
         .serverSentEvents { events in
             // `send` suspends until the event has gone out, and answers
@@ -128,7 +128,7 @@ struct AppModule: AlulaModule {
     // root hands AlulaWebModule. The app's controllers and components are
     // scanned by the build plugin and wired by the composition root; nothing
     // is registered here.
-    let middleware = MiddlewareRegistration.lane(.default, [RequestLogging(), Authentication()])
+    let middleware = MiddlewareRegistration.lane(.default, [Authentication()])
 }
 
 @main struct Main {
@@ -381,7 +381,7 @@ with `pipelines:`:
 
 ```swift
 // A module holds lane declarations as values; the build plugin finds them.
-let assetsLane = MiddlewareRegistration.lane("assets", [RequestLogging()])
+let assetsLane = MiddlewareRegistration.lane("assets", [CORS(allowedOrigins: .any)])
 let adminLane  = MiddlewareRegistration.lane("admin",  [RequireAdmin()])
 ```
 
@@ -926,6 +926,32 @@ leave these keys out and Alula serves plaintext to the proxy. Either way,
 upgrades ride whatever the listener is doing, so `wss://` needs no separate
 configuration.
 
+### Connection timeouts
+
+`server.idle-timeout-seconds` (default 60, `0` disables) bounds a connection
+that is not getting on with a request. Two things count as that, and neither
+is a slow *response*:
+
+- a connection between keep-alive requests, and
+- a connection that has started a request — or not even finished its first
+  header block — and stopped.
+
+The second is the one that matters. A client holding many connections open,
+trickling a byte occasionally and never completing a header block, is the
+slowloris shape, and each such connection used to be held until the OS gave
+up, roughly four minutes.
+
+It takes two mechanisms because HummingbirdCore's own idle handler is
+installed from the upgrade channel's not-upgrading completion handler, which
+does not run until a head has decoded — so Alula adds a header-read timeout
+in front of it for the window before that. One setting drives both.
+
+**A long response is never affected.** Both bounds disarm once a request is
+fully read, so a large download, an SSE stream and an upgraded WebSocket run
+as long as they like. That is what makes a default safe.
+
+### Controllers live one request
+
 A controller is constructed for each request, from the components the graph
 built once at startup, and discarded when its handler returns. So state kept
 in a controller's own stored properties lasts one request. What it injects is
@@ -937,7 +963,7 @@ the generated route closure is: an internal struct whose `@Inject` and
 non-Sendable controller is a compile error at the generated registration, not
 a runtime race.
 
-Testing (§7) needs no socket:
+Testing needs no socket ([testing.md](testing.md) has the rest):
 
 ```swift
 let client = try TestClient(routes: alulaRoutes(graph))
@@ -946,7 +972,7 @@ let client = try TestClient(routes: alulaRoutes(graph))
 let socket = try await client.webSocket("/chat/lobby")   // in-process upgrade
 ```
 
-## How routing rides the one registration pipeline (§4)
+## How routing rides the one registration pipeline
 
 `@Controller` expands like `@Service` — a parameterized initializer over its
 `@Inject`/`@ConfigValue` properties — plus one **route factory per mapped
@@ -993,19 +1019,20 @@ the diagnostic names the full route. Omitted (or `nil`) — the default — is
 unprefixed, exactly as before; every controller written before this existed
 is unaffected.
 
-## Design deltas from the doc
+## Design notes
 
-Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
+Where the implementation departs from the original alula-web design, and
+why:
 
 1. **`Response.upgrade` carries an `UpgradeResponse`, not a bare handler.**
-   The doc's `case upgrade(handler: any WebSocketUpgradeHandler)` gives the
+   The design's `case upgrade(handler: any WebSocketUpgradeHandler)` gives the
    transport no way to supply the `RequestContext` the handler's own
    signature requires (and a context payload would make `Response` and
    `RequestContext` mutually recursive). `UpgradeResponse` pairs the handler
    with a router-built `run` closure that has the context captured; the
    transport still sees neither routing nor contexts.
 2. **Per-request state rides `RequestContext`, not a per-request scope.** The
-   design doc scoped per-request state to a `Container` scope opened with
+   original design scoped per-request state to a `Container` scope opened with
    `Container.withScope`, whose lifetime is its body — but streaming bodies and
    upgraded connections legitimately outlive the dispatch call. The composition
    migration removed the container and its scopes: per-request state is now a
@@ -1014,22 +1041,22 @@ Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
    connection handler — keeps alive exactly as long as it is needed, with no
    closed-scope trap mid-SSE.
 3. **Per-request values live on `RequestContext` directly, not behind a
-   resolver.** The design doc gave `RequestContext` a `resolve(_:qualifier:)`
+   resolver.** The original design gave `RequestContext` a `resolve(_:qualifier:)`
    backed by the per-request container scope. With the container gone there is
    nothing to resolve against: components take what they need through `@Inject`
    at composition, and a handler reads per-request values such as `identity`
-   straight off the typed `RequestContext`. The doc's `scope` field has no
+   straight off the typed `RequestContext`. The design's `scope` field has no
    analogue and needs none.
 4. **`runMiddleware` returning early on `.respond`** means the terminal
    routing middleware *returns* the matched handler's response (and also
    records it in `context.response`); a chain that completes without
    answering yields `context.response`, which starts as 404.
-5. **HTTP/2 is deferred.** v1 of `AlulaTransport` builds HummingbirdCore's
-   HTTP/1.1 channel (keep-alive/pipelining); h2 needs a TLS configuration
-   surface Alula doesn't define yet. Nothing in the `ServerTransport`
-   contract is version-shaped — h2 lands inside the transport without
-   touching the seam.
-6. **Middleware registration mechanism.** The doc specifies the chain (§3)
+5. **HTTP/2 is deferred.** `AlulaTransport` builds HummingbirdCore's
+   HTTP/1.1 channel (keep-alive/pipelining), over TLS when `server.tls.*`
+   is set (see [HTTPS](#https)); it does not negotiate h2. Nothing in the
+   `ServerTransport` contract is version-shaped — h2 lands inside the
+   transport without touching the seam.
+6. **Middleware registration mechanism.** The design specified the chain
    but not how apps contribute to it. A module declares a lane as a value —
    `MiddlewareRegistration.lane(_:_:)`, an ordered list of `Middleware`
    instances the build plugin scans — composed once; the list gives the order
@@ -1044,7 +1071,7 @@ Recorded here the way Core records its spec deviations in SPIKE-FINDINGS:
    identically on the in-memory transport and the wire.
 8. **A refused WebSocket handshake answers 400 + connection close on the
    default transport.** Routing and middleware still decide the refusal
-   (dispatch runs before the upgrade decision, §6.1), but HummingbirdCore
+   (dispatch runs before the upgrade decision), but HummingbirdCore
    writes its own fixed refusal response — the routed status (404, 401, …)
    is not writable through that seam. In-process (`TestClient.webSocket`)
    surfaces the routed status; plain HTTP requests to the same path get the
@@ -1074,47 +1101,23 @@ Sources/Web/AlulaWeb/             runtime: context, middleware, router, response
                                encoding, SSE, upgrade hook, transport seam,
                                AlulaWebModule, macro declarations
 Sources/Web/AlulaWebMacrosImpl/   compiler plugin: Controller + mapping markers
-Sources/Web/AlulaTransport/       the default transport wrapping HummingbirdCore (§5.2, §5.6)
-Sources/Web/AlulaWebTesting/      §7 test-support surface
+Sources/Web/AlulaTransport/       the default transport wrapping HummingbirdCore
+Sources/Web/AlulaWebTesting/      test support
 Tests/Web/AlulaWebTests/          runtime suites (swift-testing)
-Tests/Web/AlulaWebMacroTests/     §4 macro fixtures (XCTest, normative expansions)
+Tests/Web/AlulaWebMacroTests/     macro fixtures (XCTest, normative expansions)
 Tests/Web/AlulaTransportTests/    real-socket HTTP/SSE/WebSocket integration
 ```
 
-### Connection timeouts
-
-`server.idle-timeout-seconds` (default 60, `0` disables) bounds a connection
-that is not getting on with a request. Two things count as that, and neither
-is a slow *response*:
-
-- a connection between keep-alive requests, and
-- a connection that has started a request — or not even finished its first
-  header block — and stopped.
-
-The second is the one that matters. A client holding many connections open,
-trickling a byte occasionally and never completing a header block, is the
-slowloris shape, and each such connection used to be held until the OS gave
-up, roughly four minutes.
-
-It takes two mechanisms because HummingbirdCore's own idle handler is
-installed from the upgrade channel's not-upgrading completion handler, which
-does not run until a head has decoded — so Alula adds a header-read timeout
-in front of it for the window before that. One setting drives both.
-
-**A long response is never affected.** Both bounds disarm once a request is
-fully read, so a large download, an SSE stream and an upgraded WebSocket run
-as long as they like. That is what makes a default safe.
-
-## Deliberately not here (§10)
+## Deliberately not here
 
 No HTTP/2 or HTTP/3 (HummingbirdCore supports HTTP/2 and the builder seam
 would take it; nothing here has needed it yet), no templating/SSR (a future
 consumer of the upgrade hook), no persistence
-(Alula Data), no runtime route-registration API (routes are the macro path;
+(alula-data), no runtime route-registration API (routes are the macro path;
 a hand-built `RouteRegistration` value is the escape hatch beside it, exactly
 as a hand-written component sits beside `@Service`), and **no hand-rolled HTTP
 parsing** — `AlulaTransport` wraps HummingbirdCore rather than reimplementing
 HTTP/1.1 correctness, request-smuggling mitigations, and WebSocket protocol
 handling; Alula owns routing and dispatch, not byte-level protocol work.
-Vapor remains out of scope as a category mismatch (§5.1) — a full framework,
+Vapor remains out of scope as a category mismatch — a full framework,
 not a transport.

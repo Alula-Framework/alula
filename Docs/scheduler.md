@@ -142,11 +142,35 @@ That line exists because the failure it describes is otherwise silent. An
 operator who believes once means once finds out from duplicated data, which
 is the worst available place to learn it.
 
-**No distributed coordinator ships yet.** `LocalJobCoordinator` is not a stub
-— on a single process it is the correct implementation — but it cannot span
-processes, and the scheduler does not pretend otherwise. The protocol is
-three methods, implementable against anything offering an atomic conditional
-write.
+**Across servers, use alula-data's `PostgresJobCoordinator`**
+(`AlulaSchedulerPostgres`, trait `Postgres`). Each firing is a lease row,
+claimed with `INSERT … ON CONFLICT DO NOTHING` on `(job, scheduled_for)`, so
+exactly one server wins it, whatever their clocks say, and the table doubles
+as a record of which server ran what. No module ships it; provide it from one
+of yours, and the composition root hands it to `AlulaSchedulerModule` by type:
+
+```swift
+struct SchedulingModule: AlulaModule {
+    let jobCoordinator: any JobCoordinator
+
+    init(dataSource: PostgresDataSource) {
+        jobCoordinator = PostgresJobCoordinator(dataSource: dataSource)
+    }
+}
+```
+
+The startup line then reads `postgres lease (alula_job_leases)` instead of
+`single-process`, and the warning above stops. Create the `alula_job_leases`
+table in a migration, and prune it from a scheduled job with
+`prune(olderThan:)`. Its reference page has the schema and the reasons it is
+a lease row rather than an advisory lock:
+[AlulaSchedulerPostgres](https://github.com/Alula-Framework/alula-data/blob/main/Sources/Scheduler/AlulaSchedulerPostgres/AlulaSchedulerPostgres.docc/AlulaSchedulerPostgres.md).
+
+Without one, `LocalJobCoordinator` is used. It is not a stub — on a single
+process it is the correct implementation — but it cannot span processes, and
+the scheduler does not pretend otherwise. `JobCoordinator` is two methods and
+a description (`claim`, `release`, `describedKind`), implementable against
+anything offering an atomic conditional write.
 
 ## When things go wrong
 
@@ -187,8 +211,8 @@ you mean a time of day.
 
 ## Observing
 
-`SchedulerStatus` is a resolvable component — last firing, last outcome, next
-firing, run and failure counts:
+`SchedulerStatus` is a value `AlulaSchedulerModule` provides, so anything can
+inject it — last firing, last outcome, next firing, run and failure counts:
 
 ```swift
 @Controller("/jobs")

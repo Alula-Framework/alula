@@ -14,6 +14,8 @@ rules that keep telemetry observational only are in swift-telemetry's
 README.
 
 ```swift
+.package(url: "https://github.com/Alula-Framework/swift-telemetry.git", from: "0.1.0"),
+
 .product(name: "AlulaTelemetryBridges", package: "alula")      // trait "Telemetry"; Web and APNS imply it
 .product(name: "TelemetryMacros", package: "swift-telemetry")    // your own events
 .product(name: "TelemetryTesting", package: "swift-telemetry")   // capture in tests

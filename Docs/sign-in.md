@@ -111,7 +111,7 @@ func signOut(_ context: RequestContext) async throws -> Response {
 of your own.
 
 Every route that changes state belongs on the `csrf` lane, including
-sign-in. See *Guard sign-in too* in `Docs/web.md` for why.
+sign-in. See [CSRF](web.md#csrf), *Guard sign-in too*, for why.
 
 ## Password sign-in
 
@@ -307,7 +307,7 @@ shares tokens across replicas from 0.10.0.
 A session knows whose it is. `signIn` records the subject as its owner,
 so `SessionRuntime.revokeSessions(ownedBy:keeping:)` can end every other
 session one person has after a password change, or all of them when an
-account is disabled. `Docs/sessions.md` has the details, including which
+account is disabled. [sessions.md](sessions.md) has the details, including which
 stores support it.
 
 ## Metrics
@@ -335,14 +335,14 @@ arriving after passwords changed. A rise in `wrong_purpose` means someone
 is trying one link type as another. `SignInMetrics` has the labels as
 constants. In a test, capture the events rather than counting metrics:
 `TelemetryTest.capture(SignInEvents.Attempt.self) { … }`. See
-`Docs/telemetry.md`.
+[telemetry.md](telemetry.md).
 
 ## Not yet here
 
-Registration, password-reset and email-verification *flows*, a user
-directory, and MFA. The primitives above are what those flows are built
-from. The flows themselves come next, following the same rule: a local
-implementation, and an external one where the provider hosts the flow.
+A user directory and MFA. Registration, password-reset and
+email-verification *flows* are not framework API either: they are built from
+the primitives above, and `alula generate auth` writes them into a project
+as source it owns (see [The credential store](#the-credential-store)).
 
 Issuing tokens for other applications is deliberately not planned. The moment
 other services need to trust your tokens, you're running an identity

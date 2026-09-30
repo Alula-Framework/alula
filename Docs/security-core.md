@@ -1,14 +1,14 @@
 # Alula Security Core
 
-Federated authentication for Alula, per
-Alula Web.
+Token validation, principals and route enforcement for Alula Web.
 
 Alula Security Core turns an externally issued identity token into a
 `Principal`, makes that principal available on the request, and provides the
 enforcement point for authentication — plus the *seam* (not the engine) for
 authorization. Signing people in — against the application's own accounts
-or through an external provider, behind one seam — is `Docs/sign-in.md`.
-Account lifecycle (registration, recovery) is not built yet.
+or through an external provider, behind one seam — is [sign-in.md](sign-in.md).
+Account lifecycle (registration, recovery) is not framework API: `alula generate
+auth` writes those flows into a project as source it owns.
 
 What this package owns is narrow and standard: **validate a token**. Even
 that delegates its cryptographic core to [JWTKit](https://github.com/vapor/jwt-kit)
@@ -84,6 +84,7 @@ dependency DAG. A module you write can declare framework modules in its own
 ```swift
 import AlulaCore
 import AlulaSecurityCore
+import AlulaTransport
 import AlulaWeb
 
 await Alula.run(
@@ -106,8 +107,8 @@ security:
 ```
 
 That's the whole provider integration: OIDC-compliant IdPs are
-*configuration* of the one generic validator, not separate packages
-(design). The JWKS endpoint is resolved automatically via OIDC
+*configuration* of the one generic validator, not separate packages. The
+JWKS endpoint is resolved automatically via OIDC
 discovery (`{issuer}/.well-known/openid-configuration`); set
 `security.oidc.jwks-url` only for a non-discoverable setup.
 
@@ -158,7 +159,7 @@ continues whether or not a token was presented or valid, so public routes
 stay public. Reject where you choose to.
 
 `AlulaSecurityModule` puts `Authentication` in the default lane and declares
-two more (Alula Web §"Middleware lanes"), so enforcement is a lane a
+two more ([middleware lanes](web.md#middleware-lanes)), so enforcement is a lane a
 controller or route names:
 
 ```swift
@@ -213,7 +214,8 @@ An anonymous request is 401; an authenticated one without the role is 403
 naming what would have been enough. Roles **add** rather than replace, so a
 controller's requirement cannot be widened by a route beneath it, and
 `roles:` on a `.public` route is a build error — a lane that establishes no
-principal can only ever reject. The full semantics are in `Docs/web.md`.
+principal can only ever reject. The full semantics are in
+[web.md](web.md#roles-protect-routes).
 
 ### Signing in with a session
 
@@ -260,8 +262,8 @@ conforms to `SessionReading`, and dispatch checks every route's chain.
 
 `RequireAuthentication` still answers a bare 401 with a `Bearer` challenge.
 A browser application wants that to be a redirect to the login page, which
-is what the `ErrorMapper` that reads the request is for (Alula Web
-§"Redirects").
+is what the `ErrorMapper` that reads the request is for
+([redirects](web.md#redirects)).
 
 ### What a role cannot express, the handler still does
 
@@ -539,7 +541,8 @@ mechanism keeps the intended semantics with the real APIs:
   `context.withPrincipal { ... }`, which binds it around service calls. The
   `Task.detached` caveat from design applies unchanged.
 - `context.request.bearerToken` is provided by this package (RFC 6750
-  parsing); `.respond(.unauthorized)` from the sketch is spelled
+  parsing, the same parser `CSRFProtection` uses to decide a request is a
+  bearer request, so the two cannot disagree); `.respond(.unauthorized)` from the sketch is spelled
   `.respond(.problem(status: .unauthorized, message: "Unauthorized"))` with
   the real Alula Web response API.
 
@@ -554,10 +557,11 @@ value described above.
 
 ## Hashing a password
 
-`PasswordHashing` is the one piece of a first-party credential story that
-exists here so far — not a `CredentialStore`, not a login route, just the
-primitive underneath either: turning a password into something safe to
-store, and checking one against it later.
+`PasswordHashing` is the primitive under first-party sign-in: turning a
+password into something safe to store, and checking one against it later.
+`PasswordAuthenticator` and the `CredentialStore` seam
+([sign-in.md](sign-in.md)) are built on it; use it directly when you store
+passwords yourself.
 
 ```swift
 let hasher = Argon2idHashing()                     // OWASP's default cost parameters
@@ -586,7 +590,7 @@ if hasher.needsRehash(stored) {
 Password sign-in built on it — a `CredentialStore` over the application's
 own accounts, a throttled `PasswordAuthenticator`, and the `SignInProvider`
 seam that makes it interchangeable with an external provider — is
-`Docs/sign-in.md`.
+[sign-in.md](sign-in.md).
 
 ## Non-goals
 

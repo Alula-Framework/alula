@@ -322,7 +322,7 @@ that carries the cookie, and everything downstream — `context.principal`,
 Ordering is `AlulaSecurityModule`'s: given the session runtime, it runs
 `Sessions` ahead of `Authentication` in every lane it declares, and a lane
 of your own that gets that backwards is refused at startup. The details are
-in `Docs/security-core.md` under *Signing in with a session*.
+in [security-core.md](security-core.md#signing-in-with-a-session).
 
 ## Signing out everywhere
 
@@ -421,7 +421,7 @@ let failures = await TelemetryTest.capture(SessionEvents.StoreFailed.self) {
 #expect(failures.map(\.metadata.operation) == ["load"])
 ```
 
-`Docs/telemetry.md` has the rest.
+[telemetry.md](telemetry.md) has the rest.
 
 ## One-time links
 
@@ -430,7 +430,7 @@ storage behind a password-reset or email-verification link, the same kind
 of thing as a session: server-side state with a lifetime that must be
 shared across replicas. The token logic is `AlulaSecurityCore`'s
 `OneTimeTokens`, which covers hashing, purposes, binding, and redeeming
-once. See `Docs/sign-in.md`. A store needs only `put` and an atomic
+once. See [sign-in.md](sign-in.md). A store needs only `put` and an atomic
 `take`.
 
 ## CSRF
@@ -440,7 +440,7 @@ ambient, cookie-carried authority a browser attaches automatically, to a
 request an attacker's page triggers without the visitor's knowledge.
 `CSRFProtection` is `AlulaWeb`'s, keyed off the same session's own token,
 with the same `SessionReading` ordering rule `Authentication` follows. See
-`Docs/web.md` under *CSRF*.
+[web.md](web.md#csrf).
 
 ## Testing
 

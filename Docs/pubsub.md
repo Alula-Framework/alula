@@ -2,15 +2,15 @@
 
 Topic-based publish/subscribe for Alula: a publisher sends a `Message` to a
 named topic; every subscriber to that topic receives it. That's the whole
-surface. It is the bottom of the Live family (Channels, Presence, Live all
-consume it) and the same distributed-coordination seam Alula Cloud's
-multi-node story needs. Modeled on
-`Phoenix.PubSub`.
+surface. It is the bottom of the realtime layers — Channels and Presence
+both consume it — and the seam a multi-node deployment fans out through.
+Modeled on `Phoenix.PubSub`.
 
 - **Local core** (`LocalPubSub`) — production-ready now; the 90% case.
 - **Distributed seam** (`DistributedPubSubAdapter`, `ClusteredPubSub`,
-  `PubSubRelayService`) — ships now; concrete adapters (Redis first, then
-  SWIM-native) are sequenced, per the design's maturity assessment.
+  `PubSubRelayService`) — the concrete adapters are alula-data's:
+  `AlulaPubSubValkeyModule` and
+  [`AlulaPubSubPostgresModule`](https://github.com/Alula-Framework/alula-data/blob/main/Docs/pubsub-postgres.md).
 - **No Web dependency** — usable by a headless app (job coordination, cache
   invalidation) with no HTTP at all.
 
@@ -77,8 +77,8 @@ import AlulaPubSub
 // `modules:` says which subsystems the application includes; the generated
 // composition root says how they are built, which is what lets PubSub take
 // its configuration. `alula new` writes the `composedBy:` argument.
-try await Alula.run(
-    configuration: .load(),
+await Alula.run(
+    configuration: try Configuration.load(),
     modules: [AlulaPubSubModule.self, AppModule.self],
     composedBy: alulaComposeModules
 )
@@ -212,7 +212,7 @@ public struct MyAdapterModule: AlulaModule {
     public let adapter: any DistributedPubSubAdapter
 
     public init(configuration: Configuration) throws {
-        self.adapter = MyAdapter(url: try configuration.require("pubsub.mine.url"))
+        self.adapter = MyAdapter(url: try configuration.get("pubsub.mine.url", as: String.self))
     }
 
     public init() { preconditionFailure("MyAdapterModule takes its configuration.") }

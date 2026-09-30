@@ -127,18 +127,12 @@ is not an answer worth acting on. Set `ALULA_ENV=dev` (or
 follows the same rule, from the same helper
 (`Configuration.isExplicitlyDevelopment()`), so the two never disagree about
 one process; an environment named in code (`Configuration.load(environment:)`)
-counts as stated for both.
-**Everywhere else the default is `health_only`** — an orchestrator needs a
-probe in production, and an all-or-nothing gate left production with none.
+counts as stated for both. `alula dev` sets `ALULA_ENV=dev` for you; a plain
+`swift run` does not.
 
 An unrecognised value fails bootstrap naming the key rather than falling back,
 for the reason given under [What gets published, and where](#what-gets-published-and-where): this decides
 whether an endpoint disclosing your topology exists.
-
-`ALULA_ACTUATOR_EXPOSURE` overrides it. That is an environment variable
-rather than a config key because it gates whether an endpoint that discloses
-your topology exists at all — a deployment decision Actuator reads from the raw
-environment, its one sanctioned exception to reading configuration instead.
 
 The dashboard is open unless configured otherwise, so `full` anywhere
 reachable wants `actuator.dashboard-pipelines` (below). `health_only` is safe
@@ -185,7 +179,9 @@ The JSON rendering is a public contract for hand-rolled front-ends. Shape
   `"failed"`)
 - `stereotype`: `"component" | "service" | "repository" | "controller" |
   "settings" | "middleware"` — all six of Core's `Stereotype` cases; a
-  front-end validating against this contract should accept the lot
+  front-end validating against this contract should accept the lot.
+  `"component"` marks a graph node with no more specific annotation, such
+  as a `@Scheduler` type; `@Service` types are `"service"`
 
 `scope` and `qualifier` were part of this contract until 0.20.0, which removed
 both from `ComponentDescriptor` — singleton was the only scope, and the
@@ -200,7 +196,7 @@ changing this wire format.
 
 Recorded here the same way sibling packages record theirs:
 
-1. **`ActuatorController` is a plain struct, hand-registered — not
+1. **`ActuatorController` is a plain struct that `ActuatorModule` builds — not
    `@Controller`.** An early revision used `@Controller` and broke the
    moment a real app depended on this package: Alula Core's registration
    plugin scans *every* recursive source-module dependency that sits atop
@@ -208,10 +204,10 @@ Recorded here the same way sibling packages record theirs:
    package with its own `AlulaModule`. A downstream app's generated
    composition root would try to build `ActuatorController` as one of its own
    graph nodes — bypassing the exposure gate entirely (whole point) and
-   colliding with what `ActuatorModule` already does. Every sibling starter
-   (`alula-web`, `alula-pubsub`, `alula-channels`, `alula-data-postgres`)
-   avoids this the same way: none of them put `@Service`/`@Controller` on
-   their own infrastructure. `ActuatorModule` builds the controller and serves
+   colliding with what `ActuatorModule` already does. Every framework module
+   (Web, PubSub, Channels, alula-data's Postgres) avoids this the same way:
+   none of them put `@Service`/`@Controller` on their own infrastructure
+   (see [Types their own module builds](core.md#types-their-own-module-builds)). `ActuatorModule` builds the controller and serves
    it through route values (`RouteRegistration`, the escape hatch `@GetRoute`
    sits beside).
 2. **The controller is handed its data, not a container.** A consequence
@@ -221,11 +217,11 @@ Recorded here the same way sibling packages record theirs:
    it. Nothing is `@Inject`ed and nothing is resolved at request time, so the
    guarded self-registration (and its duplicate-registration-avoidance dance)
    is gone with the container.
-3. **The gate's environment is a qualified component.** The dashboard reports
-   the same environment the registration gate ran against, injected as
-   `AlulaEnvironment` with qualifier `"alula.actuator"`, rather than
-   re-reading `ALULA_ENV` per request. The two can otherwise disagree
-   under the explicit-environment initializer.
+3. **The gate's environment is held, not re-read.** The dashboard reports
+   the same environment the registration gate ran against, which
+   `ActuatorModule` hands the controller as a stored `AlulaEnvironment`,
+   rather than re-reading `ALULA_ENV` per request. The two could otherwise
+   disagree under the explicit-environment initializer.
 4. **`ModuleHealth.isFailed` (and friends) live here.** The design's own
    test sketch uses `health.isFailed`; Core keeps `ModuleHealth` minimal,
    so the presentation predicates and stable labels ship in this package
@@ -254,7 +250,7 @@ fails through the real `assemble` health-tracking path), both renderings,
 HTML escaping of hostile registration metadata, and config resolution:
 
 ```
-swift test
+swift test --enable-all-traits --filter AlulaActuatorTests
 ```
 
 ## What gets published, and where
@@ -327,7 +323,7 @@ struct AppModule: AlulaModule {
 }
 ```
 
-Three rules keep this off the list of things that cause outages:
+Four rules keep this off the list of things that cause outages:
 
 - **Readiness only.** A failing check never fails liveness. Restarting a pod
   does not bring a database back, and a fleet restarting at once makes the

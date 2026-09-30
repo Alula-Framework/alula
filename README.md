@@ -115,7 +115,7 @@ struct Main {
 access; neither has anything to do with the long-running services a module
 runs). `@Controller` adds its routes. The build plugin reads all of it and
 generates `alulaComposeModules`, the **composition root**: it builds every
-module and component once, in dependency order, and a missing or ambiguous
+module and component once, each before anything that takes its values, and a missing or ambiguous
 dependency is a build error rather than a startup surprise.
 [Docs/core.md](Docs/core.md) explains modules, the graph and composition.
 

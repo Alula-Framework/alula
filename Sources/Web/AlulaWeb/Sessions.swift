@@ -49,7 +49,9 @@ public final class SessionRuntime: Sendable {
         }
     }
 
+    /// Where session records are kept.
     public let store: any SessionStore
+    /// Cookie attributes, lifetimes and limits, from `sessions.*`.
     public let settings: SessionSettings
     let coding: Session.Coding
     /// The clock expiry, renewal and the authenticated lifetime are measured on.
@@ -111,6 +113,8 @@ public final class SessionRuntime: Sendable {
 public struct Sessions: Middleware {
     private let runtime: SessionRuntime
 
+    /// The middleware over a runtime; `AlulaSessionsModule` builds both and
+    /// puts this in the default lane.
     public init(runtime: SessionRuntime) {
         self.runtime = runtime
     }
@@ -240,8 +244,10 @@ public protocol SessionReading: Middleware {}
 public struct SessionUnavailableError: Error, Sendable, Equatable, HTTPErrorRepresentable,
     CustomStringConvertible
 {
+    /// Which store call failed.
     public let operation: SessionStoreError.Operation
 
+    /// An error for the store call that failed.
     public init(operation: SessionStoreError.Operation) {
         self.operation = operation
     }

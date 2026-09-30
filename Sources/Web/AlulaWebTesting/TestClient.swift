@@ -50,8 +50,8 @@ public struct TestClient: Sendable {
     ///   - dispatch: The dispatch closure to drive — an existing one, for a
     ///     harness that built its own rather than going through routes.
     ///   - coders: The app's wire format, when the harness knows it.
-    ///     There is no container to read it from here, so it defaults to the
-    ///     package default.
+    ///     A dispatch closure does not say what the application configured,
+    ///     so this defaults to `WebCoders.default`.
     public init(dispatch: Dispatch, coders: WebCoders = .default) {
         self.dispatch = dispatch
         self.coders = coders
@@ -59,22 +59,32 @@ public struct TestClient: Sendable {
 
     // MARK: - Requests
 
+    /// Sends `request` through dispatch — middleware, routing, handler — and
+    /// returns the response. Never throws: a handler's error is the response
+    /// the application would have sent.
     public func execute(_ request: Request) async -> Response {
         await dispatch(request)
     }
 
+    /// GET `path`, query string included.
     public func get(_ path: String, headers: HTTPFields = [:]) async -> Response {
         await execute(Request(method: .get, path: path, headers: headers))
     }
 
+    /// POST raw `body` bytes; set `Content-Type` in `headers` yourself.
     public func post(_ path: String, headers: HTTPFields = [:], body: Data = Data()) async -> Response {
         await execute(Request(method: .post, path: path, headers: headers, body: body))
     }
 
+    /// POST `value` encoded with this client's ``coders``. Throws only if
+    /// encoding fails. `Content-Type` is not added; routes decode JSON
+    /// without one.
     public func post(_ path: String, headers: HTTPFields = [:], json value: some Encodable) async throws -> Response {
         await execute(Request(method: .post, path: path, headers: headers, body: try coders.jsonEncoder.encode(value)))
     }
 
+    /// PUT `value` encoded with this client's ``coders``. Throws only if
+    /// encoding fails.
     public func put(_ path: String, headers: HTTPFields = [:], json value: some Encodable) async throws -> Response {
         await execute(Request(method: .put, path: path, headers: headers, body: try coders.jsonEncoder.encode(value)))
     }
@@ -85,10 +95,13 @@ public struct TestClient: Sendable {
         await execute(Request(method: .patch, path: path, headers: headers, body: body))
     }
 
+    /// PATCH `value` encoded with this client's ``coders``. Throws only if
+    /// encoding fails.
     public func patch(_ path: String, headers: HTTPFields = [:], json value: some Encodable) async throws -> Response {
         await execute(Request(method: .patch, path: path, headers: headers, body: try coders.jsonEncoder.encode(value)))
     }
 
+    /// DELETE `path`.
     public func delete(_ path: String, headers: HTTPFields = [:]) async -> Response {
         await execute(Request(method: .delete, path: path, headers: headers))
     }

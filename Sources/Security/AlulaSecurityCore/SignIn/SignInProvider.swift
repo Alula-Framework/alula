@@ -80,9 +80,10 @@ extension SignInProvider {
         return result
     }
 
-    /// Asks the provider where signing out leads — which may read the
-    /// session, as an OIDC provider does for its ID token hint — and then
-    /// signs the session out.
+    /// Asks the provider where signing out leads, while the session is still
+    /// signed in for a provider that needs to read it, and then signs the
+    /// session out. ``OIDCSignIn`` reads nothing from it: it names itself
+    /// by `client_id`, since no ID token is kept.
     public func signOut(_ context: RequestContext) async throws -> SignOutStep {
         let step = try await beginSignOut(context)
         try context.requireSession().signOut()
@@ -130,6 +131,8 @@ public enum SignInStep: Sendable, Equatable {
 /// the `303`. The same rule decides when a static-asset mount serves the
 /// application shell.
 public enum RedirectNegotiation {
+    /// A `303` to `location`, or `200 {"redirect": location}` when the
+    /// request's `Accept` names no HTML.
     public static func response(to location: String, for context: RequestContext) throws -> Response {
         guard let accept = context.request.headers[.accept], !accept.contains("text/html") else {
             return .redirect(to: location, .seeOther)
@@ -141,15 +144,20 @@ public enum RedirectNegotiation {
 /// The fields a sign-in form needs, described rather than rendered — Alula
 /// has no templating, and a front end already knows how to draw a field.
 public struct SignInForm: Sendable, Equatable, Codable {
+    /// One input.
     public struct Field: Sendable, Equatable, Codable {
+        /// What kind of input to draw; the HTML `type` of the same name.
         public enum Kind: String, Sendable, Codable {
             case text, email, password
         }
+        /// The field's name in the submission.
         public var name: String
+        /// What kind of input it is.
         public var kind: Kind
         /// The `autocomplete` token browsers and password managers key on.
         public var autocomplete: String
 
+        /// A field posted as `name`.
         public init(name: String, kind: Kind, autocomplete: String) {
             self.name = name
             self.kind = kind
@@ -157,10 +165,12 @@ public struct SignInForm: Sendable, Equatable, Codable {
         }
     }
 
+    /// The inputs, in the order to show them.
     public var fields: [Field]
     /// Carried back in the submission so the result can say where to go.
     public var returnTo: String?
 
+    /// A form of `fields`, carrying `returnTo` back with the submission.
     public init(fields: [Field], returnTo: String? = nil) {
         self.fields = fields
         self.returnTo = returnTo
@@ -169,6 +179,7 @@ public struct SignInForm: Sendable, Equatable, Codable {
 
 /// A finished sign-in.
 public struct SignInResult: Sendable {
+    /// Who signed in; ``SignInProvider/signIn(_:)`` puts it in the session.
     public var principal: Principal
     /// The validated path the browser asked to return to, if any.
     public var returnTo: String?
@@ -203,6 +214,7 @@ public enum SignOutStep: Sendable, Equatable {
     /// The provider's own logout, so its session ends too.
     case redirect(URL)
 
+    /// `204` when done, a `303` to the provider's logout otherwise.
     public func response() -> Response {
         switch self {
         case .done: .status(.noContent)

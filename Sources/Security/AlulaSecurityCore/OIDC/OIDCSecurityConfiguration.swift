@@ -94,11 +94,17 @@ public struct OIDCSecurityConfiguration: Sendable {
     /// halves disagreeing means a value that depends on which door the
     /// configuration came through.
     public enum Defaults {
+        /// An hour.
         public static let jwksCacheTTL: TimeInterval = 3600
+        /// A minute.
         public static let clockSkewLeeway: TimeInterval = 60
+        /// Thirty seconds.
         public static let jwksRefreshCooldown: TimeInterval = 30
+        /// Six hours.
         public static let jwksMaxStaleAge: TimeInterval = 6 * 60 * 60
+        /// `roles`, `groups` and Keycloak's `realm_access.roles`.
         public static let rolesClaims = ["roles", "groups", "realm_access.roles"]
+        /// `scope` (space-delimited) and `scp` (an array).
         public static let scopesClaims = ["scope", "scp"]
 
         /// Every asymmetric signature algorithm JWTKit can verify.
@@ -119,6 +125,13 @@ public struct OIDCSecurityConfiguration: Sendable {
         ]
     }
 
+    /// The policy in code; each parameter is the property of the same name.
+    ///
+    /// Negative intervals are clamped to zero and algorithm names are
+    /// uppercased.
+    ///
+    /// - Throws: `ConfigError.decodingFailed` when `issuer` or `audience` is
+    ///   empty or blank.
     public init(
         issuer: String,
         audience: String,

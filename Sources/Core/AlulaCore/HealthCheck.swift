@@ -79,5 +79,6 @@ public enum HealthCheckResult: Sendable, Equatable {
     /// Why it failed — for logs, not for the probe response.
     case failed(String)
 
+    /// Whether the check passed.
     public var passed: Bool { self == .passed }
 }

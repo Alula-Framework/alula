@@ -55,7 +55,8 @@ takes the same decisions in code, for tests and embedders.
 ## Health is composed from modules
 
 Each `AlulaModule` gets a ``AlulaCore/ModuleHealth`` recorded for it by
-Core: `.running` once it configures, `.failed` if its `Service.run()` throws.
+Core: `.running` once it configures, `.failed` if its lifecycle service's
+`run()` throws (the module's `service`, not a `@Service` component).
 The actuator aggregates those and nothing else, so out of the box health
 answers "did a module's service die", not "can this module reach its
 database". A module that wants to say more calls
@@ -87,3 +88,4 @@ slow start forever.
 ### Output
 
 - ``ActuatorSnapshot``
+- ``ActuatorBuildInfo``

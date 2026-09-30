@@ -34,6 +34,8 @@ public struct ActuatorDashboardAccess: Sendable, Equatable {
     /// lanes let through.
     public var roles: [String]
 
+    /// Access through `pipelines`, admitting any of `roles`. The default
+    /// is ``open``'s: the default lane, and no role required.
     public init(pipelines: [PipelineLane] = [.default], roles: [String] = []) {
         self.pipelines = pipelines
         self.roles = roles
@@ -72,6 +74,7 @@ public struct ActuatorDashboardAccess: Sendable, Equatable {
     }
 }
 
+/// The `actuator.*` keys ``ActuatorDashboardAccess`` reads.
 public enum ActuatorConfigKey {
     /// Comma-separated lane names for the `/actuator` dashboard route.
     public static let dashboardPipelines = "actuator.dashboard-pipelines"
@@ -79,7 +82,9 @@ public enum ActuatorConfigKey {
     public static let dashboardRoles = "actuator.dashboard-roles"
 }
 
+/// A malformed dashboard-access setting, raised when the module is composed.
 public enum ActuatorDashboardAccessError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// The key is set but lists nothing.
     case emptyList(key: String)
 
     public var description: String {

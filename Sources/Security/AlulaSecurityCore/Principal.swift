@@ -30,6 +30,8 @@ public struct Principal: Sendable {
     /// omitted.
     public let claims: [String: any Sendable]
 
+    /// A principal from what a validator or sign-in established. Nothing is
+    /// checked: whoever builds one vouches for it.
     public init(
         subject: String,
         issuer: String,
@@ -44,8 +46,10 @@ public struct Principal: Sendable {
         self.claims = claims
     }
 
+    /// Whether ``roles`` contains `role`, compared exactly.
     public func hasRole(_ role: String) -> Bool { roles.contains(role) }
 
+    /// Whether ``scopes`` contains `scope`, compared exactly.
     public func hasScope(_ scope: String) -> Bool { scopes.contains(scope) }
 
     /// Typed access to an application claim: `principal.claim("email", as: String.self)`.
@@ -65,10 +69,16 @@ public struct Principal: Sendable {
 /// working when the application switches from its own passwords to Keycloak,
 /// or back.
 extension Principal {
+    /// The OpenID Connect standard claim names, as keys into ``Principal/claims``.
     public enum StandardClaim {
+        /// `email`: a `String`.
         public static let email = "email"
+        /// `email_verified`: a `Bool`.
         public static let emailVerified = "email_verified"
+        /// `name`: the full name, a `String`.
         public static let name = "name"
+        /// `preferred_username`: a `String` the user chose; not unique and
+        /// not stable, so never an identifier.
         public static let preferredUsername = "preferred_username"
 
         /// The claims a session keeps. See `Codable` below.

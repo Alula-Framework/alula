@@ -49,7 +49,11 @@ public struct AlulaEnvironment: RawRepresentable, Sendable, Hashable, Codable {
         self.rawValue = rawValue
     }
 
-    /// Local development. The default when `ALULA_ENV` is unset.
+    /// Local development. The default when `ALULA_ENV` is unset — for
+    /// choosing the overlay file only. An unset `ALULA_ENV` is not a
+    /// *declared* development environment, so it does not publish the
+    /// OpenAPI document or the actuator dashboard; see
+    /// `Configuration.isExplicitlyDevelopment(processEnvironment:)`.
     public static let dev = AlulaEnvironment("dev")
 
     /// Automated tests. A first-class environment so `alula-test.yaml` can
@@ -72,7 +76,10 @@ public struct AlulaEnvironment: RawRepresentable, Sendable, Hashable, Codable {
     /// Reads `ALULA_ENV` from the process environment.
     ///
     /// Defaults to ``dev`` when unset, since "no environment specified" is
-    /// the normal local-development state.
+    /// the normal local-development state. That default picks the overlay
+    /// file; it does not count as having declared development, which is
+    /// what `Configuration.declaredEnvironment(processEnvironment:)`
+    /// answers.
     public static func current(prefix: ConfigPrefix = .default) -> AlulaEnvironment {
         current(from: ProcessInfo.processInfo.environment, prefix: prefix)
     }

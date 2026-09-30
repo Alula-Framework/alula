@@ -32,14 +32,20 @@ extension Configuration {
         }
     }
 
-    /// Whether developer-facing surfaces — the OpenAPI document, the actuator
-    /// dashboard — are published by default: only when the environment was
-    /// stated *and* is a development one (`AlulaEnvironment.isDevelopment`).
+    /// Whether developer-only behaviour is on by default: only when the
+    /// environment was stated *and* is a development one
+    /// (`AlulaEnvironment.isDevelopment`).
+    ///
+    /// The one rule for everything that is safe on a laptop and not in
+    /// production: the OpenAPI document, the actuator dashboard,
+    /// `AlulaMailModule` logging mail (reset links included) when no
+    /// transport is configured, and `AlulaQueueModule` accepting its
+    /// in-memory store without a warning.
     ///
     /// Unset is not development here, though it selects the `dev` overlay: a
     /// production deployment that forgets `ALULA_ENV` must not start
-    /// describing itself. A development machine says `ALULA_ENV=dev` (which
-    /// `alula dev` does not do for it), or turns the surface on by its own key.
+    /// describing itself. A development machine says `ALULA_ENV=dev` (`alula
+    /// dev` sets it when it is unset), or turns the surface on by its own key.
     public func isExplicitlyDevelopment(
         processEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {

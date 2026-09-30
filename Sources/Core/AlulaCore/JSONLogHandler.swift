@@ -115,13 +115,19 @@ public struct JSONLogHandler: LogHandler {
 /// process, so an application that calls `LoggingSystem.bootstrap` itself must
 /// leave these unset.
 public struct LoggingSettings: Sendable, Equatable {
+    /// How each log line is written.
     public enum Format: String, Sendable, Equatable {
+        /// One JSON object per line, via ``JSONLogHandler``.
         case json
+        /// swift-log's plain stream handler.
         case text
     }
+    /// `logging.format`.
     public var format: Format
+    /// `logging.level`: the lowest level written.
     public var level: Logger.Level
 
+    /// Settings in code.
     public init(format: Format = .text, level: Logger.Level = .info) {
         self.format = format
         self.level = level

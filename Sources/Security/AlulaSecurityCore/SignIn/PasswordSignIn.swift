@@ -5,20 +5,27 @@ import AlulaWeb
 ///
 /// The submission is JSON or form-encoded — `identifier`, `password`, and
 /// optionally `returnTo` — so both a script and a plain HTML form can post
-/// it. That second one is why the route it posts to belongs on the `csrf`
-/// lane: a form on any site can submit the same shape (see `Docs/web.md`,
-/// "Guard sign-in too").
+/// it. That second one is why the route it posts to belongs on a lane with
+/// `CSRFProtection` in it — a form on any site can submit the same shape
+/// (see `Docs/web.md`, "Guard sign-in too", whose example names it `csrf`).
 public struct PasswordSignIn: SignInProvider {
+    /// Checks the submitted identifier and password.
     public let authenticator: PasswordAuthenticator
 
+    /// A provider over `authenticator`; ``AlulaPasswordSignInModule`` builds
+    /// both.
     public init(authenticator: PasswordAuthenticator) {
         self.authenticator = authenticator
     }
 
     /// What the form posts. Field names match ``form``.
     public struct Submission: Decodable, Sendable {
+        /// Whatever the ``CredentialStore`` looks accounts up by: an email,
+        /// a username.
         public var identifier: String
+        /// The password, in the clear; never logged.
         public var password: String
+        /// Where to go afterwards; validated before it is used.
         public var returnTo: String?
     }
 

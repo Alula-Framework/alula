@@ -128,6 +128,7 @@ written by hand.
 ## When the plugin is wrong
 
 It is a checker, not an oracle. If it reports a missing registration for
-something you provide as a value, the marker comment is the intended answer —
-not disabling the plugin. If it reports a cycle you believe is not one, the
+something you provide as a value, the answer is a module that holds that value
+as a stored property and is included in the application — the scan sees
+included modules and wires from them — not disabling the plugin. If it reports a cycle you believe is not one, the
 cycle is usually real and mediated by a type you forgot participates.

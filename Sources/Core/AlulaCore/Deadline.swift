@@ -10,6 +10,7 @@
 /// its timeout to what is left. There is no point waiting 30 seconds for a
 /// downstream answer when the caller gives up in 5.
 public enum Deadline {
+    /// The instant the current work must finish by; nil with no deadline.
     @TaskLocal public static var current: ContinuousClock.Instant?
 
     /// Time left before `current`, zero once it has passed; nil with no deadline.

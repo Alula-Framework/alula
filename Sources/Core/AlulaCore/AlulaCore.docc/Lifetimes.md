@@ -19,8 +19,9 @@ naming the migration, rather than the type checker's "extra argument in call".
 ## Singleton — the only lifetime
 
 One instance, built during composition, shared by everything. Because a
-singleton is shared across every task in the process, it must be `Sendable` —
-the compiler enforces it.
+singleton is shared across every task in the process, it must be `Sendable`:
+a struct of `Sendable` values is, and a class component has to declare it or
+the build stops at the class (ALU-DI-1020).
 
 A component declares what it needs with `@Inject`, and the composition root
 builds it once, in dependency order, wiring those dependencies by type:

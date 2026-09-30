@@ -1559,7 +1559,11 @@ for component in components {
                 explanation: [
                     "Nothing provides `Optional<\(written.dropLast())>`, so the dependency would never arrive."
                 ],
-                help: ["drop the `?` if the dependency is required, or resolve it by hand where absence is meaningful."]))
+                help: [
+                    "drop the `?` if the dependency is required.",
+                    "if absence is meaningful, have the module that knows provide a non-optional value "
+                        + "(a no-op one when the real one is absent) and inject that.",
+                ]))
             continue
         }
         let base = written

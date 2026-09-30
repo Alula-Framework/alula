@@ -34,11 +34,15 @@ public enum APIKeys {
     /// ``APIKeys/Stored/id`` is not one (it is in every key, in the clear)
     /// and ``APIKeys/Stored/secretDigest`` cannot be presented as a key.
     public struct Stored: Sendable, Equatable, Codable {
+        /// The key's lookup id, the middle part of `sk_<id>_<secret>`.
         public var id: String
         /// SHA-256 of the secret, base64url.
         public var secretDigest: String
+        /// The ``Principal/subject`` a request with this key gets.
         public var subject: String
+        /// The ``Principal/roles`` a request with this key gets.
         public var roles: Set<String>
+        /// The ``Principal/scopes`` a request with this key gets.
         public var scopes: Set<String>
         /// When the key stops working; nil for never. Compared with the
         /// validator's clock, with no leeway.
@@ -47,6 +51,8 @@ public enum APIKeys {
         /// with it: ``APIKeyValidator`` keeps no cache of its own.
         public var revoked: Bool
 
+        /// A stored key from its parts. ``APIKeys/issue(prefix:subject:roles:scopes:expiresAt:)``
+        /// builds one for a new key; this is for a store reading its rows.
         public init(
             id: String, secretDigest: String, subject: String, roles: Set<String> = [],
             scopes: Set<String> = [], expiresAt: Date? = nil, revoked: Bool = false
@@ -63,7 +69,10 @@ public enum APIKeys {
 
     /// A new key: `key` for its owner, shown once, and `stored` for the store.
     public struct Issued: Sendable {
+        /// The whole key, secret included. Give it to its owner once; it is
+        /// not kept anywhere.
         public let key: String
+        /// What to save in the ``APIKeyStore``.
         public let stored: Stored
     }
 
@@ -129,8 +138,10 @@ public protocol APIKeyStore: Sendable {
 public final class InMemoryAPIKeyStore: APIKeyStore, Sendable {
     private let keys = Mutex<[String: APIKeys.Stored]>([:])
 
+    /// An empty store.
     public init() {}
 
+    /// Adds `key`, or replaces the key with its id.
     public func save(_ key: APIKeys.Stored) {
         keys.withLock { $0[key.id] = key }
     }

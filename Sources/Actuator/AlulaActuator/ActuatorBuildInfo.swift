@@ -16,12 +16,18 @@ import Foundation
 /// published where the dashboard is, behind the same roles: a precise
 /// version tells an attacker which advisories apply.
 public struct ActuatorBuildInfo: Sendable, Equatable {
+    /// `app.name`.
     public var name: String?
+    /// `app.version`.
     public var version: String?
+    /// `app.build.commit`.
     public var commit: String?
+    /// `app.build.time`, reported as written.
     public var buildTime: String?
+    /// When this process started, reported beside the build.
     public var startedAt: Date
 
+    /// Build info in code.
     public init(
         name: String? = nil, version: String? = nil, commit: String? = nil,
         buildTime: String? = nil, startedAt: Date = Date()

@@ -19,15 +19,23 @@ public struct StoredCredential: Sendable, Equatable {
     /// password — invited and not yet set, or signing in some other way. A
     /// nil hash never authenticates.
     public var passwordHash: String?
+    /// The ``Principal/roles`` a sign-in with this account gets.
     public var roles: Set<String>
     /// A disabled account is refused *after* its password verifies, so the
     /// refusal tells nothing to someone who does not know the password.
     public var isDisabled: Bool
+    /// Becomes the principal's ``Principal/StandardClaim/email`` claim.
     public var email: String?
+    /// Becomes the principal's ``Principal/StandardClaim/emailVerified``
+    /// claim.
     public var emailVerified: Bool
+    /// Becomes the principal's ``Principal/StandardClaim/name`` claim.
     public var name: String?
+    /// Becomes the principal's ``Principal/StandardClaim/preferredUsername``
+    /// claim.
     public var preferredUsername: String?
 
+    /// An account record, as a store reads it from its rows.
     public init(
         subject: String,
         passwordHash: String?,
@@ -90,6 +98,7 @@ public final class InMemoryCredentialStore: CredentialStore, Sendable {
     }
     private let state = Mutex(State())
 
+    /// An empty store.
     public init() {}
 
     /// Adds or replaces `credential`, reachable by each of `identifiers` —

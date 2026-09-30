@@ -30,6 +30,7 @@ import HTTPTypes
 /// messages stay specific: a missing field is a 400 from decoding, an
 /// implausible one a 422 from here.
 public protocol Validatable {
+    /// Records each failed check in `v`; recording nothing means valid.
     func validate(_ v: inout Validation)
 }
 
@@ -37,8 +38,11 @@ public protocol Validatable {
 public struct FieldError: Sendable, Equatable, Codable {
     /// The field's name as the client sent it: `email`, `items[2].quantity`.
     public let field: String
+    /// What is wrong with it, phrased to follow the field's name:
+    /// `must be an email address`.
     public let message: String
 
+    /// A failure of `field`, described by `message`.
     public init(field: String, message: String) {
         self.field = field
         self.message = message
@@ -47,12 +51,15 @@ public struct FieldError: Sendable, Equatable, Codable {
 
 /// Collects failures while a ``Validatable`` checks itself.
 public struct Validation: Sendable {
+    /// Every failure recorded so far, in the order recorded.
     public private(set) var errors: [FieldError] = []
     private let prefix: String
 
+    /// An empty collector, for running a ``Validatable`` by hand.
     public init() { self.prefix = "" }
     private init(prefix: String) { self.prefix = prefix }
 
+    /// Whether nothing has failed.
     public var isValid: Bool { errors.isEmpty }
 
     /// Records `message` against `field` unless `condition` holds.
@@ -105,8 +112,10 @@ public struct Validation: Sendable {
 
 /// One check on a value: a message when it fails, nil when it passes.
 public struct ValidationRule<Value>: Sendable {
+    /// Returns the failure message for a value, or nil when it passes.
     public let check: @Sendable (Value) -> String?
 
+    /// A rule from a closure returning the failure message, or nil.
     public init(_ check: @escaping @Sendable (Value) -> String?) {
         self.check = check
     }
@@ -201,12 +210,15 @@ extension ValidationRule where Value: Collection & Sendable {
 ///             {"field": "age", "message": "must be between 13 and 130"}]}
 /// ```
 public struct ValidationFailure: HTTPErrorRepresentable, Sendable, Equatable {
+    /// Every field that failed.
     public let errors: [FieldError]
 
+    /// A 422 listing `errors`.
     public init(errors: [FieldError]) {
         self.errors = errors
     }
 
+    /// Always 422 Unprocessable Content.
     public var httpStatus: HTTPResponse.Status { .unprocessableContent }
 
     /// The summary, with each field listed, so a renderer that knows nothing

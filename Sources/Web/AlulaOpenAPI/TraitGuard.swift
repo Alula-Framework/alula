@@ -4,6 +4,6 @@
     AlulaOpenAPI requires the "Web" trait.
 
         .package(url: "https://github.com/Alula-Framework/alula.git", \
-                 from: "0.43.0", traits: ["Web"])
+                 from: "0.60.0", traits: ["Web"])
     """)
 #endif

@@ -13,7 +13,7 @@
 // including dependency targets' source files — and the plugin sandbox allows
 // reading them.
 //
-// Sandbox notes (spike question (b)): no network; writes restricted to this
+// Sandbox notes: no network; writes restricted to this
 // plugin's work directory (both the manifest and the generated file live
 // there); reads of package/dependency sources are permitted.
 
@@ -23,7 +23,7 @@ import PackagePlugin
 @main
 struct AlulaRegistrationPlugin: BuildToolPlugin {
 
-    // Shape shared with Sources/alula-registration-gen.
+    // Shape shared with Sources/Core/alula-registration-gen.
     struct Manifest: Codable {
         struct Module: Codable {
             let name: String
@@ -33,7 +33,7 @@ struct AlulaRegistrationPlugin: BuildToolPlugin {
         let modules: [Module]
         let output: String
         // Where alula.yaml lives (the package owning the target), for the
-        // Alula Config the compile-time @ConfigValue key check.
+        // compile-time @ConfigValue key check.
         let packageDirectory: String?
     }
 

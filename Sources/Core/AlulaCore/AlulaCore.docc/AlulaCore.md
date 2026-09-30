@@ -42,16 +42,23 @@ rather than the first request unlucky enough to touch it. Afterwards every
 component is a shared singleton, reached directly, so there is nothing to
 resolve per request.
 
-## Components should be Sendable
+## Components are Sendable
 
-A singleton is shared across every task in the process, so in practice it must
-be `Sendable`: a shared, mutable, non-`Sendable` singleton handed to two tasks
-is a data race with no diagnostic at all.
+A singleton is shared across every task in the process, so it must be
+`Sendable`: a shared, mutable, non-`Sendable` singleton handed to two tasks is
+a data race.
 
-Nothing checks this for you. `@Service` adds an initializer; it adds no
-conformance and no constraint, and a mutable `final class` component compiles
-cleanly — the constraint left with the container in 0.17.0. Declaring
-`Sendable` is what turns the requirement into something the compiler can see.
+`@Service` adds an initializer, not a conformance, so the build checks it
+instead. A struct of `Sendable` values is `Sendable` without saying so; a
+class component that does not declare `Sendable` is a build error at the class
+(ALU-DI-1020), and once it declares it the compiler checks its stored
+properties. A class isolated to a global actor counts as `Sendable` already,
+and a controller, built per request rather than held, is not checked.
+
+`@Service` is only the "build this and share it" annotation. It has nothing to
+do with a module's lifecycle service — ``AlulaModule/service``, a
+ServiceLifecycle `Service` with a `run()` — and annotating a type `@Service`
+starts nothing.
 
 Per-request mutable state does not belong on a singleton. It rides the request
 context as a typed value — one copy per request, never shared between them.
@@ -61,6 +68,7 @@ context as a typed value — one copy per request, never shared between them.
 ### Bootstrapping
 
 - ``Alula``
+- ``Configuration``
 - ``AssembledApplication``
 - ``AssembledService``
 - ``ServiceShutdownPhase``
@@ -86,6 +94,34 @@ context as a typed value — one copy per request, never shared between them.
 ### Resolution
 
 - ``ResolutionError``
+
+### Lifecycle
+
+- ``LifecycleHook``
+- ``LifecycleSettings``
+- ``CommandRegistration``
+- ``CommandContext``
+- ``ShutdownDeadline``
+- ``Deadline``
+- ``withAlulaTimeout(_:throwing:_:)``
+- ``FirstAnswer``
+
+### Health
+
+- ``HealthCheck``
+- ``HealthCheckResult``
+
+### Startup failures
+
+- ``RejectedInput``
+- ``TemporarilyUnavailable``
+- ``AdapterCandidate``
+- ``UnloadedAdapterError``
+
+### Logging
+
+- ``LoggingSettings``
+- ``JSONLogHandler``
 
 ### Introspection
 

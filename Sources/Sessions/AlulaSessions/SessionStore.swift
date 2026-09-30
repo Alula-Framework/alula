@@ -34,13 +34,17 @@ public protocol SessionStore: Sendable {
 /// A store's own failure, with detail for the internal log. The wire never
 /// sees it — the middleware answers 503 with a generic body.
 public struct SessionStoreError: Error, Sendable, CustomStringConvertible {
+    /// The ``SessionStore`` call that failed.
     public enum Operation: String, Sendable {
         case load, save, delete
     }
 
+    /// Which call failed.
     public let operation: Operation
+    /// Why, for the log. May name hosts or keys; never sent to a client.
     public let reason: String
 
+    /// A failure of `operation`, explained by `reason`.
     public init(operation: Operation, reason: String) {
         self.operation = operation
         self.reason = reason
@@ -77,8 +81,10 @@ public protocol OwnerIndexedSessionStore: SessionStore {
 /// owner. Surfaced, never swallowed: a "sign out everywhere" that silently
 /// signed nobody out is the failure this exists to prevent.
 public struct SessionRevocationUnsupported: Error, Sendable, CustomStringConvertible {
+    /// The store's type name, for the message.
     public let storeType: String
 
+    /// An error naming the store that cannot revoke.
     public init(storeType: String) { self.storeType = storeType }
 
     public var description: String {

@@ -27,9 +27,12 @@ public final class Session: Sendable {
 
     /// How values are turned into the bytes a store holds.
     public struct Coding: Sendable {
+        /// Encodes a value for ``Session/set(_:_:)`` and ``Session/flash(_:_:)``.
         public var encoder: JSONEncoder
+        /// Decodes a value for ``Session/get(_:as:)`` and ``Session/flashed(_:as:)``.
         public var decoder: JSONDecoder
 
+        /// Coding with these coders.
         public init(encoder: JSONEncoder, decoder: JSONDecoder) {
             self.encoder = encoder
             self.decoder = decoder
@@ -136,14 +139,17 @@ public final class Session: Sendable {
 
     // MARK: - Values
 
+    /// The keys that hold a value.
     public var keys: Set<String> {
         state.withLock { Set($0.values.keys) }
     }
 
+    /// Whether no key holds a value.
     public var isEmpty: Bool {
         state.withLock { $0.values.isEmpty }
     }
 
+    /// Whether `key` holds a value, without decoding it.
     public func contains(_ key: String) -> Bool {
         state.withLock { $0.values[key] != nil }
     }
@@ -167,6 +173,8 @@ public final class Session: Sendable {
         }
     }
 
+    /// Removes the value under `key`. Removing an absent key does not mark
+    /// the session modified.
     public func remove(_ key: String) {
         state.withLock { state in
             guard state.values.removeValue(forKey: key) != nil else { return }

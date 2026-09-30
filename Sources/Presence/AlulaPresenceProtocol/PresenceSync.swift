@@ -4,11 +4,15 @@ import AlulaChannelsProtocol
 /// changed, after normalization. Keys map to the metas that joined
 /// (including updated metas — same ref, new payload) or genuinely left.
 public struct PresenceSyncChange: Sendable, Equatable {
+    /// Metas that joined or were updated, by key.
     public let joins: [String: [PresenceMeta]]
+    /// Metas that genuinely left, by key.
     public let leaves: [String: [PresenceMeta]]
 
+    /// Whether the message changed nothing.
     public var isEmpty: Bool { joins.isEmpty && leaves.isEmpty }
 
+    /// A change; empty by default.
     public init(joins: [String: [PresenceMeta]] = [:], leaves: [String: [PresenceMeta]] = [:]) {
         self.joins = joins
         self.leaves = leaves
@@ -38,9 +42,11 @@ public struct PresenceSync: Sendable, Equatable {
     /// in place.
     public private(set) var entries: [String: [PresenceMeta]] = [:]
 
+    /// An empty view, before any state message.
     public init() {}
 
-    /// The current list, sorted by key for stable presentation.
+    /// Every present key with its metas, sorted by key so a rendered list
+    /// does not reorder between messages.
     public var list: [PresenceEntry] {
         entries.keys.sorted().map { PresenceEntry(key: $0, metas: entries[$0]!) }
     }

@@ -21,13 +21,19 @@ public enum PresenceEvent {
 /// A meta object is the application payload flattened alongside `ref` —
 /// which is why `"ref"` is a reserved payload key (the server refuses it).
 public enum PresenceWire {
+    /// `metas`: an entry's list of metas.
     public static let metasKey = "metas"
+    /// `ref`: a meta's identity, beside its payload fields.
     public static let refKey = "ref"
+    /// `joins`: a diff's entries that joined.
     public static let joinsKey = "joins"
+    /// `leaves`: a diff's entries that left.
     public static let leavesKey = "leaves"
 
     // MARK: - Encoding
 
+    /// One meta object: `ref` plus the payload fields, a payload `ref` left
+    /// out.
     public static func json(meta: PresenceMeta) -> JSONValue {
         var object: [String: JSONValue] = [refKey: .string(meta.ref)]
         for (key, value) in meta.payload where key != refKey {
@@ -36,6 +42,7 @@ public enum PresenceWire {
         return .object(object)
     }
 
+    /// `{"metas": [...]}`.
     public static func json(metas: [PresenceMeta]) -> JSONValue {
         .object([metasKey: .array(metas.map { json(meta: $0) })])
     }
@@ -46,10 +53,12 @@ public enum PresenceWire {
         .object(entries.mapValues { json(metas: $0) })
     }
 
+    /// The `entries` shape, from a list.
     public static func json(entries: [PresenceEntry]) -> JSONValue {
         json(entries: Dictionary(uniqueKeysWithValues: entries.map { ($0.key, $0.metas) }))
     }
 
+    /// The `diff` shape.
     public static func diffJSON(joins: [String: [PresenceMeta]], leaves: [String: [PresenceMeta]]) -> JSONValue {
         .object([joinsKey: json(entries: joins), leavesKey: json(entries: leaves)])
     }

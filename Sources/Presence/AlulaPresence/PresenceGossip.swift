@@ -43,6 +43,7 @@ public enum PresenceGossipMessage: Sendable, Equatable, Codable {
     /// waiting a full re-announce interval.
     case syncRequest(from: PresenceReplicaID)
 
+    /// The replica that sent the frame, whichever kind it is.
     public var sender: PresenceReplicaID {
         switch self {
         case .delta(let from, _), .snapshot(let from, _), .syncRequest(let from):

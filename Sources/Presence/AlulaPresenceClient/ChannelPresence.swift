@@ -26,8 +26,11 @@ public actor ChannelPresence {
     /// plus the net joins/leaves that message caused (meta updates appear
     /// in `joins` only — normalized).
     public struct Change: Sendable, Equatable {
+        /// Everyone present after the message, sorted by key.
         public let list: [PresenceEntry]
+        /// Metas that joined or were updated, by key.
         public let joins: [String: [PresenceMeta]]
+        /// Metas that left, by key.
         public let leaves: [String: [PresenceMeta]]
     }
 
@@ -36,6 +39,7 @@ public actor ChannelPresence {
     private var pump: Task<Void, Never>?
     private var observers: [UUID: AsyncStream<Change>.Continuation] = [:]
 
+    /// Presence for `channel`'s topic. Nothing is read until ``start()``.
     public init(channel: ChannelHandle) {
         self.channel = channel
     }

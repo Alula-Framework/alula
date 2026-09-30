@@ -10,23 +10,30 @@
 ///   observed from its previous life — silently swallowing its re-tracks.
 ///   The boot id makes restart safety structural instead of hopeful.
 public struct PresenceReplicaID: Hashable, Sendable, Codable, CustomStringConvertible {
+    /// The node's name, `presence.node-name`.
     public let name: String
+    /// Unique to this process start.
     public let boot: String
 
+    /// A replica id; the module generates `boot` at composition.
     public init(name: String, boot: String) {
         self.name = name
         self.boot = boot
     }
 
+    /// `name#boot`, as logs show it.
     public var description: String { "\(name)#\(boot)" }
 }
 
 /// One observed addition: `(replica, counter)` — the unit of add/remove in
 /// the CRDT. Counters are per-replica and monotonic within one boot.
 public struct PresenceDot: Hashable, Sendable, Codable, Comparable {
+    /// The replica that made the addition.
     public let replica: PresenceReplicaID
+    /// That replica's counter at the addition, from 1.
     public let counter: UInt64
 
+    /// A dot.
     public init(replica: PresenceReplicaID, counter: UInt64) {
         self.replica = replica
         self.counter = counter

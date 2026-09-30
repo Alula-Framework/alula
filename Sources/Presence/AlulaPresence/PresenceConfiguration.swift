@@ -27,8 +27,8 @@ public struct PresenceConfiguration: Sendable, Equatable {
 
     /// Both modes: a replica continuously down for this long is purged —
     /// entries deleted, context forgotten. Until then its state is kept
-    /// hidden, so a wrongly-evicted node that resumes gossiping ('s
-    /// flap) comes back as joins without data loss.
+    /// hidden, so a wrongly evicted node that resumes gossiping (a flap)
+    /// comes back as joins without data loss.
     public var permdownAfter: Duration
 
     /// How often the liveness sweep runs. Defaults to a quarter of
@@ -73,6 +73,11 @@ public struct PresenceConfiguration: Sendable, Equatable {
     /// teaches people to skip the line.
     public var downAfterIsExplicit = false
 
+    /// Settings built in code. Unlike ``init(configuration:)`` this checks
+    /// nothing. A nil `nodeName` generates `node-<8 hex>`; a nil
+    /// `sweepInterval` is a quarter of `downAfter`, at least 100 ms; a nil
+    /// `membershipFallbackAfter` is four times `downAfter`, at least a
+    /// minute, and `.some(nil)` turns the backstop off.
     public init(
         nodeName: String? = nil,
         heartbeatInterval: Duration = .seconds(5),
@@ -106,6 +111,14 @@ public struct PresenceConfiguration: Sendable, Equatable {
     ///   default: `max(down-after * 4, 60)`; `0` disables the backstop)
     /// - `presence.max-entries-per-frame` (Int, default 10000; `0`
     ///   disables the bound)
+    ///
+    /// The pre-0.60 spellings under `alula.presence.*` (and
+    /// `ALULA_ALULA_PRESENCE_*`) are refused at startup with ALU-CONFIG-5014,
+    /// which names the new key.
+    ///
+    /// - Throws: ``PresenceConfigurationError`` for an interval that is not
+    ///   a positive, finite number of seconds, or a `down-after` not above
+    ///   the heartbeat interval.
     public init(configuration: Configuration) throws {
         let nodeName = try configuration.getIfPresent("presence.node-name", formerly: ["alula.presence.node-name"], as: String.self)
         // `getIfPresent`, never `get(_:default:)`: the latter traps on a
@@ -150,10 +163,15 @@ public struct PresenceConfiguration: Sendable, Equatable {
     }
 }
 
+/// A `presence.*` value that cannot be used. Thrown at composition.
 public enum PresenceConfigurationError: Error, CustomStringConvertible, Sendable, Equatable {
+    /// An interval is zero, negative, or not finite.
     case nonPositiveInterval
+    /// `down-after-seconds` does not exceed `heartbeat-interval-seconds`, in
+    /// seconds.
     case downAfterNotAboveHeartbeat(heartbeat: Double, downAfter: Double)
 
+    /// Names the rule, and the two values for the second case.
     public var description: String {
         switch self {
         case .nonPositiveInterval:

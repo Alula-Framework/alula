@@ -12,12 +12,15 @@ public struct PresenceEntry: Sendable, Equatable {
     /// One meta per live connection for this key. Three tabs ⇒ three metas.
     public let metas: [PresenceMeta]
 
+    /// An entry.
     public init(key: String, metas: [PresenceMeta]) {
         self.key = key
         self.metas = metas
     }
 }
 
+/// One connection's presence under a key: its ref and what the application
+/// said about it.
 public struct PresenceMeta: Sendable, Equatable, Hashable {
     /// Unique per connection. Assigned when tracked; the unit of add/remove.
     /// Stable across `update` — a meta-only change keeps its ref.
@@ -27,6 +30,7 @@ public struct PresenceMeta: Sendable, Equatable, Hashable {
     /// device info, joined-at timestamp, etc. Opaque to Presence.
     public let payload: [String: String]
 
+    /// A meta.
     public init(ref: String, payload: [String: String]) {
         self.ref = ref
         self.payload = payload

@@ -32,6 +32,8 @@ import struct Foundation.UUID
 /// anything runs, and the service is built from it — nothing is looked up at
 /// `run()`.
 public struct AlulaPresenceModule: AlulaModule {
+    /// `AlulaPubSubModule` for the buses and `AlulaChannelsModule`, whose
+    /// sockets presence tracks.
     public static var dependencies: [any AlulaModule.Type] {
         [AlulaPubSubModule.self, AlulaChannelsModule.self]
     }
@@ -62,11 +64,9 @@ public struct AlulaPresenceModule: AlulaModule {
     ///     presence runs in `.membership` mode; without, it falls back to
     ///     heartbeat expiry.
     ///
-    /// The last two used to be container probes — `resolve`, catching
-    /// `.notRegistered` to mean "not in this deployment". That is a runtime
-    /// scan answering a question about how the application was assembled,
-    /// which the composition root knows; `AlulaPubSubModule` had the same
-    /// probe for the same reason and lost it the same way.
+    /// The last two are parameters because whether a deployment has them is
+    /// a fact about how it was composed, which the composition root knows.
+    /// - Throws: ``PresenceConfigurationError`` for a bad `presence.*` value.
     public init(
         configuration: Configuration,
         localBus: LocalPubSub,
@@ -91,6 +91,8 @@ public struct AlulaPresenceModule: AlulaModule {
         self.gossipBus = gossipBus
     }
 
+    /// Traps: this module needs its buses and configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaPresenceModule takes its buses and configuration in "
@@ -100,11 +102,8 @@ public struct AlulaPresenceModule: AlulaModule {
                 + "yourself and use the entry point taking module instances.")
     }
 
-    /// Projects what this module already holds.
-    /// Built from what this module holds. It used to be built from the
-    /// stashed `Container` and resolve at `run()`, because the service is
-    /// constructed pre-freeze and the components did not exist yet — they do
-    /// now, before any container does.
+    /// A ``PresenceService`` over this module's tracker, gossip bus and
+    /// monitor; nothing is looked up.
     public var service: (any Service)? {
         PresenceService(
             tracker: tracker,

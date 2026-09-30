@@ -19,14 +19,8 @@ public struct PresenceService: Service, Sendable {
     private let configuration: PresenceConfiguration
     private let logger: Logger
 
-    /// Built from what `AlulaPresenceModule` holds.
-    ///
-    /// There used to be a second initializer taking a `Container`, and a
-    /// `Source` enum to hold either — because the module registered factories
-    /// and its service was constructed *pre-freeze*, so the components did not
-    /// exist yet and `run()` had to resolve them. A module that owns its
-    /// components has them before any container exists, so the seam that
-    /// existed only for tests is now the whole thing.
+    /// Built from what `AlulaPresenceModule` holds; a test builds one
+    /// directly around its own tracker and bus.
     public init(
         tracker: PresenceTracker,
         pubsub: any PubSub,
@@ -41,6 +35,13 @@ public struct PresenceService: Service, Sendable {
         self.logger = logger
     }
 
+    /// Logs the mode, then runs until graceful shutdown: in a cluster,
+    /// gossiping heartbeats, sweeping expired entries and (in `.membership`
+    /// mode) following the monitor; on a single node, only waiting. Never
+    /// throws. In a cluster it also returns, logging an error, if the gossip
+    /// subscription or the monitor's stream ends while running, so the
+    /// service group's failure policy applies instead of a node serving a
+    /// local-only view.
     public func run() async throws {
         let mode = tracker.mode
         logStartup(mode: mode, replica: tracker.replica, configuration: configuration)

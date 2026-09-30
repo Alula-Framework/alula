@@ -7,7 +7,8 @@ The presence wire format, shared by the server and every client.
 Like `AlulaChannelsProtocol`, this module exists so a wire change breaks a
 build rather than a production socket. `AlulaPresence` (server),
 `AlulaPresenceClient` (Swift) and `alula-channels-js` (browser) all speak
-these shapes.
+these shapes. It has no product of its own: `import AlulaPresence` or
+`import AlulaPresenceClient` brings these types.
 
 ``PresenceEntry`` is one present key with its metas — one user, potentially
 joined from several tabs or devices, which is why ``PresenceMeta`` is a list

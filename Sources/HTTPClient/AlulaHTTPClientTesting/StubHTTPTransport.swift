@@ -17,11 +17,14 @@ import Synchronization
 /// #expect(stub.requests.count == 1)
 /// ```
 public final class StubHTTPTransport: OutboundHTTPTransport {
+    /// Answers one attempt. A throw is the attempt's failure: throw
+    /// `OutboundHTTPError.timedOut` or `.transport` to exercise retries.
     public typealias Responder = @Sendable (OutboundRequest) async throws -> OutboundResponse
 
     private let responder: Responder
     private let recorded = Mutex<[OutboundRequest]>([])
 
+    /// A stub answering every attempt with `responder`.
     public init(_ responder: @escaping Responder) {
         self.responder = responder
     }
@@ -38,6 +41,9 @@ public final class StubHTTPTransport: OutboundHTTPTransport {
     /// Every request sent, in order: each attempt of a retried one included.
     public var requests: [OutboundRequest] { recorded.withLock { $0 } }
 
+    /// Records `request`, then answers from the responder. A body over
+    /// `maxResponseBytes` throws `responseTooLarge`, as the real transport
+    /// does; `timeout` is not enforced.
     public func send(_ request: OutboundRequest, timeout: Duration, maxResponseBytes: Int)
         async throws -> OutboundResponse
     {

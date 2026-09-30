@@ -71,6 +71,9 @@ public struct AlulaTelemetryModule: AlulaModule {
     /// unset, whether a tracer was bootstrapped.
     public let tracingEnabled: Bool
 
+    /// Holds the attachments for the application's life: attaches late a
+    /// backend bootstrapped after composition, and detaches everything at
+    /// shutdown.
     public let service: (any Service)?
 
     private let metrics: [TelemetryMetric]
@@ -182,6 +185,8 @@ public struct AlulaTelemetryModule: AlulaModule {
         self.service = TelemetryAttachments(tokens, late: late)
     }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaTelemetryModule takes its configuration in init(configuration:metrics:), so "
@@ -190,8 +195,8 @@ public struct AlulaTelemetryModule: AlulaModule {
                 + "yourself and use the entry point taking module instances.")
     }
 
-    /// The telemetry runtime's own failures, counted.
-    /// This module's own, and the job queue's. The queue's are here rather
+    /// This module's own metrics (the telemetry runtime's failures,
+    /// counted), and the job queue's. The queue's are here rather
     /// than contributed by `AlulaQueueModule` because the queue is built
     /// without telemetry for a consumer without the trait, and a
     /// contribution that existed only under a compilation condition would be
@@ -276,13 +281,21 @@ public enum TelemetryConfigKey {
 public struct TelemetrySettings: Sendable, Equatable {
     /// Nil: decided by whether a metrics backend is bootstrapped.
     public var metricsEnabled: Bool?
+    /// Tag combinations kept per metric before `_overflow`. Default 1000.
     public var cardinalityLimit: Int
     /// Nil: decided by whether a tracer is bootstrapped.
     public var tracingEnabled: Bool?
+    /// Only spans under this name are traced. Default: every span.
     public var tracingPrefix: EventName
+    /// Every event under this name is logged; nil logs none.
     public var logPrefix: EventName?
+    /// The level those lines are logged at. Default `debug`.
     public var logLevel: Logger.Level
 
+    /// Settings built in code.
+    ///
+    /// - Throws: ``TelemetryConfigurationError/invalidCardinalityLimit(_:)``
+    ///   for a limit below 1.
     public init(
         metricsEnabled: Bool? = nil, cardinalityLimit: Int = 1000, tracingEnabled: Bool? = nil,
         tracingPrefix: EventName = .all, logPrefix: EventName? = nil,
@@ -331,11 +344,16 @@ public struct TelemetrySettings: Sendable, Equatable {
 /// A `telemetry.*` value, or a set of contributed metrics, that cannot be
 /// used. Thrown at composition.
 public enum TelemetryConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// `telemetry.metrics.cardinality-limit` is below 1.
     case invalidCardinalityLimit(Int)
+    /// A prefix key's value is not a dot-separated event name.
     case invalidPrefix(key: String, value: String)
+    /// `telemetry.log.level` names no swift-log level.
     case invalidLogLevel(String)
+    /// Two contributed metrics report under one name.
     case duplicateMetric(name: String, events: [EventName])
 
+    /// Names the key or the clash, and the rule.
     public var description: String {
         switch self {
         case .invalidCardinalityLimit(let limit):

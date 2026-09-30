@@ -28,6 +28,7 @@ public struct RateLimitDecision: Sendable, Equatable {
     /// further. What `X-RateLimit-Reset` reports.
     public let resetAfter: Duration
 
+    /// A decision, as a ``RateLimitStore`` implementation returns it.
     public init(
         isAllowed: Bool,
         remaining: Int,

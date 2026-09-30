@@ -14,11 +14,14 @@ import Synchronization
 ///
 /// Bounded, because a key space an attacker chooses is a key space an
 /// attacker can grow: limiting by address or by login identifier means the
-/// caller decides how many distinct keys exist. Eviction is by closeness to
-/// expiry, and an evicted key is a key restored to full allowance, which is
+/// caller decides how many distinct keys exist. Past the bound, keys already
+/// back at full allowance go first, then the keys closest to it, in a batch
+/// of a sixteenth of the bound so the sort is not paid on every call. An
+/// evicted key is a key restored to full allowance, which is
 /// the honest failure direction for a bound: dropping state can only ever be
 /// too permissive, never wrongly punitive.
 public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
+    /// 100,000 keys, the default of `rate-limit.memory.max-entries`.
     public static let defaultMaxEntries = 100_000
 
     private struct State {
@@ -28,6 +31,7 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
 
     private let state = Mutex(State())
     private let now: @Sendable () -> Int64
+    /// The most keys kept at once.
     public let maxEntries: Int
 
     /// - Parameters:
@@ -47,6 +51,9 @@ public final class InMemoryRateLimitStore: RateLimitStore, Sendable {
         self.now = now ?? InMemoryRateLimitStore.monotonicMicroseconds
     }
 
+    /// The GCRA decision for `key`, made and recorded under one lock.
+    ///
+    /// - Throws: ``RateLimitStoreError`` for a negative `cost`; nothing else.
     public func consume(key: String, cost: Int, quota: RateLimitQuota) async throws
         -> RateLimitDecision
     {

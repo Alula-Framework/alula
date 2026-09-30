@@ -26,9 +26,13 @@ dependencies: [
 
 ```swift
 .target(name: "MyApp", dependencies: [
-    .product(name: "AlulaConfig", package: "alula")
+    .product(name: "AlulaCore", package: "alula")
 ])
 ```
+
+Configuration has no product of its own: `AlulaCore` re-exports it, so
+`import AlulaCore` (or `AlulaWeb`, which brings `AlulaCore`) is enough. See
+[Two modules](#two-modules).
 
 Requires **Swift 6.3+** — 6.2.x cannot resolve this package's traits.
 Runs on Linux and macOS 15+; building on a Mac needs the macOS 26 SDK,
@@ -169,6 +173,19 @@ when the environment was *stated* as a development one (`dev`, `development`,
 ```swift
 AlulaEnvironment.current()      // ALULA_ENV=staging → .staging
 ```
+
+**Local development sets `ALULA_ENV=dev`.** `alula dev` does it for you; a
+plain `swift run` does not. Without it the dev overlay still loads, but the
+application behaves as a deployment that forgot to say what it is:
+
+- the OpenAPI document and the actuator dashboard are not served;
+- `AlulaMailModule` with no mail transport fails composition instead of
+  logging mail ([mail.md](mail.md#safety));
+- `AlulaQueueModule` warns that its in-memory store loses jobs on restart
+  ([queue.md](queue.md#durability)).
+
+`AlulaEnvironment.isDevelopment` is the name check alone, without the
+"stated" part.
 
 `dev`, `test`, `staging`, and `prod` ship with the package, but the type is
 extensible — a deployment with its own environments adds them without waiting
@@ -362,8 +379,11 @@ let configuration = try Configuration.load(
 
 ## Two modules
 
+Configuration is two targets. Neither is a product: `AlulaCore` re-exports
+both, so an application lists `AlulaCore` (or `AlulaWeb`) and imports that.
+
 `AlulaConfig` is the runtime — the `Configuration` facade, the loader, the
-provider bridge. This is what an application imports.
+provider bridge.
 
 `AlulaConfigCore` is the grammar and vocabulary: the YAML parser, `${VAR}`
 substitution, `ConfigDecodable`, the error types, `AlulaEnvironment`. It has
@@ -371,8 +391,8 @@ substitution, `ConfigDecodable`, the error types, `AlulaEnvironment`. It has
 configuration keys at compile time, and a build tool's dependencies are paid
 for by every consumer's build.
 
-Importing `AlulaConfig` re-exports `AlulaConfigCore`, so applications get
-the whole API from one import.
+`AlulaConfig` re-exports `AlulaConfigCore`, and `AlulaCore` re-exports
+`AlulaConfig`, so applications get the whole API from one import.
 
 ## What this is not
 

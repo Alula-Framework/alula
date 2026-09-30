@@ -14,7 +14,7 @@ survives a restart when its store does.
 | | |
 |---|---|
 | **Trait** | none |
-| **Products** | `AlulaQueue`; `AlulaQueueTesting` for tests |
+| **Products** | `AlulaQueue`; `AlulaTesting` for tests (or `AlulaQueueTesting` alone) |
 | **Modules** | `AlulaQueueWorkerModule.self`, which brings `AlulaQueueModule` |
 | **For durability** | `AlulaQueuePostgresModule.self` from alula-data (`AlulaQueuePostgres`, trait `Postgres`) |
 
@@ -137,9 +137,10 @@ next poll.
 ## Durability
 
 With no store module, jobs are kept in memory: right for development and
-tests, and unless the environment is declared as one of those (`ALULA_ENV`
-set), `AlulaQueueModule` logs a warning at startup, because a restart loses
-every waiting job.
+tests. Unless the environment is declared as one of those (`ALULA_ENV=dev`,
+`test`, …; `alula dev` sets it), `AlulaQueueModule` logs a warning at
+startup, because a restart loses every waiting job. An unset `ALULA_ENV`
+counts as undeclared ([config.md](config.md#environments)).
 
 `AlulaQueuePostgresModule` keeps them in a table. It claims with
 `FOR UPDATE SKIP LOCKED`, so workers on every replica share the queue without

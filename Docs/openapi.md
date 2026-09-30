@@ -101,10 +101,11 @@ It is served when `ALULA_ENV` names a development environment — `dev`,
 (`Configuration.load(environment: .dev)`). Anywhere else it needs
 `openapi.enabled: true`. **An unset `ALULA_ENV` does not count**, though it
 selects the `dev` overlay: a production box that forgot the variable must not
-start describing itself, and `alula dev` does not set it either — set
-`ALULA_ENV=dev` in your shell, or `openapi.enabled: true` in
+start describing itself. `alula dev` sets `ALULA_ENV=dev`; with a plain
+`swift run`, set it in your shell, or put `openapi.enabled: true` in
 `alula-dev.yaml`. This is the actuator dashboard's rule, and both read it from
-one place, `Configuration.isExplicitlyDevelopment()`. A full description of every route and payload is
+one place, `Configuration.isExplicitlyDevelopment()`
+([config.md](config.md#environments)). A full description of every route and payload is
 as useful to someone probing the service as to its clients, so publishing it
 should be a decision. To serve it behind authentication, put the path under a
 lane in front of the module's route.

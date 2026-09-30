@@ -133,6 +133,11 @@ Each module is also its own product. List one directly instead of
 `AlulaTesting` when a build should compile only what it uses: a lean CI job,
 or a package that tests one seam.
 
+Three of the sections below are other packages' test support, which
+`AlulaTesting` does not re-export: data and cache come from alula-data
+(`AlulaDataTesting`, `AlulaCacheTesting`), and telemetry capture from
+swift-telemetry (`TelemetryTesting`). List those products beside it.
+
 ### HTTP — `AlulaWebTesting`
 
 `TestClient` for in-process requests, `RequestContext.mock` for direct handler
@@ -173,7 +178,7 @@ let client = ChannelClient(
 `alula:presence_diff` messages, so a test asserts on the list rather than on
 the wire.
 
-### Data — `AlulaDataTesting`
+### Data — alula-data's `AlulaDataTesting`
 
 `InMemoryDataSource` and `InMemoryDataModule` stand in for a database.
 `DataSourceConformance` is a contract suite every data source must satisfy —
@@ -243,7 +248,7 @@ topic and payload. Pass it to `APNSClient(configuration:transport:)`. It
 answers `200` until told otherwise. `respond(with:)` queues answers in order,
 and `misbehave()` makes every call throw like a dropped connection.
 
-### Cache — `AlulaCacheTesting`
+### Cache — alula-data's `AlulaCacheTesting`
 
 `RecordingCache` is a working in-memory cache that also records what was
 asked of it, so a test can assert something *was cached* — or evicted —
@@ -266,7 +271,7 @@ let attempts = await TelemetryTest.capture(SignInEvents.Attempt.self) {
 
 `capture(prefix:)` sees every event under a name, `captureSpans` sees every
 phase, and `expectNoEmission(prefix:)` throws with whatever was emitted.
-`Docs/telemetry.md` has the rest.
+[telemetry.md](telemetry.md) has the rest.
 
 ## What still needs a real server
 

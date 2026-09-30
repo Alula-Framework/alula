@@ -14,7 +14,7 @@ limiter as the web layer without any of them needing an HTTP server.
 | | |
 |---|---|
 | **Trait** | none for `AlulaRateLimit`; `Web` for the `RateLimiting` middleware |
-| **Products** | `AlulaRateLimit`; `AlulaRateLimitTesting` for tests |
+| **Products** | `AlulaRateLimit`; `AlulaTesting` for tests (or `AlulaRateLimitTesting` alone) |
 | **Module** | `AlulaRateLimitModule.self` |
 | **Optional** | `AlulaRateLimitValkeyModule.self` from alula-data, for more than one replica |
 

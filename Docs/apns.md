@@ -15,7 +15,7 @@ of hundred lines that the hermetic test seam needs to own anyway.
 | | |
 |---|---|
 | **Trait** | `APNS` — brings JWTKit and AsyncHTTPClient, the same two packages `Security` brings, and nothing from `Web` |
-| **Products** | `AlulaAPNS`; `AlulaAPNSTesting` for tests |
+| **Products** | `AlulaAPNS`; `AlulaTesting` for tests (or `AlulaAPNSTesting` alone) |
 | **Module** | `AlulaAPNSModule.self` |
 
 ```swift
@@ -166,7 +166,7 @@ does. Both are telemetry events first (`APNSEvents`), and
 `AlulaAPNSModule` contributes them as metrics, together with
 `alula_apns_send_duration` for send latency. In a test,
 `TelemetryTest.capture(prefix: "alula.apns")` shows what a send reported.
-See `Docs/telemetry.md`.
+See [telemetry.md](telemetry.md).
 
 The one retry the client performs itself is the one the protocol asks for:
 a `403 ExpiredProviderToken` mints a fresh token and sends once more. Every

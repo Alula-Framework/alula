@@ -9,7 +9,7 @@ service, and nothing reads an unbounded response into memory.
 | | |
 |---|---|
 | **Trait** | `HTTPClient` |
-| **Products** | `AlulaHTTPClient`; `AlulaHTTPClientTesting` for tests |
+| **Products** | `AlulaHTTPClient`; `AlulaTesting` for tests (or `AlulaHTTPClientTesting` alone) |
 | **Module** | `AlulaHTTPClientModule.self` |
 
 ```swift

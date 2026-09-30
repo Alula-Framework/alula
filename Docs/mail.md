@@ -9,7 +9,7 @@ request never waits on a mail server.
 | | |
 |---|---|
 | **Trait** | none for `AlulaMail`; `SMTP` for `AlulaMailSMTP` |
-| **Products** | `AlulaMail`, `AlulaMailSMTP`; `AlulaMailTesting` for tests |
+| **Products** | `AlulaMail`, `AlulaMailSMTP`; `AlulaTesting` for tests (or `AlulaMailTesting` alone) |
 | **Modules** | `AlulaMailModule.self`, plus `AlulaMailSMTPModule.self` for a real server |
 
 ```swift

@@ -71,9 +71,11 @@ extension Configuration {
 public struct AdapterCandidate: Sendable, Equatable {
     /// A key the adapter requires — its URL, not one of its tuning knobs.
     public let configurationKey: String
-    /// The module type name to add to `Alula.bootstrap(modules:)`.
+    /// The module type name to list in the application's `modules:`.
     public let module: String
 
+    /// A candidate adapter: `module` provides the feature, and
+    /// `configurationKey` being set means somebody wanted it.
     public init(configurationKey: String, module: String) {
         self.configurationKey = configurationKey
         self.module = module
@@ -85,10 +87,15 @@ public struct AdapterCandidate: Sendable, Equatable {
 /// Thrown at composition, so it stops the process at startup rather than
 /// letting it serve traffic from a fallback nobody asked for.
 public struct UnloadedAdapterError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// What the adapter is for: `sessions`, `rate limiting`.
     public let feature: String
+    /// The key that was set.
     public let configurationKey: String
+    /// The module that would read it, and is not listed.
     public let module: String
 
+    /// An error naming the feature, the key that was set, and the module to
+    /// list.
     public init(feature: String, configurationKey: String, module: String) {
         self.feature = feature
         self.configurationKey = configurationKey

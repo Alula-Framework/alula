@@ -12,7 +12,10 @@ import ServiceContextModule
 /// constructs per request is built by its route's factory closure, not
 /// resolved here.
 public struct RequestContext: Sendable {
+    /// The request being handled.
     public let request: Request
+    /// The values the route pattern's `:name` segments matched, percent-
+    /// decoded, keyed by name without the colon.
     public var pathParameters: [String: String]
 
     /// What authentication decided about this request, written by the
@@ -68,6 +71,9 @@ public struct RequestContext: Sendable {
     /// resolved to a confident answer.
     public var clientAddress: PeerAddress? { web.trustedProxies.clientAddress(for: request) }
 
+    /// A context as dispatch builds one. Tests usually want
+    /// `RequestContext.mock(...)` from AlulaWebTesting instead, which fills
+    /// in a quiet logger.
     public init(
         request: Request,
         pathParameters: [String: String] = [:],
@@ -86,6 +92,9 @@ public struct RequestContext: Sendable {
         self.web = web
     }
 
+    /// The raw value the route's `:name` segment matched, or `nil` when the
+    /// pattern binds no such name. ``pathParam(_:as:)`` parses it and
+    /// answers 400 when it does not parse.
     public func pathParam(_ name: String) -> String? {
         pathParameters[name]
     }
@@ -95,8 +104,13 @@ public struct RequestContext: Sendable {
 /// error mapper. One immutable reference, shared across every request, so the
 /// context it rides on stays small.
 public final class WebRuntime: Sendable {
+    /// How bodies and errors are encoded and decoded (`web.json.*`,
+    /// `web.errors.format`).
     public let coders: WebCoders
+    /// Maps errors the application does not own onto HTTP responses.
     public let errorMapper: ErrorMapper
+    /// Which peers may speak for the client in `X-Forwarded-For`
+    /// (`web.trusted-proxies`); decides ``RequestContext/clientAddress``.
     public let trustedProxies: TrustedProxies
     /// Applied by Dispatch to every response, after every lane. `.none` here
     /// so a hand-built runtime adds nothing unasked; `AlulaWebModule` reads

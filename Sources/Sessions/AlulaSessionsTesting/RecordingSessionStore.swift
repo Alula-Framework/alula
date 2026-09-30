@@ -4,15 +4,21 @@ import Synchronization
 
 /// A `SessionStore` that records every operation and serves from a plain
 /// dictionary — for asserting what a request did to its session without a
-/// real store. The analogue of `AlulaCacheTesting.RecordingCache`.
+/// real store. The analogue of alula-data's `AlulaCacheTesting.RecordingCache`.
 ///
 /// `misbehave()` makes every subsequent call throw, which is what a downed
 /// store looks like and is the path the middleware's 503 exists for.
 public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
+    /// One call the store received, recorded before it answered — so a call
+    /// that threw while misbehaving is recorded too.
     public enum Operation: Sendable, Equatable {
+        /// `load(_:)` for this id.
         case load(SessionID)
+        /// A `save` for this id, with the TTL it carried.
         case save(SessionID, ttl: Duration)
+        /// `delete(_:)` for this id.
         case delete(SessionID)
+        /// `deleteSessions(ownedBy:keeping:)` for this owner.
         case deleteOwned(String, keeping: SessionID?)
     }
 
@@ -25,6 +31,7 @@ public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
 
     private let state = Mutex<State>(State())
 
+    /// An empty, well-behaved store.
     public init() {}
 
     public func load(_ id: SessionID) async throws -> Data? {
@@ -102,6 +109,7 @@ public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
         state.withLock { $0.misbehaving = true }
     }
 
+    /// Every call so far, in order.
     public var operations: [Operation] {
         state.withLock { $0.operations }
     }
@@ -112,6 +120,7 @@ public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
         return try SessionRecord(decoding: data)
     }
 
+    /// The raw bytes under `id`; `nil` when nothing is stored there.
     public func data(for id: SessionID) -> Data? {
         state.withLock { $0.entries[id]?.data }
     }
@@ -122,6 +131,7 @@ public final class RecordingSessionStore: OwnerIndexedSessionStore, Sendable {
         state.withLock { $0.entries[id]?.ttl }
     }
 
+    /// How many sessions are stored.
     public var entryCount: Int {
         state.withLock { $0.entries.count }
     }

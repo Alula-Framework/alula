@@ -36,12 +36,18 @@ import NIOSSL
 /// Every key is optional; the defaults above apply. The memberwise
 /// initializer exists for tests and embedders that bypass Alula Config.
 public struct AlulaTransportConfiguration: ServerTransportConfiguration {
+    /// `server.host`: the address to bind; `127.0.0.1` by default, so a
+    /// container or a LAN needs `0.0.0.0` said out loud.
     public var host: String
+    /// `server.port`; 8080 by default.
     public var port: Int
+    /// `server.backlog`: the listen queue length; 256 by default.
     public var backlog: Int
     /// Requests with bodies beyond this are answered 413 and the connection
     /// closed — enforced before dispatch ever runs.
     public var maxRequestBodyBytes: Int
+    /// `server.max-websocket-frame-bytes`: the largest inbound WebSocket
+    /// frame; 1 MiB by default.
     public var maxWebSocketFrameBytes: Int
     /// How many inbound WebSocket messages may be outstanding — read from the
     /// socket but not yet taken by the handler — per connection.
@@ -110,6 +116,8 @@ public struct AlulaTransportConfiguration: ServerTransportConfiguration {
         /// PEM roots used to verify client certificates. Required for
         /// `.request` and `.require`; the system trust store otherwise.
         public var trustRootsPath: String?
+        /// Whether a client certificate is asked for, and whether one is
+        /// required.
         public var clientAuthentication: ClientAuthentication
 
         public init(

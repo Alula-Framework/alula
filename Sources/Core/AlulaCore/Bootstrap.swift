@@ -243,9 +243,13 @@ func runBeforeStartHooks(_ hooks: [(module: String, hook: LifecycleHook)]) async
 /// set it below the orchestrator's own grace period, so the process ends on
 /// its own terms rather than by `SIGKILL`.
 public struct LifecycleSettings: Sendable, Equatable {
+    /// `lifecycle.drain-seconds`: how long to keep serving after the signal.
     public var drainDelay: Duration
+    /// `lifecycle.shutdown-timeout-seconds`: the bound on the whole graceful
+    /// shutdown; nil for none.
     public var shutdownTimeout: Duration?
 
+    /// Settings in code.
     public init(drainDelay: Duration = .zero, shutdownTimeout: Duration? = nil) {
         self.drainDelay = drainDelay
         self.shutdownTimeout = shutdownTimeout

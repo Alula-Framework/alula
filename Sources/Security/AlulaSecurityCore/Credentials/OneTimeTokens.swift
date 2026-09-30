@@ -41,12 +41,18 @@ public struct OneTimeTokens: Sendable {
     /// What a token is for. A redemption for one purpose never accepts a
     /// token issued for another.
     public struct Purpose: Hashable, Sendable, Codable, ExpressibleByStringLiteral {
+        /// The purpose's name, stored with the token.
         public let name: String
+        /// A purpose of your own, by name.
         public init(_ name: String) { self.name = name }
+        /// A purpose written as a string literal.
         public init(stringLiteral value: String) { self.init(value) }
 
+        /// `password-reset`.
         public static let passwordReset = Purpose("password-reset")
+        /// `email-verification`.
         public static let emailVerification = Purpose("email-verification")
+        /// `magic-link`: a sign-in by email.
         public static let magicLink = Purpose("magic-link")
     }
 

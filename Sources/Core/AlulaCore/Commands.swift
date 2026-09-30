@@ -31,10 +31,15 @@ import ServiceLifecycle
 /// add a server or run jobs twice. The process exits with 0 when the command
 /// returns and 1 when it throws.
 public struct CommandRegistration: Sendable {
+    /// What follows the executable on the command line.
     public let name: String
+    /// One line for the `commands` listing.
     public let abstract: String
     let run: @Sendable (CommandContext) async throws -> Void
 
+    /// A command called `name`, running `run`. Traps on an empty name, one
+    /// starting with `-`, or `serve` or `commands`, which the entry point
+    /// keeps for itself.
     public init(
         _ name: String, abstract: String,
         run: @escaping @Sendable (CommandContext) async throws -> Void
@@ -52,7 +57,9 @@ public struct CommandRegistration: Sendable {
 public struct CommandContext: Sendable {
     /// The arguments after the command's name.
     public let arguments: [String]
+    /// The application's configuration, as loaded for serving.
     public let configuration: Configuration
+    /// A logger labelled `alula.command.<name>`.
     public let logger: Logger
 }
 

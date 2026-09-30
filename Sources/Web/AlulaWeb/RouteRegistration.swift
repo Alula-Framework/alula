@@ -9,6 +9,7 @@ import HTTPTypes
 /// is assembled. A hand-written route is the same value — there is no separate
 /// registration mechanism.
 public struct RouteRegistration: Sendable {
+    /// What a route does with the connection.
     public enum Kind: Sendable, Equatable {
         /// An ordinary request/response route.
         case http
@@ -29,9 +30,11 @@ public struct RouteRegistration: Sendable {
         }
     }
 
+    /// The HTTP method this route answers.
     public let method: HTTPRequest.Method
     /// The path pattern as written at the mapping site ("/users/:id").
     public let path: String
+    /// An ordinary route or a connection upgrade.
     public let kind: Kind
     /// Where this route was declared ("UserController.getUser") — carried
     /// for startup logs, conflict diagnostics, and introspection.
@@ -56,14 +59,15 @@ public struct RouteRegistration: Sendable {
         /// cap), enforced by the transport as bytes arrive.
         case streaming(maxBytes: Int?)
     }
+    /// How this route's body arrives: collected whole, or streamed.
     public let bodyMode: BodyMode
 
-    /// The fully-encoded handler thunk: body decoding and return-value
-    /// encoding already applied by the macro expansion.
     /// How long the request may take, middleware and handler together,
     /// before the client gets a 503. See ``RequestTimeout``.
     public let timeout: RequestTimeout
 
+    /// The fully-encoded handler thunk: body decoding and return-value
+    /// encoding already applied by the macro expansion.
     public let handler: @Sendable (RequestContext) async throws -> Response
 
     public init(
@@ -206,14 +210,20 @@ public struct RequestTimeout: Sendable, Equatable {
     /// No limit, whatever the default.
     public static let none = RequestTimeout(value: .none)
 
+    /// A limit of whole seconds, replacing the application's default for
+    /// this route.
     public static func seconds(_ seconds: Int) -> RequestTimeout {
         RequestTimeout(value: .limit(.seconds(seconds)))
     }
 
+    /// A limit in milliseconds, replacing the application's default for
+    /// this route.
     public static func milliseconds(_ milliseconds: Int) -> RequestTimeout {
         RequestTimeout(value: .limit(.milliseconds(milliseconds)))
     }
 
+    /// A limit of any `Duration`, replacing the application's default for
+    /// this route.
     public static func duration(_ duration: Duration) -> RequestTimeout {
         RequestTimeout(value: .limit(duration))
     }

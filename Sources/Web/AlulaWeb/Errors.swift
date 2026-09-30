@@ -27,6 +27,8 @@ public struct HTTPError: HTTPErrorRepresentable, Sendable {
     public let httpStatus: HTTPResponse.Status
     public let httpMessage: String
 
+    /// An error answering `status`, with `message` as the client-visible
+    /// detail, or the status's reason phrase when `message` is nil.
     public init(_ status: HTTPResponse.Status, _ message: String? = nil) {
         self.httpStatus = status
         self.httpMessage = message ?? status.reasonPhrase
@@ -92,6 +94,7 @@ public struct HTTPError: HTTPErrorRepresentable, Sendable {
 public struct ErrorMapper: Sendable {
     /// What an error becomes on the wire.
     public struct Mapping: Sendable {
+        /// The status the error answers with.
         public var status: HTTPResponse.Status
         /// Client-visible text. Rendered by the same `WebCoders.renderError`
         /// every other error goes through, so the body shape stays uniform.
@@ -101,6 +104,7 @@ public struct ErrorMapper: Sendable {
         /// win on collision.
         public var headers: HTTPFields
 
+        /// A rendered error with `status`, `message` and extra `headers`.
         public init(
             _ status: HTTPResponse.Status, _ message: String, headers: HTTPFields = [:]
         ) {
@@ -211,6 +215,8 @@ public struct BodyDecodingError: HTTPErrorRepresentable, Sendable {
     public let httpStatus: HTTPResponse.Status = .badRequest
     public let httpMessage: String
 
+    /// A 400 whose message is `Invalid request body: ` followed by
+    /// `message`.
     public init(_ message: String) {
         self.httpMessage = "Invalid request body: \(message)"
     }
@@ -222,6 +228,8 @@ public struct UnsupportedMediaTypeError: HTTPErrorRepresentable, Sendable {
     public let httpStatus: HTTPResponse.Status = .unsupportedMediaType
     public let httpMessage: String
 
+    /// A 415 naming the `Content-Type` that arrived and the ones the route
+    /// accepts.
     public init(received: String, accepted: [String]) {
         self.httpMessage =
             "Unsupported Media Type: '\(received)' — this route accepts \(accepted.joined(separator: " or "))"

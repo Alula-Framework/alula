@@ -9,7 +9,10 @@ import HTTPTypes
 /// session cookie that JavaScript can read is one XSS away from being a
 /// stolen session, and that is not a default worth making people opt out of.
 public struct Cookie: Sendable, Equatable {
+    /// Whether a browser sends the cookie on requests another site starts.
     public enum SameSite: String, Sendable {
+        /// Only on requests this site starts, never on a navigation from
+        /// another one.
         case strict = "Strict"
         /// Sent on top-level navigations to this site, not on cross-site
         /// subrequests — the setting a login cookie wants, because a form
@@ -19,13 +22,21 @@ public struct Cookie: Sendable, Equatable {
         case none = "None"
     }
 
+    /// The cookie's name. The initializer traps on a character `Set-Cookie`
+    /// cannot carry in a name.
     public var name: String
+    /// The cookie's value. Characters RFC 6265 excludes are removed when
+    /// the header is written, so encode a value that needs them.
     public var value: String
+    /// The path prefix the browser sends it under; `/` by default.
     public var path: String?
+    /// The host (and its subdomains) the browser sends it to; nil for this
+    /// host only.
     public var domain: String?
     /// Lifetime. `nil` makes it a session cookie, dropped when the browser
     /// closes. `.zero` (or a past `expires`) is how a cookie is deleted.
     public var maxAge: Duration?
+    /// An absolute expiry, for clients that ignore `Max-Age`.
     public var expires: Date?
     /// HTTPS only. Left to the caller because a development server on
     /// loopback has no TLS, and a cookie that silently never gets set is a
@@ -33,8 +44,11 @@ public struct Cookie: Sendable, Equatable {
     public var isSecure: Bool
     /// Unreadable from JavaScript. On by default.
     public var isHTTPOnly: Bool
+    /// The `SameSite` attribute; `.lax` by default, nil to omit it.
     public var sameSite: SameSite?
 
+    /// A cookie with the safe defaults: path `/`, `HttpOnly`, `SameSite=Lax`,
+    /// and no lifetime, so it lasts until the browser closes.
     public init(
         name: String,
         value: String,

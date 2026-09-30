@@ -7,6 +7,7 @@ import Foundation
 /// second spelling of every key in 0.22.1, and now refuses the old one; there
 /// is no reason to repeat that.
 public enum SessionConfigKey {
+    /// `sessions` — the section every key here sits under.
     public static let root = "sessions"
     /// `sessions.cookie-name` — the cookie the id travels in.
     public static let cookieName = "sessions.cookie-name"
@@ -44,7 +45,10 @@ public struct SessionSettings: Sendable, Equatable {
     public var ttl: Duration
     /// The cookie's `Secure` attribute.
     public var cookieSecure: Bool
+    /// The cookie's `SameSite`; `none` requires ``cookieSecure``.
     public var cookieSameSite: Cookie.SameSite
+    /// The cookie's `Path`; `/` by default, and required by
+    /// ``cookieHostPrefix``.
     public var cookiePath: String
     /// The cookie's `Domain`; nil scopes it to the request's host only.
     public var cookieDomain: String?
@@ -73,6 +77,7 @@ public struct SessionSettings: Sendable, Equatable {
     /// The defaults, written once, for the memberwise initializer and the
     /// configuration reader alike.
     public enum Defaults {
+        /// `session`.
         public static let cookieName = "session"
         /// Two weeks idle. Long enough that a weekly visitor stays signed
         /// in; short enough that a session on a shared machine does not
@@ -85,16 +90,27 @@ public struct SessionSettings: Sendable, Equatable {
         /// Chrome and Firefox accept `Secure` cookies from `localhost`,
         /// Safari does not.
         public static let cookieSecure = true
+        /// `lax`: sent on a top-level navigation from another site, so a
+        /// link into the application arrives signed in.
         public static let cookieSameSite = Cookie.SameSite.lax
+        /// `/`.
         public static let cookiePath = "/"
+        /// 100,000 sessions in `InMemorySessionStore`.
         public static let memoryMaxEntries = 100_000
         /// A week. Long enough that signing in is not a daily chore, short
         /// enough that a stolen cookie stops working on its own. A
         /// high-value application sets this in hours.
         public static let authenticatedLifetime: Duration = .seconds(7 * 24 * 60 * 60)
+        /// Off; see ``SessionSettings/cookieHostPrefix``.
         public static let cookieHostPrefix = false
     }
 
+    /// Settings in code, checked as the configuration reader checks them.
+    ///
+    /// - Throws: `SessionConfigurationError` for a non-positive `ttl` or
+    ///   `authenticatedLifetime`, an invalid cookie name, `SameSite=None`
+    ///   without `Secure`, a non-positive `memoryMaxEntries`, or a `__Host-`
+    ///   prefix whose requirements the other settings break.
     public init(
         cookieName: String = Defaults.cookieName,
         ttl: Duration = Defaults.ttl,

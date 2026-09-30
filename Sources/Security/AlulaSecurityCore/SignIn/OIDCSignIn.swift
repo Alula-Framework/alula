@@ -23,14 +23,20 @@ import TelemetryCore
 /// `issuer`, the transport policy and the roles claims are the same keys the
 /// token validator reads, so one `security.oidc` block configures both.
 public struct OIDCSignInConfiguration: Sendable {
+    /// The provider's issuer identifier (`security.oidc.issuer`).
     public var issuer: String
+    /// This application's client id at the provider
+    /// (`security.oidc.client-id`).
     public var clientID: String
     /// Nil for a public client, which proves itself with PKCE alone. A
     /// confidential client sends this too, as HTTP Basic.
     public var clientSecret: String?
     /// Must match a redirect URI registered with the provider, exactly.
     public var redirectURI: URL
+    /// Where the provider sends the browser after its own logout
+    /// (`post_logout_redirect_uri`); nil leaves it on the provider's page.
     public var postLogoutRedirectURI: URL?
+    /// The scopes a sign-in asks for (`security.oidc.sign-in-scopes`).
     public var scopes: [String]
     /// How the ID token is checked: issuer, audience (this client), keys,
     /// clock skew, roles claims. Derived from the fields above unless given.
@@ -44,6 +50,7 @@ public struct OIDCSignInConfiguration: Sendable {
     /// `security.oidc.userinfo: false` turns it off.
     public var fetchUserInfo: Bool
 
+    /// `openid profile email`: an ID token, and the standard claims.
     public static let defaultScopes = ["openid", "profile", "email"]
 
     public init(

@@ -46,14 +46,17 @@ public enum Response: Sendable {
 /// constructible directly by anything that already knows exactly what it
 /// wants to send.
 public struct FileResponse: Sendable {
+    /// `200` for the whole content, `206` for a range.
     public let status: HTTPResponse.Status
     /// Complete, including `Content-Length` for `range.count` — the
     /// transport writes these verbatim.
     public let headers: HTTPFields
+    /// Where the bytes are read from — a file, or memory.
     public let source: any ByteSource
     /// Half-open, within `0..<source.count`. Empty is legal (a zero-length
     /// file): headers only, no read ever issued.
     public let range: Range<Int64>
+    /// How many bytes the transport reads from ``source`` per write.
     public let chunkSize: Int
 
     public init(
@@ -323,13 +326,20 @@ public struct WebSocketUpgrade: Sendable {
 /// The handful of content types Alula Web itself needs, plus room for any
 /// other via the raw initializer.
 public struct ContentType: Sendable, Equatable, CustomStringConvertible {
+    /// The `Content-Type` header value, parameters included.
     public let rawValue: String
+    /// A content type from its header value, used verbatim.
     public init(_ rawValue: String) { self.rawValue = rawValue }
 
+    /// `application/json; charset=utf-8`.
     public static let json = ContentType("application/json; charset=utf-8")
+    /// `text/plain; charset=utf-8`.
     public static let text = ContentType("text/plain; charset=utf-8")
+    /// `text/html; charset=utf-8`.
     public static let html = ContentType("text/html; charset=utf-8")
+    /// `text/event-stream`, for server-sent events.
     public static let eventStream = ContentType("text/event-stream")
+    /// `application/octet-stream`, for bytes of no declared type.
     public static let octetStream = ContentType("application/octet-stream")
 
     public var description: String { rawValue }

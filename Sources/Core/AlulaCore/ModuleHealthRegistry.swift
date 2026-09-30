@@ -19,6 +19,8 @@ public final class ModuleHealthRegistry: Sendable {
     }
     private let state = Mutex(State())
 
+    /// An empty registry. Bootstrap makes the application's one; build your
+    /// own only for a test.
     public init() {}
 
     /// Seeds every module as `.notStarted`, in order — so a module that never
@@ -56,6 +58,8 @@ public final class ModuleHealthRegistry: Sendable {
         state.withLock { $0.draining = true }
     }
 
+    /// Every tracked module's health, in the order modules were seeded, then
+    /// any reported later in the order they first reported.
     public func statuses() -> [ModuleStatus] {
         state.withLock { state in
             state.order.compactMap { name in

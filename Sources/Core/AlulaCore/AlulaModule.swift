@@ -168,7 +168,11 @@ extension ModuleHealth: Equatable {
     }
 }
 
+/// One module's name and health, as ``ModuleHealthRegistry/statuses()``
+/// reports it.
 public struct ModuleStatus: Sendable {
+    /// The module's type name.
     public let moduleName: String
+    /// Its last recorded health.
     public let health: ModuleHealth
 }

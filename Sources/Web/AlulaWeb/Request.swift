@@ -42,6 +42,7 @@ public struct Request: Sendable {
     }
     private var _remoteAddress: RemoteAddressBox?
 
+    /// A request from an already-parsed head, as a transport builds one.
     public init(head: HTTPRequest, body: Data = Data(), remoteAddress: PeerAddress? = nil) {
         self.head = head
         self.body = body
@@ -69,7 +70,10 @@ public struct Request: Sendable {
 
     // MARK: - Head accessors
 
+    /// The request method, from ``head``.
     public var method: HTTPRequest.Method { head.method }
+    /// The request's header fields, from ``head``. Read-only here: change
+    /// `head.headerFields` to rewrite one.
     public var headers: HTTPFields { head.headerFields }
 
     /// The full request target as sent, query string included ("/users?x=1").

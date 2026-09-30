@@ -206,12 +206,16 @@ struct DataModule: AlulaModule {
 }
 ```
 
-The composition root builds each module in dependency order and wires what one
-provides into whatever injects it, by type.
+The composition root builds each module before any module that takes one of
+its values, and wires what one provides into whatever injects it, by type.
 
-Order is resolved from the declared dependencies and is deterministic: the
-same module set always produces the same order. A cycle is a startup error
-naming the modules involved.
+`dependencies` decides which modules are *included*: naming a module names
+its stack. It does not decide the order. The generator orders construction
+from the value flow at build time, and the dependencies-first order only
+breaks ties between modules the value flow leaves unordered, so the same
+module set always produces the same order. Modules that need each other's
+values in a cycle fail the build with ALU-LIFE-8001, naming the modules
+involved.
 
 ### Two providers of one type
 

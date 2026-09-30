@@ -14,7 +14,7 @@ request never waits on a mail server.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.60.0", traits: ["Web", "SMTP"]),
+         from: "0.61.0", traits: ["Web", "SMTP"]),
 ```
 
 ```swift

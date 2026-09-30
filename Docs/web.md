@@ -22,7 +22,7 @@ reaches the application the way every other Alula package does: through
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.60.0", traits: ["Web"]),
+        from: "0.61.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

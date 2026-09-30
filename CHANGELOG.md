@@ -4,7 +4,7 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.61.0] - 2026-09-30
 
 ### Added
 
@@ -57,6 +57,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   initiates. Every server close (`1000`, `1001`, `4000`, `4400`, `4408`,
   `4410`) is a drop, handled by the reconnect policy, and a test pins each
   code. The outbound `alula:close` sent by `disconnect()` is unchanged.
+
+### Documentation
+
+- **A sweep of every page, catalogue and doc comment against 0.60.0.** The
+  README gains a first application that builds and runs, what the
+  composition root is, and when to set `ALULA_ENV=dev`. Examples that did not
+  compile against 0.60.0 are fixed in `Docs/`, in the DocC articles and in
+  doc comments. Every DocC catalogue's Topics lists its public symbols. About
+  800 undocumented public declarations are documented. `dependencies` is
+  described as what it is, the modules to *include*. The construction order
+  comes from the value flow, and a cycle is a build error (ALU-LIFE-8001),
+  not a startup one. `Docs/scheduler.md` names alula-data's
+  `PostgresJobCoordinator`. A server closes a channel socket with a close
+  code; `alula:close` only travels from client to server.
+- **The docs job builds `AlulaSchedulerTesting`.** Its catalogue failed on a
+  cross-module link, which went unnoticed because CI never built it.
 
 ## [0.60.0] - 2026-09-28
 

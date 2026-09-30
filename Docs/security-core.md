@@ -29,7 +29,7 @@ JWKS fetching/rotation, claim policy, and error hygiene.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.60.0", traits: ["Security"]),
+        from: "0.61.0", traits: ["Security"]),
 ],
 targets: [
     .executableTarget(

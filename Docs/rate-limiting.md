@@ -23,7 +23,7 @@ limiter as the web layer without any of them needing an HTTP server.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.60.0", traits: ["Web"]),
+        from: "0.61.0", traits: ["Web"]),
 ],
 ```
 

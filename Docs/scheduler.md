@@ -38,7 +38,7 @@ a stub service and call the method.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.60.0"),
+        from: "0.61.0"),
 ],
 targets: [
     .executableTarget(

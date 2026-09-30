@@ -50,7 +50,7 @@ The quickest start is [alula-cli](https://github.com/Alula-Framework/alula-cli):
 add Alula by hand:
 
 ```swift
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0",
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.61.0",
          traits: ["Web"])
 ```
 
@@ -193,15 +193,15 @@ All are opt-in. Name what you want:
 ```swift
 // An HTTP service.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.60.0", traits: ["Web"])
+         from: "0.61.0", traits: ["Web"])
 
 // …with authentication.
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.60.0", traits: ["Security"])
+         from: "0.61.0", traits: ["Security"])
 
 // Just composition and lifecycle: 7 resolved packages (CI/check-lean-consumer.sh
 // asserts it), against the 30 this repository resolves with every trait on.
-.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0")
+.package(url: "https://github.com/Alula-Framework/alula.git", from: "0.61.0")
 ```
 
 **Swift 6.3 or later is required.** Through 6.2.x, SwiftPM did not resolve the

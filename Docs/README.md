@@ -6,8 +6,9 @@ larger guide. Links to `alula-data` and `hangar` go to those repositories.
 
 ## Start here
 
-- [README, Getting started](../README.md#getting-started): the package line, the products, and the traits that turn them on.
-- [Fledge](https://alula-framework.github.io/fledge/): the tutorial, from an empty directory to a clustered app, plus its guides.
+- [README, Getting started](../README.md#getting-started): the package line, a first application, `ALULA_ENV=dev`, and the traits that turn products on.
+- [Fledge](https://github.com/Alula-Framework/fledge): the tutorial, from an empty directory to a clustered app, plus its guides. It runs locally; it is not hosted.
+- [API reference](https://alula-framework.github.io/fledge/): the DocC reference for alula, alula-data, Hangar and swift-changeset, rebuilt weekly from `main`.
 - [Where subsystems meet](interactions.md): read before combining transactions with jobs, cookies with API keys, or deadlines with retries.
 
 ## Core concepts

@@ -13,8 +13,7 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 
 | Product | What it is |
 | --- | --- |
-| `AlulaCore` | Modules, compile-time composition, application lifecycle. Everything else builds on this. |
-| `AlulaConfig` / `AlulaConfigCore` | Layered configuration over swift-configuration; `AlulaConfigCore` is the dependency-free parser and vocabulary. |
+| `AlulaCore` | Modules, compile-time composition, application lifecycle, and layered configuration over swift-configuration. Everything else builds on this. The configuration lives in the `AlulaConfig` and `AlulaConfigCore` targets, which `AlulaCore` re-exports; neither is a product of its own. |
 | `AlulaWeb` | Routing, middleware, `RequestContext`, `Response`, WebSocket and SSE, and the `ServerTransport` seam. |
 | `AlulaTransport` | The default transport, wrapping HummingbirdCore. A peer of any third-party transport — the only target that knows what the transport wraps. Part of the `AlulaWeb` product, so it needs no line of its own; the separate product is kept for one release for existing manifests. |
 | `AlulaPubSub` | Topic-based publish/subscribe with a `DistributedPubSubAdapter` seam for cluster fan-out. |
@@ -29,14 +28,13 @@ and `AlulaPresence`; a service behind an existing identity provider adds
 | `AlulaSecurityCore` | Validates tokens your identity provider issued, and signs people in: against your own accounts (`PasswordSignIn`, throttled, Argon2id) or any OpenID Connect provider (`OIDCSignIn`), behind one `SignInProvider` seam so switching is a change to the module list. |
 | `AlulaAPNS` | Apple Push Notification service client: provider tokens, HTTP/2, a typed answer per push. Requires the `APNS` trait. |
 | `AlulaTelemetryBridges` | Reporting for [swift-telemetry](https://github.com/Alula-Framework/swift-telemetry)'s typed events — which Alula's own subsystems emit — to swift-metrics, swift-distributed-tracing and swift-log, wired from `telemetry.*` by `AlulaTelemetryModule`, which the Web, Sessions, Security and APNs modules bring with them. |
-| `AlulaScheduler` / `AlulaCronCore` | Cron and interval jobs as annotated methods, with the schedule checked at build time. `AlulaCronCore` is the dependency-free engine the macro validates with. |
+| `AlulaScheduler` / `AlulaSchedulerTesting` | Cron and interval jobs as annotated methods, with the schedule checked at build time. The dependency-free cron engine the macro validates with is the `AlulaCronCore` target, which `AlulaScheduler` re-exports. |
 | `AlulaQueue` / `AlulaQueueTesting` | Background jobs: enqueue from anywhere, run in a worker at least once, retried with backoff, dead-lettered when they never succeed. Durable with alula-data's `AlulaQueuePostgres`. See [Docs/queue.md](Docs/queue.md). |
 | `AlulaMail` / `AlulaMailSMTP` / `AlulaMailTesting` | Email: a transport seam, header-injection-proof messages, MIME rendering, delivery through the job queue, and an SMTP client (trait `SMTP`). See [Docs/mail.md](Docs/mail.md). |
 | `AlulaHTTPClient` / `AlulaHTTPClientTesting` | Calling other services: timeouts, retries only where safe, trace propagation, response caps, and a service account's tokens by the client credentials grant (trait `HTTPClient`). See [Docs/http-client.md](Docs/http-client.md). |
 | `AlulaDiagnostics` | The diagnostic codes and their compiler-format rendering. A package reporting its own failures through `Alula.run` defines its codes with it — see [Diagnostics](#diagnostics). |
 | `AlulaOpenAPI` | An OpenAPI 3.1 document generated at build time from the route scan: no annotations, no drift. See [Docs/openapi.md](Docs/openapi.md). |
-| `*Protocol` | The wire shapes Channels and Presence share between server and client — the envelope, and the `alula:`-namespaced reserved events. Depend on this when writing a client in Swift against either. |
-| `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. |
+| `*Client` | Swift client halves: `AlulaChannelsClient` for joining topics over a socket, `AlulaPresenceClient` for applying presence state and diffs. The wire shapes server and client share — the envelope, and the `alula:`-namespaced reserved events — are the `AlulaChannelsProtocol` and `AlulaPresenceProtocol` targets, which each server and client product re-exports, so a Swift client lists only its `*Client` product. |
 | `AlulaChannelsTransport` | A WebSocket for `AlulaChannelsClient`, with the handshake headers a server needs — a session cookie, a bearer token. Requires the `Web` trait. |
 | `AlulaTesting` | Test support behind one import: re-exports every `*Testing` module the enabled traits allow — Web, Channels, Sessions, rate limiting, Queue, Mail, PubSub, the Scheduler, the HTTP client and APNs. In-memory transports, mock contexts, cluster harnesses, a clock that does not sleep. Each `*Testing` module is also its own product. Telemetry capture is swift-telemetry's `TelemetryTesting`. |
 
@@ -47,6 +45,10 @@ on it.
 
 ## Getting started
 
+The quickest start is [alula-cli](https://github.com/Alula-Framework/alula-cli):
+`alula new MyApp` writes a project that builds, and `alula dev` runs it. To
+add Alula by hand:
+
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0",
          traits: ["Web"])
@@ -56,14 +58,78 @@ No trait is on by default, and without `Web` the web modules refuse to build
 (see [Traits](#traits)).
 
 ```swift
-.target(name: "App", dependencies: [
-    .product(name: "AlulaWeb", package: "alula"),
-])
+.executableTarget(
+    name: "App",
+    dependencies: [.product(name: "AlulaWeb", package: "alula")],
+    // Required: it scans the target and writes the composition root.
+    plugins: [.plugin(name: "AlulaRegistrationPlugin", package: "alula")]
+),
+.testTarget(name: "AppTests", dependencies: [
+    "App",
+    .product(name: "AlulaTesting", package: "alula"),
+]),
 ```
 
 The `AlulaWeb` product includes the default transport, so `Main.swift` can
 still `import AlulaTransport` and name `AlulaWebModule<AlulaTransport>.self`
-without a second product line. It also brings `AlulaCore`.
+without a second product line. It also brings `AlulaCore`. `AlulaTesting`
+is every test helper behind one import; see [Docs/testing.md](Docs/testing.md).
+
+An application is types annotated for the graph, and a `main` that names
+the modules it is built from:
+
+```swift
+import AlulaCore
+import AlulaTransport
+import AlulaWeb
+
+@Service
+struct Greeter {
+    func greeting(for name: String) -> String { "Hello, \(name)!" }
+}
+
+@Controller
+struct HelloController {
+    @Inject var greeter: Greeter
+
+    @GetRoute("/hello/:name")
+    func hello(_ context: RequestContext, name: String) -> String {
+        greeter.greeting(for: name)
+    }
+}
+
+struct AppModule: AlulaModule {}
+
+@main
+struct Main {
+    static func main() async {
+        await Alula.run(
+            configuration: try Configuration.load(),
+            modules: [AlulaWebModule<AlulaTransport>.self, AppModule.self],
+            composedBy: alulaComposeModules)
+    }
+}
+```
+
+`@Service` puts a type in the graph (`@Repository` does the same for data
+access; neither has anything to do with the long-running services a module
+runs). `@Controller` adds its routes. The build plugin reads all of it and
+generates `alulaComposeModules`, the **composition root**: it builds every
+module and component once, in dependency order, and a missing or ambiguous
+dependency is a build error rather than a startup surprise.
+[Docs/core.md](Docs/core.md) explains modules, the graph and composition.
+
+`Configuration.load()` reads `alula.yaml` from the working directory; it must
+exist, even empty. Run with **`ALULA_ENV=dev`** on a development machine —
+`alula dev` sets it for you, a plain `swift run` does not. Unset, the dev
+overlay still loads, but the OpenAPI document and the actuator dashboard stay
+off and mail refuses to fall back to logging, because an undeclared
+environment may be production ([Docs/config.md](Docs/config.md#environments)).
+
+To learn Alula rather than look it up, [Fledge](https://github.com/Alula-Framework/fledge)
+is the tutorial, from an empty directory to a clustered app. The DocC API
+reference for Alula, alula-data, Hangar and swift-changeset is published at
+[alula-framework.github.io/fledge](https://alula-framework.github.io/fledge/).
 
 ## Diagnostics
 
@@ -109,8 +175,8 @@ shows how. What `Alula.run` prints on exit is in
 
 ## Traits
 
-Merging eight packages into one would otherwise hand every consumer the union
-of their dependencies. Traits prevent that — SwiftPM resolves only what an
+Merging the framework's former separate packages into one would otherwise
+hand every consumer the union of their dependencies. Traits prevent that — SwiftPM resolves only what an
 enabled trait reaches.
 
 | Trait | Brings |
@@ -133,7 +199,8 @@ All are opt-in. Name what you want:
 .package(url: "https://github.com/Alula-Framework/alula.git",
          from: "0.60.0", traits: ["Security"])
 
-// Just composition and lifecycle — 7 resolved dependencies instead of 30.
+// Just composition and lifecycle: 7 resolved packages (CI/check-lean-consumer.sh
+// asserts it), against the 30 this repository resolves with every trait on.
 .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.60.0")
 ```
 
@@ -204,7 +271,7 @@ floor stayed where it is. On `macos-15` it fails.
 
 ## Testing
 
-`swift test --enable-all-traits` — 1,700+ tests across 26 targets, no external
+`swift test --enable-all-traits` — 1,800+ tests across 28 test targets, no external
 services required.
 
 ## License

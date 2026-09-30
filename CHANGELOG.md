@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alulaScheduledJobs(_:)` throw. `SchedulerStartupError` conforms to
   `StartupDiagnostic`, so `Alula.run` reports `unknownTimeZone` as
   ALU-SCHED-9001, naming the job, and exits 1.
+- **The report on exit measures uptime to when the service ended.** It read
+  the clock when the report was written, so on a busy machine a service that
+  returned or failed at once could read as "stopped after running 1s"
+  instead of "could not start". The first module to fail or return now
+  records the instant, and the report measures to that.
 - **Scheduled jobs in a target with no routes are scheduled.** The generator
   emitted `alulaScheduledJobs(_:)` only after emitting routes, and returned
   early when there were none. A worker application with `@Scheduler` jobs and

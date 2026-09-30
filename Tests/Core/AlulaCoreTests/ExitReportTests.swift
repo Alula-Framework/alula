@@ -86,6 +86,24 @@ struct ExitReportTests {
         #expect(text.contains("[ALU-LIFE-8006]"))
     }
 
+    @Test("uptime is measured to when the service ended, not to when the report is written")
+    func uptimeStopsAtTheEnd() {
+        // A busy machine can take seconds to wind the group down. Measured to
+        // the report, a service that returned at once read as "stopped after
+        // running 1s"; CI hit it.
+        let run = ApplicationRun(expected: 1)
+        let start = ContinuousClock.now
+        run.moduleStarted(at: start)
+        run.moduleEndedOnItsOwn("FeedModule", at: start + .milliseconds(5))
+        let report = String(describing: run.explain(Broke(), at: start + .seconds(4)))
+        #expect(report.hasPrefix("could not start: FeedModule's service ended on its own."), "\(report)")
+
+        let failing = ApplicationRun(expected: 1)
+        failing.moduleStarted(at: start)
+        failing.moduleFailed("FeedModule", Broke(), at: start + .milliseconds(5))
+        #expect(failing.explain(Broke(), at: start + .seconds(4)) is Broke)
+    }
+
     @Test("uptime reads in the units that matter")
     func uptimeFormat() {
         #expect(formatUptime(.milliseconds(850)) == "850 ms")

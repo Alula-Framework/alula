@@ -18,7 +18,7 @@ struct TimeoutController {
     func slow(_ context: RequestContext) async throws -> String {
         timeoutProbe.deadline.withLock { $0 = Deadline.current }
         do {
-            try await Task.sleep(for: .seconds(5))
+            try await Task.sleep(for: .seconds(30))
         } catch {
             timeoutProbe.cancelled.store(true, ordering: .relaxed)
             throw error
@@ -63,13 +63,14 @@ struct RequestTimeoutTests {
     func timesOut() async throws {
         let client = try client()
         // Timed from the request, not from building the client, and bounded
-        // well under the handler's 5-second sleep: the claim is that the 503
+        // well under the handler's 30-second sleep: the claim is that the 503
         // did not wait for the handler. Timing the setup too, against 2s,
-        // failed on a loaded runner at 2.3s with the timeout working.
+        // failed on a loaded runner at 2.3s with the timeout working, and a
+        // 4s bound under a 5s sleep failed at 4.04s on a starved runner.
         let started = ContinuousClock.now
         let response = await client.get("/t/slow")
         #expect(response.status == .serviceUnavailable)
-        #expect(ContinuousClock.now - started < .seconds(4))
+        #expect(ContinuousClock.now - started < .seconds(15))
         try await Task.sleep(for: .milliseconds(100))
         let cancelled = timeoutProbe.cancelled.load(ordering: .relaxed)
         #expect(cancelled)

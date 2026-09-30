@@ -17,6 +17,12 @@ final class ApplicationRun: Sendable {
         var startedAt: ContinuousClock.Instant?
         var firstFailure: (module: String, error: any Error)?
         var endedOnItsOwn: String?
+        /// When the first module failed or returned: the moment the run
+        /// ended, which the report measures uptime to. Reading the clock when
+        /// the report is assembled instead counted however long the group
+        /// took to wind down, so a service that returned at once, on a busy
+        /// machine, read as "stopped after running 1s".
+        var endedAt: ContinuousClock.Instant?
     }
 
     let expected: Int
@@ -41,15 +47,19 @@ final class ApplicationRun: Sendable {
         }
     }
 
-    func moduleFailed(_ module: String, _ error: any Error) {
+    func moduleFailed(
+        _ module: String, _ error: any Error, at instant: ContinuousClock.Instant = .now
+    ) {
         state.withLock { state in
             if state.firstFailure == nil { state.firstFailure = (module, error) }
+            if state.endedAt == nil { state.endedAt = instant }
         }
     }
 
-    func moduleEndedOnItsOwn(_ module: String) {
+    func moduleEndedOnItsOwn(_ module: String, at instant: ContinuousClock.Instant = .now) {
         state.withLock { state in
             if state.endedOnItsOwn == nil { state.endedOnItsOwn = module }
+            if state.endedAt == nil { state.endedAt = instant }
         }
     }
 
@@ -64,7 +74,8 @@ final class ApplicationRun: Sendable {
     /// application had been running, which module stopped it, and for how
     /// long.
     func explain(_ error: any Error, at now: ContinuousClock.Instant = .now) -> any Error {
-        let uptime = startedAt.map { now - $0 }.flatMap { $0 >= Self.startupWindow ? $0 : nil }
+        let end = state.withLock { $0.endedAt } ?? now
+        let uptime = startedAt.map { end - $0 }.flatMap { $0 >= Self.startupWindow ? $0 : nil }
         if let module = endedOnItsOwn, firstFailure == nil {
             return ServiceEndedOnItsOwn(module: module, uptime: uptime)
         }

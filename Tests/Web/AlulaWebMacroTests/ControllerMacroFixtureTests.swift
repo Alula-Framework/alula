@@ -261,29 +261,102 @@ struct ControllerMacroFixtureTests {
         )
     }
 
-    @Test("missing context parameter is an error")
-    func missingContextParameterIsAnError() {
+    @Test("a handler that does not declare the context is called without it")
+    func handlerWithoutContext() {
+        assertMacroExpansion(
+            """
+            @Controller
+            struct UserController {
+                @GetRoute("/users/:id")
+                func show(id: Int) async throws -> String {
+                    "user \\(id)"
+                }
+            }
+            """,
+            expandedSource: """
+            struct UserController {
+                func show(id: Int) async throws -> String {
+                    "user \\(id)"
+                }
+
+                init() {
+                }
+
+                static func _alulaRoute_show_0(_ make: @escaping @Sendable (AlulaWeb.RequestContext) throws -> Self) -> AlulaWeb.RouteRegistration {
+                    AlulaWeb.RouteRegistration(method: "GET", path: "/users/:id", kind: .http, source: String(reflecting: Self.self) + ".show") { context in
+                        let controller = try make(context)
+                        let id = try AlulaWeb.decodePathParameter(Int.self, named: "id", from: context)
+                        let result = try await controller.show(id: id)
+                        return try AlulaWeb.encodeResponse(result, for: context)
+                    }
+                }
+
+                static func alulaRoutes(_ make: @escaping @Sendable (AlulaWeb.RequestContext) throws -> Self) -> [AlulaWeb.RouteRegistration] {
+                    [
+                        Self._alulaRoute_show_0(make)
+                    ]
+                }
+            }
+            """,
+            macroSpecs: testMacros
+        )
+    }
+
+    @Test("a context anywhere but first and unlabeled is an error", arguments: [
+        "func handler(id: Int, _ context: RequestContext) -> String { \"x\" }",
+        "func handler(context: RequestContext) -> String { \"x\" }",
+    ])
+    func misplacedContextIsAnError(handler: String) {
+        let column = handler.hasPrefix("func handler(id") ? 27 : 18
         assertMacroExpansion(
             """
             @Controller
             struct BadController {
-                @GetRoute("/x")
-                func handler() -> String { "x" }
+                @GetRoute("/x/:id")
+                \(handler)
             }
             """,
             expandedSource: """
             struct BadController {
-                func handler() -> String { "x" }
+                \(handler)
 
                 init() {
                 }
             }
             """,
             diagnostics: [
-                // Once. It used to be twice — the peer marker validated the
-                // same method @Controller's scan already had.
                 DiagnosticSpec.coded(.invalidHandlerParameter,
-                    message: "Route handler 'handler' must take '_ context: RequestContext' as its first parameter.",
+                    message: "Route handler 'handler' takes a RequestContext other than as its first, unlabeled parameter. A handler that takes the context declares it first, as '_ context: RequestContext'.",
+                    line: 4, column: column
+                )
+            ],
+            macroSpecs: testMacros
+        )
+    }
+
+    @Test("a WebSocket handler must still take the context")
+    func webSocketHandlerNeedsContext() {
+        assertMacroExpansion(
+            """
+            @Controller
+            struct BadController {
+                @WebSocketRoute("/chat")
+                func chat() -> any WebSocketUpgradeHandler { ChatRoomHandler() }
+            }
+            """,
+            expandedSource: """
+            struct BadController {
+                func chat() -> any WebSocketUpgradeHandler { ChatRoomHandler() }
+
+                init() {
+                }
+            }
+            """,
+            diagnostics: [
+                // Once, as for every handler diagnostic: the peer marker
+                // does not validate what @Controller's scan already has.
+                DiagnosticSpec.coded(.invalidHandlerParameter,
+                    message: "A @WebSocketRoute handler must take '_ context: RequestContext' as its first parameter.",
                     line: 3, column: 5
                 )
             ],

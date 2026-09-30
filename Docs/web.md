@@ -87,8 +87,8 @@ import AlulaTransport
 struct UserController {
     @Inject var userService: UserService          // Alula Core DI, unchanged
 
-    @GetRoute("/users/:id")
-    func getUser(_ context: RequestContext, id: UUID) async throws -> UserResponse {
+    @GetRoute("/users/:id")                        // no context: nothing else is read
+    func getUser(id: UUID) async throws -> UserResponse {
         try await userService.find(id)               // UserResponse: Codable + ResponseEncodable
     }
 
@@ -141,6 +141,13 @@ struct AppModule: AlulaModule {
     }
 }
 ```
+
+A handler declares `_ context: RequestContext` first when it reads the
+request itself: a header, the principal, a cookie. One that needs only what
+its other parameters bind, like `getUser`, can leave it out. The route still
+parses `:id`, decodes `body:` and `query:`, and checks roles, because the
+generated route does that, not the handler. A `@WebSocketRoute` handler
+always takes the context.
 
 Transport settings come from the same `alula.yaml` everything else uses:
 `server.host` (127.0.0.1), `server.port` (8080), `server.backlog`,

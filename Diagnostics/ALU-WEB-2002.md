@@ -6,7 +6,8 @@
 
 A route handler has a parameter Alula has no way to fill. Alula binds:
 
-- `_ context: RequestContext`, always the first parameter;
+- `_ context: RequestContext`, first when the handler declares it (optional,
+  except on a `@WebSocketRoute`);
 - a path parameter, labelled after its `:segment`;
 - `body:`, decoded from the request body (once);
 - `query:`, decoded from the query string (once).
@@ -22,6 +23,8 @@ be called with.
 - An unlabelled parameter meant as the body.
 - A path parameter label that does not match its segment (`id:` for `:userID`).
 - A `body:` on a WebSocket upgrade — an upgrade request has no body.
+- The context declared somewhere other than first, or with a label.
+- A `@WebSocketRoute` handler without the context.
 - A path segment named `:body` or `:query`, which collides with those labels.
 
 ## Fixes
@@ -35,7 +38,10 @@ be called with.
 
 ```swift
 @GetRoute("/users/:id")
-func show(_ context: RequestContext, id: UUID) async throws -> User
+func show(id: UUID) async throws -> User
+
+@GetRoute("/users/:id/avatar")
+func avatar(_ context: RequestContext, id: UUID) async throws -> Response
 ```
 
 ## Related

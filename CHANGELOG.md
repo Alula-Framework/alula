@@ -4,6 +4,21 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **A route handler may leave out the request context.** A handler that
+  reads nothing from the request beyond what its other parameters bind can
+  be written `func show(id: UUID) async throws -> User`. When a handler does
+  take the context, it is still the first parameter, `_ context:
+  RequestContext`. The generated route has the context either way: it still
+  parses path segments, decodes `body:` and `query:`, checks roles and
+  encodes the result, and passes the context to the handler only when the
+  handler declares it. A `@WebSocketRoute` handler still takes it. A context
+  declared anywhere else, or with a label, is ALU-WEB-2002. Every existing
+  handler compiles unchanged.
+
 ## [0.61.0] - 2026-09-30
 
 ### Added

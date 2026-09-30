@@ -183,11 +183,11 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         // order made `(_ context:, slug: String, body: Request)` fail with
         // `argument 'slug' must precede argument 'body'` from inside this
         // expansion — an ordering rule nothing documented.
-        var call = "controller.\(route.methodName)(context"
-        for label in route.argumentLabels {
-            call += ", \(label): \(label)"
-        }
-        call += ")"
+        // The context goes first, and only to a handler that declares it.
+        let arguments =
+            (route.takesContext ? ["context"] : [])
+            + route.argumentLabels.map { "\($0): \($0)" }
+        var call = "controller.\(route.methodName)(\(arguments.joined(separator: ", ")))"
         if route.isAsync { call = "await \(call)" }
         if route.isThrows { call = "try \(call)" }
 

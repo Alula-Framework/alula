@@ -48,6 +48,18 @@ struct TypedController {
     func note(_ context: RequestContext, body: NoteBody, id: Int) async throws -> String {
         "\(id):\(body.text)"
     }
+
+    // A handler that reads nothing else from the request leaves the context
+    // out; the route still binds, decodes and refuses exactly as above.
+    @GetRoute("/bare/:id")
+    func bare(id: Int) -> String {
+        "bare \(id + 1)"
+    }
+
+    @PostRoute("/bare/:id/notes")
+    func bareNote(id: Int, body: NoteBody) -> String {
+        "\(id):\(body.text)"
+    }
 }
 
 struct NoteBody: Codable {
@@ -105,6 +117,21 @@ struct TypedPathParameterTests {
         #expect(one.bodyText == "on")
         #expect(off.bodyText == "off")
         #expect(bad.status == .badRequest)
+    }
+
+    @Test("a handler without the context binds its parameters the same way")
+    func withoutContext() async throws {
+        let client = try client()
+        let got = try await client.get("/typed/bare/41")
+        #expect(got.status == .ok)
+        #expect(got.bodyText == "bare 42")
+        let posted = try await client.post("/typed/bare/9/notes", json: NoteBody(text: "hi"))
+        #expect(posted.bodyText == "9:hi")
+        // Binding happens in the generated route, not the handler, so a
+        // segment that will not parse is still a 400 naming it.
+        let bad = try await client.get("/typed/bare/forty-one")
+        #expect(bad.status == .badRequest)
+        #expect(bad.bodyText.contains("id"))
     }
 
     @Test("a body and typed parameters coexist")

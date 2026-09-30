@@ -51,6 +51,12 @@ public struct ScannedRoute {
     /// Handler parameters bound to `:name` segments, in signature order.
     /// Empty for a handler that reads them from the context itself.
     public let pathParameters: [PathParameterBinding]
+    /// Whether the handler declares `_ context: RequestContext` first. A
+    /// handler that reads nothing from the request beyond what its other
+    /// parameters bind may leave it out; the generated route has the context
+    /// either way, and passes it only when it is declared. An upgrade
+    /// handler always takes it.
+    public let takesContext: Bool
     /// Every argument label after the context, **in the order the handler
     /// declares them** — `"body"`, `"query"`, or a path segment's name.
     ///
@@ -170,6 +176,10 @@ public enum RouteScanning {
     ///
     ///     func f(_ context: RequestContext) [async] [throws] [-> T]
     ///     func f(_ context: RequestContext, body: B) [async] [throws] [-> T]
+    ///     func f(id: UUID, body: B) [async] [throws] [-> T]
+    ///
+    /// The context is optional and, when present, first. After it come
+    /// `body:`, `query:` and path segments, in any order.
     /// `basePath` is the `@Controller`'s own path: its `:segments` bind
     /// handler parameters exactly as the route's do, because the router sees
     /// the combined path.
@@ -228,14 +238,32 @@ public enum RouteScanning {
             return []
         }
 
+        // The context is optional, and first when present: a handler that
+        // reads nothing from the request beyond what its other parameters
+        // bind need not declare it. Found anywhere else, or labelled, it is
+        // refused rather than bound, because a second place to put it is a
+        // second shape to learn and to read.
         let parameters = Array(function.signature.parameterClause.parameters)
-        guard let first = parameters.first,
-            first.firstName.tokenKind == .wildcard,
-            typeName(first.type).hasSuffix("RequestContext")
-        else {
+        for (index, parameter) in parameters.enumerated()
+        where typeName(parameter.type).hasSuffix("RequestContext") {
+            guard index == 0, parameter.firstName.tokenKind == .wildcard else {
+                diagnostics.diagnose(
+                    .invalidHandlerParameter,
+                    "Route handler '\(name)' takes a RequestContext other than as its first, unlabeled parameter. A handler that takes the context declares it first, as '_ context: RequestContext'.",
+                    at: parameter
+                )
+                return []
+            }
+        }
+        let takesContext = parameters.first.map {
+            typeName($0.type).hasSuffix("RequestContext")
+        } ?? false
+        // An upgrade handler reads the principal, the headers or the query
+        // before it accepts, nearly always, so its shape keeps the context.
+        if !takesContext, let upgrade = mappings.first(where: { $0.kind.isUpgrade }) {
             diagnostics.diagnose(
                 .invalidHandlerParameter,
-                "Route handler '\(name)' must take '_ context: RequestContext' as its first parameter.",
+                "A @\(upgrade.kind.rawValue) handler must take '_ context: RequestContext' as its first parameter.",
                 at: function
             )
             return []
@@ -256,7 +284,7 @@ public enum RouteScanning {
             names, mapping in
             names.formUnion(pathSegmentNames(in: mapping.1))
         }
-        for parameter in parameters.dropFirst() {
+        for parameter in parameters.dropFirst(takesContext ? 1 : 0) {
             let label = parameter.firstName.text
             // `body:` and `query:` are reserved, and they are matched before
             // path segments — so a route declaring `:query` and a handler
@@ -305,9 +333,9 @@ public enum RouteScanning {
                 diagnostics.diagnose(
                     .invalidHandlerParameter,
                     """
-                    Route handler '\(name)' has an unlabeled parameter after the context. \
-                    Label it 'body:' to decode it from the request body, or name it after a \
-                    path segment to receive that segment parsed.
+                    Route handler '\(name)' has an unlabeled parameter that is not the \
+                    context. Label it 'body:' to decode it from the request body, or name it \
+                    after a path segment to receive that segment parsed.
                     """,
                     at: parameter)
                 return []
@@ -383,6 +411,7 @@ public enum RouteScanning {
                 bodyTypeText: bodyTypeText,
                 queryTypeText: queryTypeText,
                 pathParameters: pathParameters,
+                takesContext: takesContext,
                 argumentLabels: argumentLabels,
                 maxBodyBytesText: maxBodyBytes,
                 pipelinesText: pipelines,

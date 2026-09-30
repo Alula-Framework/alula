@@ -22,6 +22,8 @@ public struct ChannelContext: Sendable {
     /// The socket's principal, established at upgrade.
     public let principal: (any ChannelPrincipal)?
 
+    /// A context; the socket layer builds these, and a test calling a
+    /// registration's factory directly builds its own.
     public init(
         topic: String,
         broadcaster: ChannelBroadcaster,
@@ -38,19 +40,16 @@ public struct ChannelContext: Sendable {
 /// instance").
 ///
 /// A **value**, held by whichever module declares it, and handed to
-/// `AlulaChannelsModule` at composition. It used to be a container
-/// registration that `AlulaChannelsModule` collected at `freeze()`, which
-/// made the two mutually dependent: a module declaring a channel needed the
-/// `ChannelBroadcaster` that Channels provides, and Channels needed the
-/// declarations that module contributed. Nothing about the *values* was
-/// circular — `bus -> ChannelBroadcaster -> RoomChannel` is a chain — the
-/// cycle was only that one module both provided and aggregated. Declaring
-/// channels as values a module holds removes it.
+/// `AlulaChannelsModule` at composition. A module declaring a channel
+/// therefore does not depend on Channels: nothing about the values is
+/// circular (`bus -> ChannelBroadcaster -> RoomChannel` is a chain), and
+/// the broadcaster reaches the channel through its context instead of
+/// through the declaring module.
 ///
 /// The factory takes a ``ChannelContext`` — the values Channels owns, handed
-/// over at join time. It used to take the upgrade's `RequestContext` and
-/// resolve out of it, which meant a channel created ten minutes into a
-/// socket's life reached through the request that opened it.
+/// over at join time — rather than the upgrade's `RequestContext`, so a
+/// channel created ten minutes into a socket's life does not reach through
+/// the request that opened it.
 public struct ChannelRegistration: Sendable {
     /// The pattern as written. Parsed by ``ChannelRouter``, not here, so that
     /// declaring a channel is non-throwing: `AlulaModule` requires a
@@ -85,6 +84,16 @@ public struct ChannelRegistration: Sendable {
     /// open one. They are different questions and both are worth asking.
     public let roles: [any RouteRole]
 
+    /// A channel declaration. The pattern is checked at composition, by
+    /// ``ChannelRouter``, so this never throws.
+    ///
+    /// - Parameters:
+    ///   - topicPattern: `room:*` or an exact topic.
+    ///   - roles: Any one of these is required to join; empty admits any
+    ///     socket as far as ``Channel/join(_:socket:)``.
+    ///   - source: Names the declaring module in errors and diagnostics.
+    ///   - makeChannel: Builds a fresh instance for each join. A throw is
+    ///     answered with a `handler_error` join error.
     public init(
         _ topicPattern: String,
         roles: [any RouteRole] = [],

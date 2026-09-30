@@ -30,6 +30,8 @@ public struct LogBridge: Sendable {
         case prefix(EventName, Logger.Level)
     }
 
+    /// A bridge writing to `logger`, with no rules yet: add them with
+    /// the builder methods, then attach.
     public init(logger: Logger) {
         self.init(logger: logger, rules: [])
     }

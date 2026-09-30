@@ -28,6 +28,8 @@ public struct RateLimiter: Sendable {
     /// The store behind it, for a caller that needs the seam directly.
     public let store: any RateLimitStore
 
+    /// A limiter over `store`. ``AlulaRateLimitModule`` builds the
+    /// application's.
     public init(store: any RateLimitStore) {
         self.store = store
     }

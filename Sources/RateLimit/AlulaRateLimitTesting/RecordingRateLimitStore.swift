@@ -26,10 +26,15 @@ import Synchronization
 /// `misbehave()` makes every call throw, which is a store outage, and the
 /// path the middleware's fail-open policy exists for.
 public final class RecordingRateLimitStore: RateLimitStore, Sendable {
+    /// One recorded call: what was asked, and what was decided.
     public struct Call: Sendable, Equatable {
+        /// The key limited.
         public let key: String
+        /// Permits asked for.
         public let cost: Int
+        /// The quota the key was held to.
         public let quota: RateLimitQuota
+        /// Whether the call was admitted.
         public let isAllowed: Bool
     }
 
@@ -58,6 +63,8 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
     private let clock: Clock
     private let backing: InMemoryRateLimitStore
 
+    /// A store over an `InMemoryRateLimitStore` whose clock starts at
+    /// `microseconds` and moves only with ``advance(by:)``.
     public init(startingAt microseconds: Int64 = 0) {
         // A real store and the real algorithm, with only time faked. The
         // alternative is a stub that agrees with the production limiter
@@ -67,6 +74,9 @@ public final class RecordingRateLimitStore: RateLimitStore, Sendable {
         self.backing = InMemoryRateLimitStore(now: { clock.now })
     }
 
+    /// Throws `RateLimitStoreError` while misbehaving, recording nothing;
+    /// otherwise decides as the in-memory store does and records the call.
+    /// A negative `cost` throws and is not recorded.
     public func consume(key: String, cost: Int, quota: RateLimitQuota) async throws
         -> RateLimitDecision
     {

@@ -33,6 +33,8 @@ public struct WebSocketChannelTransport: ChannelClientTransport {
     public var maxMessageSize: Int
     let logger: Logger
 
+    /// A transport sending `headers` with every handshake, reconnects
+    /// included. `maxMessageSize` defaults to 1 MiB.
     public init(
         headers: HTTPFields = HTTPFields(), maxMessageSize: Int = 1 << 20,
         logger: Logger = Logger(label: "alula.channels.transport")
@@ -42,6 +44,11 @@ public struct WebSocketChannelTransport: ChannelClientTransport {
         self.logger = logger
     }
 
+    /// Opens a WebSocket to `url` and returns once the handshake completes.
+    /// Binary frames are ignored.
+    ///
+    /// - Throws: ``WebSocketChannelTransportError`` when the connection or
+    ///   the handshake fails.
     public func connect(to url: URL) async throws -> ClientTransportConnection {
         let (incoming, incomingContinuation) = AsyncThrowingStream<String, any Error>.makeStream()
         let (outgoing, outgoingContinuation) = AsyncStream<String>.makeStream()
@@ -107,7 +114,9 @@ public struct WebSocketChannelTransport: ChannelClientTransport {
 
 /// The WebSocket could not be opened.
 public struct WebSocketChannelTransportError: Error, Sendable, CustomStringConvertible {
+    /// The URL dialled, as given. ``description`` redacts it; this does not.
     public let url: URL
+    /// The underlying failure.
     public let reason: String
 
     /// Names the URL without its query or credentials: this is what lands

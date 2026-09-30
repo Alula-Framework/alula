@@ -64,3 +64,5 @@ indifferent to deployment shape.
 
 - ``AlulaPubSubModule``
 - ``PubSubRelayService``
+- ``PubSubBufferingPolicy``
+- ``PubSubBroadcastTimeout``

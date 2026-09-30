@@ -2,15 +2,21 @@ import Foundation
 
 /// Identifies one enqueued job.
 public struct QueuedJobID: Hashable, Sendable, Codable, CustomStringConvertible {
+    /// The UUID a store keys the job by.
     public let rawValue: UUID
+    /// Wraps `rawValue`; the default is a fresh random UUID.
     public init(_ rawValue: UUID = UUID()) { self.rawValue = rawValue }
+    /// The UUID's string form, as logs and the job-id metadata show it.
     public var description: String { rawValue.uuidString }
 }
 
 /// A job as it is written: already encoded, already scheduled.
 public struct NewQueuedJob: Sendable, Equatable {
+    /// The job's identity from here on; ``EnqueueResult/enqueued(_:)`` returns it.
     public var id: QueuedJobID
+    /// Which ``QueueHandler`` runs it, by its `kind`.
     public var kind: String
+    /// The queue it waits on. A worker claims only from the queues it runs.
     public var queue: String
     /// JSON.
     public var payload: Data
@@ -18,12 +24,18 @@ public struct NewQueuedJob: Sendable, Equatable {
     public var priority: Int
     /// Not claimed before this instant.
     public var runAt: Date
+    /// Attempts allowed in all, the first included. A failure on the last
+    /// one discards the job.
     public var maxAttempts: Int
     /// While a job with the same `kind` and `uniqueKey` is waiting or
     /// running, enqueueing another returns the existing one instead.
     public var uniqueKey: String?
+    /// When it was enqueued, by the application's clock. Handlers see it as
+    /// ``QueueJobContext/enqueuedAt``.
     public var enqueuedAt: Date
 
+    /// A job ready to write. ``JobQueue`` builds these; a store's own tests
+    /// build them directly.
     public init(
         id: QueuedJobID = QueuedJobID(), kind: String, queue: String, payload: Data,
         priority: Int = 0, runAt: Date, maxAttempts: Int, uniqueKey: String? = nil,
@@ -43,11 +55,14 @@ public struct NewQueuedJob: Sendable, Equatable {
 
 /// What enqueueing did.
 public enum EnqueueResult: Sendable, Equatable {
+    /// A new job was written with this id.
     case enqueued(QueuedJobID)
     /// A job with the same kind and unique key was already waiting or
     /// running; this is it, and nothing new was written.
     case duplicate(QueuedJobID)
 
+    /// The job's id, whichever case it is: the new job, or the one it
+    /// collided with.
     public var id: QueuedJobID {
         switch self {
         case .enqueued(let id), .duplicate(let id): id
@@ -57,17 +72,26 @@ public enum EnqueueResult: Sendable, Equatable {
 
 /// A job a worker has claimed and now holds a lease on.
 public struct ClaimedJob: Sendable, Equatable {
+    /// The job's id, as it was enqueued.
     public var id: QueuedJobID
+    /// Which ``QueueHandler`` runs it.
     public var kind: String
+    /// The queue it was claimed from.
     public var queue: String
+    /// The encoded payload, as it was enqueued (JSON).
     public var payload: Data
     /// This attempt, 1-based. Also the fencing token: completing, retrying or
     /// discarding names it, so a worker whose lease expired and was taken over
     /// cannot overwrite the new owner's result.
     public var attempt: Int
+    /// Attempts allowed in all. A claim can return `attempt` past this: the
+    /// job's final attempt was lost with the worker running it, and the
+    /// runner discards it without running it.
     public var maxAttempts: Int
+    /// When it was enqueued, by the application's clock.
     public var enqueuedAt: Date
 
+    /// A claimed job, as a store's `claim` returns it.
     public init(
         id: QueuedJobID, kind: String, queue: String, payload: Data, attempt: Int,
         maxAttempts: Int, enqueuedAt: Date
@@ -86,11 +110,15 @@ public struct ClaimedJob: Sendable, Equatable {
 public struct QueueCounts: Sendable, Equatable {
     /// Waiting, including those scheduled for later and those waiting to retry.
     public var available: Int
+    /// Claimed and leased, including any whose worker died and whose lease
+    /// has not yet expired.
     public var running: Int
+    /// Finished successfully and not yet pruned (`queue.retain-completed-hours`).
     public var completed: Int
     /// Out of attempts, or discarded by their handler: the dead letters.
     public var discarded: Int
 
+    /// Counts to compare against, in a test or a store's own `counts`.
     public init(available: Int = 0, running: Int = 0, completed: Int = 0, discarded: Int = 0) {
         self.available = available
         self.running = running
@@ -103,7 +131,9 @@ public struct QueueCounts: Sendable, Equatable {
 ///
 /// A job moves `available → running → completed`, or back to `available`
 /// with a later `runAt` when it fails and has attempts left, or to
-/// `discarded` when it has none. The contract an implementation must keep:
+/// `discarded` when it has none. A job stopped at shutdown goes back to
+/// `available` with its attempt given back (``handBack(_:attempt:runAt:error:)``).
+/// The contract an implementation must keep:
 ///
 /// - **`claim` is atomic.** Two workers claiming concurrently never both get
 ///   one job. It takes `available` jobs whose `runAt` has passed *and*
@@ -111,9 +141,9 @@ public struct QueueCounts: Sendable, Equatable {
 ///   priority, then `runAt`. Each claim increments `attempt` and sets the
 ///   lease. It returns only the kinds asked for, so a worker never claims a
 ///   job it has no handler for (a rolling deploy adding a new kind).
-/// - **Results are fenced by attempt.** `complete`, `retry` and `discard`
-///   change the job only if it is still `running` at that attempt, and
-///   report whether they did.
+/// - **Results are fenced by attempt.** `complete`, `retry`, `discard` and
+///   `handBack` change the job only if it is still `running` at that
+///   attempt, and report whether they did.
 /// - **Uniqueness holds across processes** for jobs with a `uniqueKey` while
 ///   they are `available` or `running`.
 ///
@@ -121,7 +151,7 @@ public struct QueueCounts: Sendable, Equatable {
 /// every implementation agrees on what "now" meant.
 ///
 /// A method that cannot reach its backing store throws. The worker treats a
-/// throw from `complete`, `retry` or `discard` as "not recorded": the job
+/// throw from `complete`, `retry`, `discard` or `handBack` as "not recorded": the job
 /// stays `running` until its lease expires, then runs again.
 public protocol QueueStore: Sendable {
     /// Writes `job` as `available`, or returns ``EnqueueResult/duplicate(_:)``
@@ -164,6 +194,7 @@ public protocol QueueStore: Sendable {
     @discardableResult
     func handBack(_ id: QueuedJobID, attempt: Int, runAt: Date, error: String) async throws -> Bool
 
+    /// How many of `queue`'s jobs are in each state.
     func counts(queue: String) async throws -> QueueCounts
 
     /// Deletes completed jobs finished before `completedBefore` and discarded
@@ -173,6 +204,10 @@ public protocol QueueStore: Sendable {
 }
 
 extension QueueStore {
+    /// Calls ``retry(_:attempt:runAt:error:)``, which keeps the attempt
+    /// spent: a store that predates `handBack` keeps its old behaviour, in
+    /// which a job handed back on its final attempt is discarded when next
+    /// claimed. Implement `handBack` to give the attempt back.
     public func handBack(_ id: QueuedJobID, attempt: Int, runAt: Date, error: String) async throws
         -> Bool
     {

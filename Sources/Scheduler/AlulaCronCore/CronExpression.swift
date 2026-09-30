@@ -51,10 +51,17 @@ public struct CronExpression: Sendable, Equatable, CustomStringConvertible {
     /// side quietly.
     let bothDayFieldsRestricted: Bool
 
+    /// The text it was parsed from.
     public var description: String { text }
 
     // MARK: Parsing
 
+    /// Parses six fields (seconds first) or the classic five (second zero).
+    /// Month and weekday names (`JAN`, `MON`) are accepted, and both `0` and
+    /// `7` mean Sunday.
+    ///
+    /// - Throws: ``CronParseError`` naming the field at fault, or when both
+    ///   day fields are narrowed and one is a `*/n` step.
     public init(_ text: String) throws {
         let fields = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         let normalized: [String]
@@ -113,9 +120,12 @@ public struct CronExpression: Sendable, Equatable, CustomStringConvertible {
 /// message is read at a build failure — the macro validates expressions at
 /// compile time — where the author has no debugger and only this string.
 public struct CronParseError: Error, Equatable, CustomStringConvertible {
+    /// The expression as written.
     public let text: String
+    /// What is wrong with it, naming the field.
     public let reason: String
 
+    /// `invalid cron expression "<text>": <reason>`.
     public var description: String { "invalid cron expression \"\(text)\": \(reason)" }
 }
 

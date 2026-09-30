@@ -14,8 +14,8 @@ public enum PresenceMode: Sendable, Equatable, CustomStringConvertible {
     /// No distributed PubSub adapter: one node, node failure is not a
     /// distributed concern, no gossip at all.
     case singleNode
-    /// A `PresenceMembershipMonitor` is provided (the SWIM adapter,
-    ///): prompt, correct removal of a dead node's entries. The
+    /// A `PresenceMembershipMonitor` is provided (a SWIM-style membership
+    /// adapter): prompt, correct removal of a dead node's entries. The
     /// intended multi-node deployment mode.
     case membership
     /// A fan-out-only adapter (Valkey-style) and no membership signal:
@@ -23,6 +23,7 @@ public enum PresenceMode: Sendable, Equatable, CustomStringConvertible {
     /// removal delayed up to the timeout, slow nodes may flap.
     case heartbeatExpiry
 
+    /// The name the startup log line uses.
     public var description: String {
         switch self {
         case .singleNode: return "single-node"
@@ -56,7 +57,9 @@ extension Socket: PresenceSocket {}
 /// N times. The gossip topic is the only presence traffic on the wire.
 public actor PresenceTracker: Presence {
 
+    /// This node's replica: its name and this process's boot id.
     public nonisolated let replica: PresenceReplicaID
+    /// How this node detects failed peers, fixed at composition.
     public nonisolated let mode: PresenceMode
 
     private let configuration: PresenceConfiguration
@@ -141,6 +144,16 @@ public actor PresenceTracker: Presence {
     /// monitor is authoritative, resumed gossip alone is not.
     private var downNames: Set<String> = []
 
+    /// A tracker. ``AlulaPresenceModule`` builds the application's; a test
+    /// builds one around its own buses.
+    ///
+    /// - Parameters:
+    ///   - replica: This node's identity in gossip.
+    ///   - mode: How failed peers are detected.
+    ///   - configuration: Intervals and bounds.
+    ///   - localBus: Where diffs and state pushes go: this node only.
+    ///   - gossipBus: Where gossip goes: every node, when clustered.
+    ///   - logger: Gossip, liveness and bound events.
     public init(
         replica: PresenceReplicaID,
         mode: PresenceMode,

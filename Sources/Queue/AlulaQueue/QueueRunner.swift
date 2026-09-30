@@ -5,6 +5,7 @@ import Synchronization
 
 /// What one attempt came to.
 public enum QueueAttemptOutcome: Sendable, Equatable {
+    /// The handler returned, and the job is `completed`.
     case completed
     /// Failed with attempts left; runs again at this instant. Also a job
     /// handed back at shutdown: due at once, with no backoff, and with its
@@ -29,6 +30,7 @@ public struct QueueRunner: Sendable {
     /// handlers stop and their jobs go back to the queue.
     var cutoff: QueueShutdownCutoff? = nil
 
+    /// A runner recording into `store`, stamping results with `now`.
     public init(
         store: any QueueStore, now: @escaping @Sendable () -> Date = { Date() },
         logger: Logger = Logger(label: "alula.queue")

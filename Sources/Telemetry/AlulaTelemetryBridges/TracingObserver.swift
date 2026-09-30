@@ -26,6 +26,9 @@ public struct TracingObserver: SpanObserver {
         self.tracer = tracer
     }
 
+    /// Starts a tracing span of the same name and kind, as a child of
+    /// `context`, copies the span's metadata onto it as attributes, and
+    /// makes it the current context.
     public func start(_ span: borrowing SpanStart, context: inout ServiceContext) -> SpanBox {
         let tracer = self.tracer ?? InstrumentationSystem.tracer
         let traced: any Span = tracer.startSpan(
@@ -35,12 +38,14 @@ public struct TracingObserver: SpanObserver {
         return SpanBox(span: traced)
     }
 
+    /// Copies the stop metadata onto the span and ends it.
     public func stop(_ span: borrowing SpanStop, state: consuming SpanBox) {
         let traced = state.span
         span.forEachMetadata { name, value in traced.attributes[name] = Self.attribute(value) }
         traced.end()
     }
 
+    /// Records the error, sets the status to error, and ends the span.
     public func exception(_ span: borrowing SpanFailure, state: consuming SpanBox) {
         let traced = state.span
         span.forEachMetadata { name, value in traced.attributes[name] = Self.attribute(value) }

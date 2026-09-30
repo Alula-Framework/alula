@@ -17,6 +17,7 @@ public final class InMemoryCluster: Sendable {
     private let echoesToOrigin: Bool
     private let nodes = Mutex<[UUID: AsyncStream<Message>.Continuation]>([:])
 
+    /// An empty cluster; nodes join with ``makeAdapter()``.
     public init(echoesToOrigin: Bool = false) {
         self.echoesToOrigin = echoesToOrigin
     }

@@ -5,6 +5,8 @@ public struct ReconnectPolicy: Sendable {
     /// moving the client to `.closed`.
     public let delay: @Sendable (_ attempt: Int) -> Duration?
 
+    /// A policy from a closure: attempt number (1-based) in, delay or nil
+    /// (give up) out.
     public init(delay: @escaping @Sendable (_ attempt: Int) -> Duration?) {
         self.delay = delay
     }
@@ -32,6 +34,8 @@ public struct ReconnectPolicy: Sendable {
     public static let never = ReconnectPolicy { _ in nil }
 }
 
+/// How a ``ChannelClient`` paces heartbeats, waits for replies, reconnects
+/// and buffers for slow subscribers.
 public struct ChannelClientConfiguration: Sendable {
     /// How often the client sends `alula:heartbeat`. Must be well
     /// inside the server's timeout (default 60s server-side). A heartbeat
@@ -43,6 +47,8 @@ public struct ChannelClientConfiguration: Sendable {
     /// overridable.
     public var pushTimeout: Duration
 
+    /// When to re-dial after a dropped connection. Default: exponential
+    /// backoff from 100 ms to 10 s, forever.
     public var reconnect: ReconnectPolicy
 
     /// How many messages one `messages()` or `states()` stream may hold for a
@@ -56,6 +62,7 @@ public struct ChannelClientConfiguration: Sendable {
     /// catch up on.
     public var subscriberBufferSize: Int
 
+    /// A configuration; each parameter sets the property of the same name.
     public init(
         heartbeatInterval: Duration = .seconds(25),
         pushTimeout: Duration = .seconds(10),
@@ -74,14 +81,18 @@ public struct ChannelClientConfiguration: Sendable {
 public enum ConnectionState: Sendable, Equatable {
     /// Dialing (first connect or a reconnect attempt).
     case connecting
+    /// Open. Channels joined before a drop are re-joined just after this
+    /// state is entered, so a join may still be in flight.
     case connected
     /// Dropped; reconnection pending per policy.
     case disconnected
-    /// Terminal: `disconnect()` was called, the server sent `alula:close`,
-    /// or the reconnect policy gave up. `connect()` starts fresh from here.
+    /// Terminal: `disconnect()` was called, or the reconnect policy gave up.
+    /// (An inbound `alula:close` would also end here, but the Alula server
+    /// never sends one.) `connect()` starts fresh from here.
     case closed
 }
 
+/// Why a ``ChannelClient`` call failed.
 public enum ChannelClientError: Error, Sendable, Equatable, CustomStringConvertible {
     /// The client is not connected (call `connect()`, or the connection
     /// dropped and reconnection hasn't succeeded yet).
@@ -96,6 +107,7 @@ public enum ChannelClientError: Error, Sendable, Equatable, CustomStringConverti
     /// (`ChannelErrorReason` names the server-produced set).
     case channelError(reason: String)
 
+    /// A sentence naming the failure, and the reason for a channel error.
     public var description: String {
         switch self {
         case .notConnected: return "Not connected — call connect() first."

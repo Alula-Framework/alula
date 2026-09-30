@@ -67,8 +67,7 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
 
         // The jobs as values, built from a component the caller supplies —
         // the composition root fills `make` with the component the graph
-        // built. This is the whole of what @Scheduler emits for wiring; the
-        // container-era resolving init and registration thunk are gone.
+        // built. This is the whole of what @Scheduler emits for wiring.
         let jobValues: DeclSyntax = """
             \(raw: access)static func _alulaScheduledJobs(
                 _ make: @escaping @Sendable () -> Self
@@ -130,7 +129,8 @@ public struct SchedulerMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        // No conformance to emit: the container marker protocol is gone.
+        // No conformance to emit. The macro declaration in AlulaScheduler
+        // lists only the member role, so the compiler never calls this.
         []
     }
 }

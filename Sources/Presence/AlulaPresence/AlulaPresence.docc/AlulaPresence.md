@@ -46,7 +46,8 @@ is why the mode is a startup log line rather than an implementation detail.
 ## Tuning is a trade, not a default
 
 ``PresenceConfiguration`` carries the heartbeat interval and the down-after
-timeout. ``PresenceConfigurationError`` refuses a configuration where
+timeout, read from `presence.*` (the pre-0.60 `alula.presence.*` spellings
+are refused at startup). ``PresenceConfigurationError`` refuses a configuration where
 `downAfter` is not comfortably above `heartbeat` — that combination declares
 healthy nodes dead, and the failure looks like random users disappearing.
 
@@ -57,13 +58,19 @@ client through `AlulaPresenceProtocol` so a change breaks the build rather
 than a production socket. `AlulaPresenceClient`'s `ChannelPresence` applies
 diffs on top of a `ChannelClient` subscription.
 
-## What is still open
+## Trust and upgrades
 
-The gossip **trust model**. Presence assumes cooperating nodes: a malicious
-or buggy node gossiping bad state is not defended against, and there is no
-protocol-version negotiation for a rolling upgrade. Both need a threat-model
-decision before any code, and neither is a problem inside a trusted network
-boundary — which is where this is currently supported.
+Presence trusts its PubSub bus: anything that can publish to the broker can
+forge presence, so the broker belongs inside the network boundary. Within
+it, gossip frames are checked against what a *correct* sender can say — a
+frame speaking for a third replica, claiming this replica's dots, or larger
+than `presence.max-entries-per-frame` is dropped and logged — which bounds a
+buggy node, not a hostile one.
+
+There is no version negotiation. A frame with an unknown
+`PresenceGossip.version` is dropped, so during a rolling upgrade across a
+version change the two halves of the cluster do not merge each other's state
+until the roll completes. `Docs/presence.md` has both in full.
 
 ## Topics
 

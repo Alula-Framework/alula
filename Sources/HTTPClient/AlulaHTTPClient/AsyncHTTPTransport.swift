@@ -17,8 +17,11 @@ import NIOHTTP1
 /// ``OutboundHTTPError/timedOut(_:)``; any other failure, a refused
 /// connection included, ``OutboundHTTPError/transport(_:)``.
 public struct AsyncHTTPTransport: OutboundHTTPTransport {
+    /// The transport over `HTTPClient.shared`.
     public init() {}
 
+    /// One attempt through `HTTPClient.shared`, errors mapped as the type's
+    /// overview describes. `CancellationError` passes through.
     public func send(_ request: OutboundRequest, timeout: Duration, maxResponseBytes: Int)
         async throws -> OutboundResponse
     {
@@ -71,13 +74,20 @@ public struct AsyncHTTPTransport: OutboundHTTPTransport {
 ///   max-response-bytes: 10485760
 /// ```
 public struct AlulaHTTPClientModule: AlulaModule {
+    /// The client the graph provides, over ``AsyncHTTPTransport``.
     public let httpClient: OutboundHTTPClient
 
+    /// The composition root's initializer.
+    ///
+    /// - Throws: ``OutboundHTTPConfigurationError`` for a non-positive
+    ///   `http-client.*` value.
     public init(configuration: Configuration) throws {
         self.httpClient = OutboundHTTPClient(
             transport: AsyncHTTPTransport(), policy: try OutboundHTTPPolicy(configuration: configuration))
     }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaHTTPClientModule takes its configuration in init(configuration:), so it cannot be "

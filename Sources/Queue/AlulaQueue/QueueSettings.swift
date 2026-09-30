@@ -21,7 +21,12 @@ public struct QueueSettings: Sendable, Equatable {
     /// Jobs one process runs at once on each queue, unless the queue has its
     /// own in `perQueueConcurrency`.
     public var concurrency: Int
+    /// Overrides of `concurrency` by queue name, from
+    /// `queue.queues.<name>.concurrency`.
     public var perQueueConcurrency: [String: Int]
+    /// How often an idle worker looks for due jobs. An enqueue in this
+    /// process wakes the worker at once; this bounds how long a job enqueued
+    /// by another process, or scheduled for later, waits to be noticed.
     public var pollInterval: Duration
     /// Renewed every third of itself while a job runs, so it bounds how long
     /// a crashed worker's jobs wait, not how long a job may take. A worker that
@@ -29,12 +34,18 @@ public struct QueueSettings: Sendable, Equatable {
     /// running the job, and another worker may claim and run it too; only the
     /// newer attempt's result is recorded.
     public var lease: Duration
+    /// How long a completed job stays in the store before pruning deletes it.
     public var retainCompleted: Duration
+    /// How long a discarded job (a dead letter) stays, with its error, before
+    /// pruning deletes it.
     public var retainDiscarded: Duration
+    /// False: this process enqueues but runs no jobs (`queue.worker.enabled`).
     public var workerEnabled: Bool
     /// Nil: every queue some handler names.
     public var onlyQueues: Set<String>?
 
+    /// Settings built in code. Each default is the one
+    /// ``init(configuration:queues:)`` uses for an absent key.
     public init(
         concurrency: Int = 10, perQueueConcurrency: [String: Int] = [:],
         pollInterval: Duration = .seconds(1), lease: Duration = .seconds(60),
@@ -85,14 +96,21 @@ public struct QueueSettings: Sendable, Equatable {
             onlyQueues: only)
     }
 
+    /// Jobs one process runs at once on `queue`: its own override, or
+    /// `concurrency`.
     public func concurrency(of queue: String) -> Int {
         perQueueConcurrency[queue] ?? concurrency
     }
 }
 
+/// A `queue.*` value that is not a positive whole number. Thrown at
+/// composition, so the application does not start.
 public struct QueueConfigurationError: Error, Sendable, CustomStringConvertible {
+    /// The offending key, such as `queue.concurrency`.
     public let key: String
+    /// The value as configured.
     public let value: String
+    /// Names the key, the rule and the value.
     public var description: String { "\(key) must be a positive whole number; it is \(value)" }
 }
 

@@ -14,6 +14,7 @@ public struct TopicPattern: Sendable, Equatable, CustomStringConvertible {
     }
 
     internal let kind: Kind
+    /// The pattern as written.
     public let description: String
 
     /// Parses a pattern, throwing `ChannelsError.invalidTopicPattern` for
@@ -34,6 +35,8 @@ public struct TopicPattern: Sendable, Equatable, CustomStringConvertible {
         self.description = pattern
     }
 
+    /// Whether `topic` is this exact topic or starts with this wildcard's
+    /// prefix. `*` matches every topic, the empty one included.
     public func matches(_ topic: String) -> Bool {
         switch kind {
         case .exact(let exact):
@@ -57,9 +60,12 @@ public struct TopicPattern: Sendable, Equatable, CustomStringConvertible {
 /// Configuration and wiring failures. All of these surface at composition,
 /// failing the app before it serves — never mid-connection.
 public enum ChannelsError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// The pattern, and what is wrong with it: empty, or `*` before the end.
     case invalidTopicPattern(String, String)
+    /// Two registrations declare this pattern.
     case duplicateTopicPattern(String)
 
+    /// Names the pattern and the rule.
     public var description: String {
         switch self {
         case .invalidTopicPattern(let pattern, let detail):

@@ -8,6 +8,7 @@ public struct APNSReceipt: Sendable, Equatable {
     /// quote to Apple, and what to log.
     public let apnsID: String
 
+    /// A receipt for `apnsID`.
     public init(apnsID: String) {
         self.apnsID = apnsID
     }
@@ -25,6 +26,7 @@ public struct APNSReceipt: Sendable, Equatable {
 /// that surprises. What this client promises is that one call is one
 /// delivery attempt, with a typed answer.
 public final class APNSClient: Sendable {
+    /// The key, team, topic and gateway this client sends with.
     public let configuration: APNSConfiguration
     private let transport: any APNSTransport
     private let tokens: ProviderTokenSource

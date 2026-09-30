@@ -13,8 +13,11 @@ import Foundation
         /// A job was enqueued.
         @TelemetryEvent("alula.queue.enqueued")
         public enum Enqueued {
+            /// Which job, and where.
             public struct Metadata {
+                /// The job's `kind`.
                 public var kind: String
+                /// The queue it was enqueued on.
                 public var queue: String
             }
         }
@@ -22,12 +25,16 @@ import Foundation
         /// A worker finished an attempt.
         @TelemetryEvent("alula.queue.attempt")
         public enum Attempt {
+            /// Which job, where, and how the attempt ended.
             public struct Metadata {
+                /// The job's `kind`.
                 public var kind: String
+                /// The queue it was claimed from.
                 public var queue: String
                 /// `completed`, `retrying`, `discarded` or `superseded`.
                 public var outcome: String
             }
+            /// The attempt's timings.
             public struct Measurements {
                 /// How long the handler ran.
                 public var duration: Duration
@@ -45,7 +52,9 @@ import Foundation
         /// Claiming from a queue failed.
         @TelemetryEvent("alula.queue.claim_failed")
         public enum ClaimFailed {
+            /// Where the claim failed.
             public struct Metadata {
+                /// The queue the worker was claiming from.
                 public var queue: String
             }
         }
@@ -53,12 +62,16 @@ import Foundation
         /// A queue's depth, sampled by each worker at its poll interval.
         @TelemetryEvent("alula.queue.depth")
         public enum Depth {
+            /// Which queue.
             public struct Metadata {
+                /// The queue sampled.
                 public var queue: String
             }
+            /// The queue's ``QueueCounts``, less completed jobs.
             public struct Measurements {
                 /// Waiting, including scheduled and backing-off jobs.
                 public var available: Int
+                /// Claimed and leased.
                 public var running: Int
                 /// Dead letters not yet pruned.
                 public var discarded: Int
@@ -68,6 +81,10 @@ import Foundation
 
     /// The queue's metrics over ``QueueEvents``.
     public enum QueueMetrics {
+        /// Counters of enqueues, attempts (by outcome), lease-renewal and
+        /// claim failures; distributions of attempt duration and wait; and
+        /// last-value gauges of each queue's available, running and discarded
+        /// jobs. Tagged by queue, and by kind where the event has one.
         public static let definitions: [TelemetryMetric] = [
             .counter(
                 QueueEvents.Enqueued.self, name: "alula.queue.enqueued", tags: \.queue, \.kind),

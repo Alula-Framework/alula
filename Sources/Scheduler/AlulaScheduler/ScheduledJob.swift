@@ -107,16 +107,23 @@ public enum OverlapPolicy: Sendable, Equatable {
 /// every other component — scheduling is not a separate system from the rest
 /// of composition.
 public struct ScheduledJobRegistration: Sendable {
-    /// `MyJobs.nightlyRollup` — what logs, diagnostics and the actuator show.
+    /// `MyJobs.nightlyRollup` — what logs, diagnostics and
+    /// ``SchedulerStatus`` show.
     public let name: String
+    /// When it fires.
     public let trigger: JobTrigger
+    /// Once across the deployment, or on every node.
     public let scope: JobScope
+    /// What a firing does while the previous run is still going. Ignored for
+    /// an interval trigger, which cannot overlap.
     public let overlap: OverlapPolicy
     /// Calls the method on the component the graph built. Throwing is expected
     /// and handled: a failing job is logged and retried at its next firing, not
     /// propagated into the scheduler loop.
     public let run: @Sendable () async throws -> Void
 
+    /// A job built by hand — for a schedule known only at runtime, which
+    /// `@Scheduled` cannot express. The defaults are `@Scheduled`'s.
     public init(
         name: String,
         trigger: JobTrigger,

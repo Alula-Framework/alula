@@ -9,9 +9,13 @@ import Tracing
 
 /// A request to another service.
 public struct OutboundRequest: Sendable {
+    /// The HTTP method. Default `GET`.
     public var method: HTTPRequest.Method
+    /// The absolute URL to send to.
     public var url: URL
+    /// Sent as given, on every attempt, with the trace context added.
     public var headers: HTTPFields
+    /// The request body, or nil for none.
     public var body: Data?
     /// Overrides the client's timeout for this request: one attempt, from
     /// connecting until the response head arrives. See
@@ -27,6 +31,7 @@ public struct OutboundRequest: Sendable {
     /// one you set is sent unchanged on every attempt.
     public var idempotent: Bool?
 
+    /// A request; each parameter sets the property of the same name.
     public init(
         method: HTTPRequest.Method = .get, url: URL, headers: HTTPFields = HTTPFields(),
         body: Data? = nil, timeout: Duration? = nil, idempotent: Bool? = nil
@@ -48,10 +53,14 @@ public struct OutboundRequest: Sendable {
 
 /// What came back.
 public struct OutboundResponse: Sendable {
+    /// The status the final attempt got; any status, not only 2xx.
     public var status: HTTPResponse.Status
+    /// The response headers.
     public var headers: HTTPFields
+    /// The whole body, at most the policy's `maxResponseBytes`.
     public var body: Data
 
+    /// A response, as a transport or a stub returns it.
     public init(status: HTTPResponse.Status, headers: HTTPFields = HTTPFields(), body: Data = Data()) {
         self.status = status
         self.headers = headers
@@ -95,6 +104,7 @@ public enum OutboundHTTPError: Error, Sendable, Equatable, CustomStringConvertib
     /// non-idempotent request is not retried.
     case transport(String)
 
+    /// Which failure, with the status and body, limit, timeout or reason.
     public var description: String {
         switch self {
         case .unexpectedStatus(let code, let body): "unexpected HTTP \(code): \(body)"
@@ -122,6 +132,8 @@ public enum OutboundHTTPError: Error, Sendable, Equatable, CustomStringConvertib
 /// Any other error, `CancellationError` included, ends the call unretried.
 /// A non-2xx status is returned, not thrown.
 public protocol OutboundHTTPTransport: Sendable {
+    /// Sends one attempt of `request` within `timeout`, reading at most
+    /// `maxResponseBytes` of body.
     func send(_ request: OutboundRequest, timeout: Duration, maxResponseBytes: Int) async throws
         -> OutboundResponse
 }
@@ -154,6 +166,8 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
     /// Statuses that mean "try again", for idempotent requests.
     public var retryStatuses: Set<Int>
 
+    /// A policy built in code; each parameter sets the property of the same
+    /// name, and the defaults are the configuration's.
     public init(
         timeout: Duration = .seconds(30), maxAttempts: Int = 3,
         backoffBase: Duration = .milliseconds(200), backoffCap: Duration = .seconds(5),
@@ -194,6 +208,7 @@ public struct OutboundHTTPPolicy: Sendable, Equatable {
 
 /// An `http-client.*` value that cannot be used, reported at startup.
 public struct OutboundHTTPConfigurationError: Error, Sendable, CustomStringConvertible {
+    /// Names the key and the value.
     public let description: String
 }
 
@@ -227,7 +242,9 @@ public struct OutboundHTTPConfigurationError: Error, Sendable, CustomStringConve
 /// a request), injected into the outgoing headers by the application's
 /// instrument, so W3C `traceparent` reaches the next service.
 public struct OutboundHTTPClient: Sendable {
+    /// What sends each attempt.
     public let transport: any OutboundHTTPTransport
+    /// Timeouts, retries and the response size cap.
     public let policy: OutboundHTTPPolicy
     let logger: Logger
     let tracer: (any Tracer)?

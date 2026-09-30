@@ -6,9 +6,13 @@ import Logging
 /// One message pushed to the client on a channel — the client-side view of
 /// a broadcast or a direct socket push.
 public struct ChannelMessage: Sendable, Equatable {
+    /// The application event name, or `alula:join` for a rejoin's state
+    /// (see ``isRejoin``) or `alula:error` for an uncorrelated error.
     public let event: String
+    /// The event's payload, as sent.
     public let payload: JSONValue
 
+    /// A message; the client builds these from inbound envelopes.
     public init(event: String, payload: JSONValue) {
         self.event = event
         self.payload = payload
@@ -64,6 +68,8 @@ public actor ChannelClient {
     private var channels: [String: ChannelRecord] = [:]
     private var stateSubscribers: [UUID: AsyncStream<ConnectionState>.Continuation] = [:]
 
+    /// A client for the socket at `url`. Nothing is dialled until
+    /// ``connect()``.
     public init(
         url: URL,
         transport: any ChannelClientTransport,
@@ -152,6 +158,7 @@ public actor ChannelClient {
         return stream
     }
 
+    /// The connection's state now; ``states()`` streams its changes.
     public var connectionState: ConnectionState { state }
 
     // MARK: - Channels
@@ -380,8 +387,10 @@ public actor ChannelClient {
                 deliver(envelope, topic: envelope.topic)
             }
         case .close:
-            // Server-initiated graceful teardown: terminal, no
-            // reconnect.
+            // Treated as terminal, no reconnect. The Alula server never
+            // sends `alula:close` — it ends a socket with a WebSocket close
+            // frame — so this is reached only by another server speaking
+            // the protocol.
             Task { await self.disconnect() }
         case .join, .leave, .heartbeat:
             break // server never initiates these; tolerate and ignore
@@ -533,6 +542,8 @@ public actor ChannelClient {
 
     // MARK: - Introspection (tests, diagnostics)
 
+    /// Whether `topic`'s membership is live on the server now. False
+    /// between a drop and the rejoin, though the client will rejoin.
     public func isJoined(_ topic: String) -> Bool {
         channels[topic]?.joined == true
     }

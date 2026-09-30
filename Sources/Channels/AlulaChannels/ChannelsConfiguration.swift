@@ -14,8 +14,10 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// its last frame, and the check itself is two atomic reads.
     public var heartbeatCheckInterval: Duration
 
-    /// How many outbound envelopes one socket may have queued before the
-    /// oldest are dropped.
+    /// How many outbound envelopes one socket may have queued. What happens
+    /// past it is ``outboundOverflow``'s: by default the socket is closed
+    /// with `ChannelCloseCode.outboundOverflow`, or with `.dropOldest` the
+    /// oldest queued envelopes are dropped.
     ///
     /// The queue used to be unbounded. A client that stopped reading — a
     /// backgrounded tab, a wedged connection, a phone that walked into a
@@ -23,7 +25,7 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// ceiling, so one stalled subscriber could exhaust the server's memory
     /// while the watchdog waited out its heartbeat timeout.
     ///
-    /// Dropping the *oldest* is deliberate: a client that falls behind on a
+    /// When dropping, the *oldest* go: a client that falls behind on a
     /// realtime feed wants the recent state, not a backlog it can never catch
     /// up on. Drops are counted and logged.
     public var outboundBufferSize: Int
@@ -67,6 +69,9 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// genuinely needs more writes the larger number down.
     public var maxTopicsPerSocket: Int
 
+    /// Settings built in code. `outboundBufferSize` and
+    /// `maxTopicsPerSocket` below 1 are raised to 1; a nil
+    /// `heartbeatCheckInterval` is a quarter of the timeout.
     public init(
         heartbeatTimeout: Duration = .seconds(60),
         heartbeatCheckInterval: Duration? = nil,
@@ -97,6 +102,13 @@ public struct ChannelsConfiguration: Sendable, Equatable {
     /// - `channels.outbound-overflow` (`"close"` or `"drop-oldest"`,
     ///   default `"close"`)
     /// - `channels.max-topics-per-socket` (Int, default 64)
+    ///
+    /// The pre-0.60 spellings under `alula.channels.*` (and
+    /// `ALULA_ALULA_CHANNELS_*`) are refused at startup with ALU-CONFIG-5014,
+    /// which names the new key.
+    ///
+    /// - Throws: ``ChannelsConfigurationError/invalidInterval(key:)`` for a
+    ///   duration that is not a positive, finite number of seconds.
     public init(configuration: Configuration) throws {
         // Never `get(_:default:)`, which traps on a malformed value, and
         // never an unchecked `.seconds(_:)`, which traps on `inf` — a
@@ -145,6 +157,7 @@ public enum ChannelsConfigurationError: Error, Sendable, Equatable, CustomString
     /// Not a finite number of seconds, or not positive where it must be.
     case invalidInterval(key: String)
 
+    /// Names the key and the rule.
     public var description: String {
         switch self {
         case .invalidInterval(let key):

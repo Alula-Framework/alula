@@ -17,6 +17,8 @@ import Logging
 /// body went out) should still be transient, and then the retry can deliver
 /// a second copy.
 public protocol MailTransport: Sendable {
+    /// Hands `message` to the mail system. Returning means it was accepted
+    /// for delivery, not that it reached the inbox.
     func send(_ message: MailMessage) async throws
 }
 
@@ -43,10 +45,14 @@ public protocol MailTransport: Sendable {
 /// retries rather than an error page. Add ``deliveryHandler`` to your
 /// module's `queueHandlers` for the job to run.
 public struct Mailer: Sendable {
+    /// Where messages go: whichever module's ``MailTransport``, or the
+    /// logging one.
     public let transport: any MailTransport
     /// Used when a message names no sender: `mail.from`.
     public let defaultFrom: MailAddress?
 
+    /// A mailer over `transport`. ``AlulaMailModule`` builds the
+    /// application's; build one directly in a test or a tool.
     public init(transport: any MailTransport, defaultFrom: MailAddress? = nil) {
         self.transport = transport
         self.defaultFrom = defaultFrom
@@ -119,12 +125,18 @@ public struct Mailer: Sendable {
 /// cap (±10%). After the last, the job is discarded and the message is not
 /// sent.
 public struct DeliverMail: QueuedJob {
+    /// `alula.mail.deliver`, fixed so renaming the type strands no jobs.
     public static let kind = "alula.mail.deliver"
+    /// `mail`, so mail has its own concurrency (`queue.queues.mail.concurrency`).
     public static let queue = "mail"
+    /// Twelve attempts, 30 seconds doubling to a 4-hour cap.
     public static let retry = RetryPolicy(maxAttempts: 12, base: .seconds(30), cap: .seconds(4 * 3600))
 
+    /// The message, sender filled in and already validated.
     public let message: MailMessage
 
+    /// A job for `message`. `Mailer.sendLater` validates first; building
+    /// one directly does not.
     public init(message: MailMessage) { self.message = message }
 }
 
@@ -144,16 +156,21 @@ extension MailError {
 /// verification tokens, personal data. Logged, it goes wherever the logs go
 /// and stays as long as they are kept. With `logBody: false` only the
 /// recipients, subject and body size are logged. `AlulaMailModule` turns the
-/// body off everywhere but development and test unless `mail.log-body: true`.
+/// body off everywhere but a *declared* development or test environment
+/// (`Configuration.isExplicitlyDevelopment()`) unless `mail.log-body: true`.
 public struct LoggingMailTransport: MailTransport {
     let logger: Logger
     let logBody: Bool
 
+    /// A transport that logs at `info` to `logger`. Only the text part is
+    /// logged; an HTML-only message logs `(no text part)`.
     public init(logger: Logger = Logger(label: "alula.mail"), logBody: Bool = true) {
         self.logger = logger
         self.logBody = logBody
     }
 
+    /// Logs the recipients, subject and text body (or its size), and never
+    /// throws.
     public func send(_ message: MailMessage) async throws {
         var metadata: Logger.Metadata = [
             "to": "\(message.recipients.map(\.address).joined(separator: ", "))",
@@ -171,9 +188,13 @@ public struct LoggingMailTransport: MailTransport {
 /// Provides the ``Mailer``.
 ///
 /// The transport comes from whichever module provides a ``MailTransport``,
-/// for instance `AlulaMailSMTPModule` (trait `SMTP`). With none, development
-/// and test log each message instead of sending it. Anywhere else this module
-/// fails composition, rather than let password resets vanish into a log. Set
+/// for instance `AlulaMailSMTPModule` (trait `SMTP`). With none, a declared
+/// development or test environment — `ALULA_ENV` set to `dev`,
+/// `development`, `test` or `local` (`Configuration.isExplicitlyDevelopment()`)
+/// — logs each message instead of sending it. Anywhere else, an unset
+/// `ALULA_ENV` included, this module fails composition with
+/// ``MailConfigurationError/noTransport(environment:)``, rather than let
+/// password resets vanish into a log. `alula dev` sets `ALULA_ENV=dev`. Set
 /// `mail.transport: log` to choose logging on purpose, such as in a staging
 /// environment with no mail server. There the message bodies are withheld
 /// from the log, since they carry reset links and personal data, unless
@@ -184,8 +205,16 @@ public struct LoggingMailTransport: MailTransport {
 ///   from: "Example <no-reply@example.com>"
 /// ```
 public struct AlulaMailModule: AlulaModule {
+    /// The mailer the graph provides.
     public let mailer: Mailer
 
+    /// The composition root's initializer. `transport` is whichever module's
+    /// ``MailTransport``.
+    ///
+    /// - Throws: ``MailConfigurationError/noTransport(environment:)`` when
+    ///   `transport` is nil, `mail.transport` is not `log` and the
+    ///   environment is not a declared development one; ``MailError`` when
+    ///   `mail.from` does not parse.
     public init(configuration: Configuration, transport: (any MailTransport)? = nil) throws {
         let from = try configuration.getIfPresent("mail.from", as: String.self)
             .map(MailAddress.parse)
@@ -210,6 +239,8 @@ public struct AlulaMailModule: AlulaModule {
         self.mailer = Mailer(transport: LoggingMailTransport(logBody: logBody), defaultFrom: from)
     }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaMailModule takes its configuration in init(configuration:transport:), so it "
@@ -226,6 +257,7 @@ public enum MailConfigurationError: Error, Sendable, Equatable, CustomStringConv
     /// `"undeclared"` when none was set.
     case noTransport(environment: String)
 
+    /// Names the environment and the three ways out.
     public var description: String {
         switch self {
         case .noTransport(let environment) where environment == "undeclared":

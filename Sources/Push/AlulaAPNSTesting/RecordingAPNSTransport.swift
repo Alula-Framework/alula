@@ -19,8 +19,11 @@ public final class RecordingAPNSTransport: APNSTransport, Sendable {
 
     private let state = Mutex<State>(State())
 
+    /// A transport that has recorded nothing and answers `200`.
     public init() {}
 
+    /// Records `request`, then throws if misbehaving, or returns the next
+    /// queued answer, or `200` with a fresh `apns-id`.
     public func post(_ request: APNSRequest) async throws -> APNSRawResponse {
         try state.withLock { state in
             state.sent.append(request)
@@ -77,8 +80,13 @@ public final class RecordingAPNSTransport: APNSTransport, Sendable {
     }
 }
 
+/// What a ``RecordingAPNSTransport`` throws after
+/// ``RecordingAPNSTransport/misbehave()``. `APNSClient` reports it as a
+/// transport failure.
 public enum RecordingAPNSTransportError: Error, Sendable, CustomStringConvertible {
+    /// Every call throws this.
     case misbehaving
 
+    /// Says the transport was told to fail.
     public var description: String { "RecordingAPNSTransport is misbehaving: every call throws" }
 }

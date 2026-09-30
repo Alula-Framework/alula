@@ -71,18 +71,23 @@ public struct RateLimitQuota: Sendable, Equatable {
         self.init(permits: permits, per: period, burst: burst)
     }
 
+    /// `permits` a second, `burst` at once (default `permits`). Traps on a
+    /// non-positive value, like ``init(permits:per:burst:)``.
     public static func perSecond(_ permits: Int, burst: Int? = nil) -> RateLimitQuota {
         RateLimitQuota(permits: permits, per: .seconds(1), burst: burst)
     }
 
+    /// `permits` a minute; see ``perSecond(_:burst:)``.
     public static func perMinute(_ permits: Int, burst: Int? = nil) -> RateLimitQuota {
         RateLimitQuota(permits: permits, per: .seconds(60), burst: burst)
     }
 
+    /// `permits` an hour; see ``perSecond(_:burst:)``.
     public static func perHour(_ permits: Int, burst: Int? = nil) -> RateLimitQuota {
         RateLimitQuota(permits: permits, per: .seconds(60 * 60), burst: burst)
     }
 
+    /// `permits` a day of 24 hours; see ``perSecond(_:burst:)``.
     public static func perDay(_ permits: Int, burst: Int? = nil) -> RateLimitQuota {
         RateLimitQuota(permits: permits, per: .seconds(24 * 60 * 60), burst: burst)
     }

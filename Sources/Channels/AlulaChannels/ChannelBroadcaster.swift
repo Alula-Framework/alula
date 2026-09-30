@@ -7,18 +7,21 @@ import class Foundation.JSONDecoder
 import class Foundation.JSONEncoder
 
 /// What one channel broadcast looks like inside a PubSub `Message` payload:
-/// the envelope minus what PubSub already carries (`topic` is the message's
-/// own topic) and what fan-out never has (`ref` — server pushes are
-/// uncorrelated).
+/// the envelope minus what PubSub already carries (the topic, in the
+/// message's bus topic) and what fan-out never has (`ref` — server pushes
+/// are uncorrelated).
 ///
-/// Public because it *is* the seam contract: anything that publishes to a
-/// topic in this shape reaches every joined client — a channel handler via
-/// `ChannelBroadcaster`, a background job, or (later) Alula Presence and
-/// Alula Live.
+/// Public because it *is* the seam contract: anything that publishes this
+/// shape on a channel topic's bus topic (`ChannelProtocol.busTopic(_:)`,
+/// `alula:channels:<topic>`) reaches every joined client — a channel handler
+/// via `ChannelBroadcaster`, a background job, or Presence.
 public struct BroadcastFrame: Sendable, Equatable, Codable {
+    /// The application event name.
     public let event: String
+    /// The event's payload.
     public let payload: JSONValue
 
+    /// A frame for `event`.
     public init(event: String, payload: JSONValue) {
         self.event = event
         self.payload = payload
@@ -38,7 +41,7 @@ public struct BroadcastFrame: Sendable, Equatable, Codable {
 /// The one way Channels hands fan-out to PubSub: encode `(event,
 /// payload)` into a `Message` and publish. Channels never implements
 /// fan-out itself — whether the other subscriber is on this node or another
-/// machine is PubSub's seam (step 3→4), invisible here.
+/// machine is PubSub's concern, invisible here.
 ///
 /// Owned by `AlulaChannelsModule` and handed to each channel as it is
 /// created, in the `ChannelContext` — a channel closes over it rather than
@@ -113,6 +116,8 @@ public struct ChannelBroadcaster: Sendable {
     private let pubsub: any PubSub
     private let logger: Logger
 
+    /// A broadcaster publishing on `pubsub`: the application's bus, so a
+    /// broadcast reaches every node.
     public init(pubsub: any PubSub, logger: Logger = Logger(label: "alula.channels.broadcast")) {
         self.pubsub = pubsub
         self.logger = logger

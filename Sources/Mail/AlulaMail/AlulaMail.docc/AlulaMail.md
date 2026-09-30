@@ -29,11 +29,15 @@ retried for about twelve hours.
 ## Transports
 
 ``AlulaMailModule`` takes a ``MailTransport`` from whichever module provides
-one, such as `AlulaMailSMTPModule` (trait `SMTP`). With none, development and
-test log each message with ``LoggingMailTransport``, so a reset link can be
-read off the console. Any other environment fails composition, because
+one, such as `AlulaMailSMTPModule` (trait `SMTP`). With none, a declared
+development or test environment (`ALULA_ENV` set to `dev`, `development`,
+`test` or `local`; `alula dev` sets `dev`) logs each message with
+``LoggingMailTransport``, so a reset link can be read off the console. Any
+other environment fails composition, an unset `ALULA_ENV` included, because
 password resets silently going to a log is worse than a deploy that refuses
-to start. `mail.transport: log` chooses logging on purpose.
+to start. `mail.transport: log` chooses logging on purpose; outside a
+declared development environment it withholds message bodies from the log
+unless `mail.log-body: true`.
 
 ## Topics
 

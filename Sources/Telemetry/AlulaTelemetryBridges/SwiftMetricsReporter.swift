@@ -33,6 +33,7 @@ public struct SwiftMetricsReporter: Sendable {
     /// Where instruments are made; nil means `MetricsSystem.factory`, read
     /// when each instrument is first made rather than when the reporter is.
     public let factory: (any MetricsFactory)?
+    /// Tag combinations kept per metric before values go to `_overflow`.
     public let cardinalityLimit: Int
 
     /// - Parameters:

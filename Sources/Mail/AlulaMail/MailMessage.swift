@@ -7,9 +7,17 @@ import Foundation
 /// character that could end a header early or add a recipient is refused
 /// here, so no address can smuggle a header into a message.
 public struct MailAddress: Sendable, Hashable, Codable, CustomStringConvertible {
+    /// `local@domain`, as given. A non-ASCII address is kept; the SMTP
+    /// transport needs the server's SMTPUTF8 to send to it.
     public let address: String
+    /// The display name, or nil. An empty name is stored as nil.
     public let name: String?
 
+    /// Validates `address` and `name`.
+    ///
+    /// - Throws: ``MailError/invalidAddress(_:)`` for anything but one `@`
+    ///   between a non-empty local part and a dotted domain, for whitespace
+    ///   or any of `<>,;:"()[]\`, or for a line break in `name`.
     public init(_ address: String, name: String? = nil) throws {
         let parts = address.split(separator: "@", omittingEmptySubsequences: false)
         let forbidden = CharacterSet.whitespacesAndNewlines.union(
@@ -25,11 +33,15 @@ public struct MailAddress: Sendable, Hashable, Codable, CustomStringConvertible 
         self.name = name.flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// As a header writes it: `Name <address>`, the name encoded when it
+    /// needs to be, or the bare address.
     public var description: String { MIMERenderer.format(self) }
 
     /// Whether the address needs SMTPUTF8 to be sent as written.
     var isASCII: Bool { address.unicodeScalars.allSatisfy(\.isASCII) }
 
+    /// Decodes and validates again, so a queued message cannot carry an
+    /// address the initializer would refuse.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
@@ -40,11 +52,15 @@ public struct MailAddress: Sendable, Hashable, Codable, CustomStringConvertible 
 
 /// A file carried by a message.
 public struct MailAttachment: Sendable, Hashable, Codable {
+    /// The name the recipient sees.
     public var filename: String
     /// A MIME type such as `application/pdf`.
     public var contentType: String
+    /// The file's bytes, base64-encoded when rendered. They ride the job
+    /// queue inside the message, so keep queued attachments small.
     public var data: Data
 
+    /// An attachment.
     public init(filename: String, contentType: String, data: Data) {
         self.filename = filename
         self.contentType = contentType
@@ -64,21 +80,31 @@ public struct MailAttachment: Sendable, Hashable, Codable {
 ///
 /// `from` may be left out: the ``Mailer`` fills in `mail.from`.
 public struct MailMessage: Sendable, Hashable, Codable {
+    /// The sender. Nil takes the ``Mailer``'s `mail.from`; nil with no
+    /// default fails validation.
     public var from: MailAddress?
+    /// Primary recipients, in the `To` header.
     public var to: [MailAddress]
+    /// Copied recipients, in the `Cc` header.
     public var cc: [MailAddress]
     /// Receives the message; never appears in its headers.
     public var bcc: [MailAddress]
+    /// Where replies go, when not to `from`.
     public var replyTo: MailAddress?
+    /// The subject line. May not contain a line break; non-ASCII is encoded.
     public var subject: String
     /// The plain-text body. Send one: spam filters and screen readers both
     /// read it, and some clients show nothing else.
     public var text: String?
+    /// The HTML body, sent beside `text` as an alternative when both are set.
     public var html: String?
     /// Extra headers. Names are checked; values may not contain line breaks.
     public var headers: [String: String]
+    /// Files carried by the message.
     public var attachments: [MailAttachment]
 
+    /// A message. Nothing is checked until ``validate()``, which
+    /// ``Mailer`` calls before sending or enqueueing.
     public init(
         from: MailAddress? = nil, to: [MailAddress], cc: [MailAddress] = [],
         bcc: [MailAddress] = [], replyTo: MailAddress? = nil, subject: String,
@@ -155,6 +181,7 @@ public enum MailError: Error, Sendable, Equatable, CustomStringConvertible {
         return false
     }
 
+    /// Which of the four, and the reason.
     public var description: String {
         switch self {
         case .invalidAddress(let address): "not a usable email address: \(address)"

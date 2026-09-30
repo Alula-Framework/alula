@@ -12,8 +12,8 @@ import ServiceLifecycle
 /// )
 /// ```
 ///
-/// A struct holding what it provides: the jobs as values, and the status the
-/// actuator reads.
+/// A struct holding what it provides: the jobs as values, and the
+/// ``SchedulerStatus`` a controller or health check injects.
 ///
 /// Provides no coordinator of its own. A deployment that needs `.once` to
 /// mean once across several servers adds a ``JobCoordinator`` from a module
@@ -35,12 +35,12 @@ public struct AlulaSchedulerModule: AlulaModule {
     /// something to coordinate *through* is a fact about how it was composed.
     private let coordinator: (any JobCoordinator)?
 
-    /// Reported by Actuator; owned here.
+    /// What each job last did and does next, for anything that injects it.
     // The type is written out because the composer only sees stored
     // properties with an explicit annotation. Inferred, this module provided
     // `SchedulerStatus` in fact and not in the scanner's view, so
-    // `@Inject var scheduler: SchedulerStatus` — which Actuator's own docs
-    // show — could not be satisfied by any application.
+    // `@Inject var scheduler: SchedulerStatus` — which the scheduler's own
+    // docs show — could not be satisfied by any application.
     public let status: SchedulerStatus = SchedulerStatus()
 
     /// A scheduler with no jobs is a legal application, so `init()` stays
@@ -49,14 +49,15 @@ public struct AlulaSchedulerModule: AlulaModule {
         self.init(jobs: [], coordinator: nil)
     }
 
+    /// The composition root's initializer: every module's `jobs`, gathered,
+    /// and the ``JobCoordinator`` some module provides, if any.
     public init(jobs: [ScheduledJobRegistration] = [], coordinator: (any JobCoordinator)? = nil) {
         self.jobs = jobs
         self.coordinator = coordinator
     }
 
-    /// Built from what this module holds. It used to be built from a stashed
-    /// `Container` and collect its jobs at `run()`, because the jobs were
-    /// registrations gathered post-`freeze()`.
+    /// A ``SchedulerService`` over this module's jobs, coordinator and
+    /// status. Present even with no jobs: it logs that and waits for shutdown.
     public var service: (any Service)? {
         SchedulerService(jobs: jobs, coordinator: coordinator, status: status)
     }

@@ -63,6 +63,9 @@ public final class LocalPubSub: PubSub, Sendable {
     /// other's subscriptions to stay consistent.
     private let interestObserver: Mutex<(any TopicInterestObserver)?> = Mutex(nil)
 
+    /// A core whose every subscription buffers under `bufferingPolicy`
+    /// (`pubsub.buffering` when the module builds it). Drops under a bounded
+    /// policy are logged at `warning` to `logger` and counted.
     public init(
         bufferingPolicy: BufferingPolicy = .unbounded,
         logger: Logger = Logger(label: "alula.pubsub.local")

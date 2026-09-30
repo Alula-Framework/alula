@@ -19,7 +19,10 @@ mail:
 The password comes from `ALULA_MAIL_SMTP_PASSWORD` or any other secret
 source. `security: starttls` refuses a server that does not offer STARTTLS,
 rather than carry on in plaintext. Credentials over `security: none` are a
-configuration error unless `mail.smtp.allow-plaintext-auth` says otherwise.
+configuration error unless `mail.smtp.allow-plaintext-auth` says otherwise,
+and ``SMTPSettings`` built in code get the same rule at send time: the
+transport sends no credentials over an unencrypted connection unless
+`allowPlaintextAuth` is set, and the send fails as `MailError.transient`.
 
 The module keeps a few long-lived connections that every send shares, with
 `RSET` between messages: `mail.smtp.pool-size` (default 4; `0` opens one

@@ -52,11 +52,14 @@ extension RateLimitStore {
 /// A store's own failure, with detail for the internal log. The wire never
 /// sees it.
 public struct RateLimitStoreError: Error, Sendable, CustomStringConvertible {
+    /// What failed, for the log.
     public let reason: String
 
+    /// An error with `reason`; for a store implementation to throw.
     public init(reason: String) {
         self.reason = reason
     }
 
+    /// `rate limit store failed: <reason>`.
     public var description: String { "rate limit store failed: \(reason)" }
 }

@@ -3,14 +3,19 @@ import Logging
 
 /// What a handler is told about the attempt it is running.
 public struct QueueJobContext: Sendable {
+    /// The job's id; the same on every attempt.
     public let id: QueuedJobID
     /// 1-based.
     public let attempt: Int
+    /// Attempts allowed in all, from the job's ``RetryPolicy``.
     public let maxAttempts: Int
+    /// When the job was enqueued, by the application's clock.
     public let enqueuedAt: Date
     /// Carries `job-id`, `job-kind` and `attempt` metadata.
     public let logger: Logger
 
+    /// A context for one attempt. The runner builds it; a test calling a
+    /// handler's body directly builds one itself.
     public init(id: QueuedJobID, attempt: Int, maxAttempts: Int, enqueuedAt: Date, logger: Logger) {
         self.id = id
         self.attempt = attempt
@@ -48,8 +53,12 @@ public struct QueueJobContext: Sendable {
 /// renamed with jobs in flight — is discarded rather than retried, since no
 /// number of attempts will change it.
 public struct QueueHandler: Sendable {
+    /// The job kind it runs, `Job.kind`. One handler per kind, across every
+    /// module, or composition fails.
     public let kind: String
+    /// The queue its jobs wait on, `Job.queue`.
     public let queue: String
+    /// How its failures are retried, `Job.retry`.
     public let retry: RetryPolicy
     /// How long one attempt may run before it counts as a failure, retried
     /// like any other. Nil is no limit — but a hung attempt then holds a

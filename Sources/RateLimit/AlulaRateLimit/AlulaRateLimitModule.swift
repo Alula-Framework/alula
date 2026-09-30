@@ -6,9 +6,10 @@ import AlulaCore
 /// Deliberately short: quotas are **not** here. One application limits
 /// logins, uploads and reads at wildly different rates, so a quota belongs
 /// at the call site that knows what it is protecting, the way
-/// `@Cacheable(ttl:)` carries its own TTL. What is global is which store
+/// `@Cacheable(namespace:ttl:)` carries its own TTL. What is global is which store
 /// holds the state.
 public enum RateLimitConfigKey {
+    /// `rate-limit`, the prefix of every key here.
     public static let root = "rate-limit"
     /// `rate-limit.memory.max-entries` — the in-memory store's bound.
     public static let memoryMaxEntries = "rate-limit.memory.max-entries"
@@ -46,6 +47,9 @@ public struct AlulaRateLimitModule: AlulaModule {
     ///   - configuration: `rate-limit.*` is read from here.
     ///   - store: A shared store from an adapter module. Nil means the
     ///     in-memory store — one replica, and the default.
+    /// - Throws: ``RateLimitConfigurationError`` for a non-positive
+    ///   `rate-limit.memory.max-entries`, or a composition error when
+    ///   `rate-limit.valkey.url` is set but no module provides a store.
     public init(configuration: Configuration, store: (any RateLimitStore)? = nil) throws {
         if store == nil {
             try configuration.requireNoUnloadedAdapter(
@@ -65,6 +69,8 @@ public struct AlulaRateLimitModule: AlulaModule {
         self.limiter = RateLimiter(store: store ?? InMemoryRateLimitStore(maxEntries: maxEntries))
     }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaRateLimitModule takes its configuration in init(configuration:store:), so it "
@@ -76,8 +82,10 @@ public struct AlulaRateLimitModule: AlulaModule {
 
 /// A `rate-limit.*` value that cannot be used. Thrown at composition.
 public enum RateLimitConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// `rate-limit.memory.max-entries` is zero or negative.
     case invalidMaxEntries(Int)
 
+    /// Names the key and the value.
     public var description: String {
         switch self {
         case .invalidMaxEntries(let value):

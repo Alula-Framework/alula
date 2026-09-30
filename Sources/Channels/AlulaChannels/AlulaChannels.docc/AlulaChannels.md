@@ -72,13 +72,16 @@ channel code knowing which deployment shape it is in.
 `alula-channels-js` is the client: it speaks the same frame format, handles
 reconnection with backoff, and replays joins. The wire format lives in
 `AlulaChannelsProtocol`, shared by both ends, so a frame change breaks the
-build rather than a production socket.
+build rather than a production socket. That target has no product of its
+own: `import AlulaChannels` (or `AlulaChannelsClient`, the Swift client)
+brings its types.
 
 ## Topics
 
 ### Defining a channel
 
 - ``Channel``
+- ``PayloadJoinChannel``
 - ``TopicPattern``
 - ``JoinResult``
 - ``JoinRejection``
@@ -103,6 +106,9 @@ build rather than a production socket.
 - ``EnvelopeDispatch``
 - ``OutboundOverflow``
 - ``ChannelRegistration``
+- ``ChannelContext``
 - ``ChannelRouter``
+- ``ChannelSockets``
 - ``ChannelSocketHandler``
 - ``ChannelsError``
+- ``ChannelsConfigurationError``

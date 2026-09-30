@@ -24,6 +24,7 @@ import Synchronization
 ///     messages-per-connection: 100
 /// ```
 public struct SMTPSettings: Sendable, Equatable {
+    /// How the connection is protected (`mail.smtp.security`).
     public enum Security: String, Sendable, Equatable {
         /// Connect in plaintext, then upgrade with `STARTTLS` before anything
         /// else is said. Refuses a server that does not offer it.
@@ -35,10 +36,16 @@ public struct SMTPSettings: Sendable, Equatable {
         case none
     }
 
+    /// The server's host name; also the default `messageIDDomain`.
     public var host: String
+    /// The server's port. Defaults by `security`: 587, 465 or 25.
     public var port: Int
+    /// `STARTTLS`, implicit TLS, or none. Default `STARTTLS`.
     public var security: Security
+    /// Nil sends no `AUTH`. Set, the client authenticates with `PLAIN`, or
+    /// `LOGIN` when that is all the server offers.
     public var username: String?
+    /// The password for `username`; nil is an empty one.
     public var password: String?
     /// The name this client gives in `EHLO`.
     public var heloName: String
@@ -73,6 +80,9 @@ public struct SMTPSettings: Sendable, Equatable {
     /// servers limit messages per session.
     public var messagesPerConnection: Int
 
+    /// Settings built in code. Unlike ``init(configuration:)`` this checks
+    /// nothing; the transport still refuses to authenticate over a
+    /// `.none` connection unless `allowPlaintextAuth` is set.
     public init(
         host: String, port: Int? = nil, security: Security = .startTLS, username: String? = nil,
         password: String? = nil, heloName: String = "localhost", timeout: Duration = .seconds(30),
@@ -156,6 +166,7 @@ public struct SMTPSettings: Sendable, Equatable {
 
 /// A `mail.smtp.*` value that cannot be used, reported at startup.
 public struct SMTPConfigurationError: Error, Sendable, CustomStringConvertible {
+    /// Names the key and what is wrong with it.
     public let description: String
     init(_ description: String) { self.description = description }
 }
@@ -179,10 +190,13 @@ public struct SMTPConfigurationError: Error, Sendable, CustomStringConvertible {
 /// are configuration mistakes, and mail queued while one is being fixed
 /// should still go out once it is.
 public struct SMTPMailTransport: MailTransport {
+    /// Where and how it connects.
     public let settings: SMTPSettings
     let logger: Logger
     let pool: SMTPConnectionPool?
 
+    /// A transport with no pool: each message opens, uses and closes its own
+    /// connection. ``AlulaMailSMTPModule`` builds a pooled one.
     public init(settings: SMTPSettings, logger: Logger = Logger(label: "alula.mail.smtp")) {
         self.init(settings: settings, logger: logger, pool: nil)
     }
@@ -519,12 +533,17 @@ extension Optional where Wrapped == MailAddress {
 }
 
 /// Provides an ``SMTPMailTransport`` configured from `mail.smtp.*`, which
-/// `AlulaMailModule` takes in place of its development default, and runs its
-/// connection pool.
+/// `AlulaMailModule` sends through instead of logging or refusing to compose,
+/// and runs its connection pool.
 public struct AlulaMailSMTPModule: AlulaModule {
+    /// The ``SMTPMailTransport`` the graph provides as `any MailTransport`.
     public let transport: any MailTransport
     let pool: SMTPConnectionPool?
 
+    /// The composition root's initializer.
+    ///
+    /// - Throws: ``SMTPConfigurationError`` for a missing or unusable
+    ///   `mail.smtp.*` value; see ``SMTPSettings/init(configuration:)``.
     public init(configuration: Configuration) throws {
         let settings = try SMTPSettings(configuration: configuration)
         let logger = Logger(label: "alula.mail.smtp")
@@ -533,6 +552,7 @@ public struct AlulaMailSMTPModule: AlulaModule {
         self.transport = SMTPMailTransport(settings: settings, logger: logger, pool: pool)
     }
 
+    /// The connection pool, or nil with `mail.smtp.pool-size: 0`.
     public var service: (any Service)? { pool.map { SMTPPoolService(pool: $0) } }
 
     /// Stops after the queue worker, whose jobs are what send mail. On
@@ -542,6 +562,8 @@ public struct AlulaMailSMTPModule: AlulaModule {
     /// fail with `MailError.transient`, and queued jobs are retried.
     public var serviceShutdownPhase: ServiceShutdownPhase { .infrastructure }
 
+    /// Traps: this module needs its configuration. Compose with
+    /// `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaMailSMTPModule takes its configuration in init(configuration:), so it cannot be "

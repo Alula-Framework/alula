@@ -56,3 +56,4 @@ parse should find out.
 ### Constants
 
 - ``ChannelProtocol``
+- ``WireCoders``

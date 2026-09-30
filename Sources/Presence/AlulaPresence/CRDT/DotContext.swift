@@ -12,11 +12,13 @@ public struct DotContext: Sendable, Equatable, Codable {
     public private(set) var versions: [PresenceReplicaID: UInt64]
     public private(set) var cloud: Set<PresenceDot>
 
+    /// A context that has observed nothing.
     public init() {
         self.versions = [:]
         self.cloud = []
     }
 
+    /// Whether `dot` has been observed, whether or not it is still present.
     public func contains(_ dot: PresenceDot) -> Bool {
         dot.counter <= versions[dot.replica, default: 0] || cloud.contains(dot)
     }

@@ -36,6 +36,7 @@ import HTTPTypes
 /// passes them here, so an extension package contributes without the
 /// application listing it.
 public struct AlulaChannelsModule: AlulaModule {
+    /// `AlulaPubSubModule`, whose bus carries every broadcast.
     public static var dependencies: [any AlulaModule.Type] {
         [AlulaPubSubModule.self]
     }
@@ -46,10 +47,9 @@ public struct AlulaChannelsModule: AlulaModule {
     /// The broadcast seam over `any PubSub`.
     public let broadcaster: ChannelBroadcaster
 
-    /// Built here, from the channels every module declared — not at
-    /// `freeze()` from what the container happened to hold. Duplicate or
-    /// malformed topic patterns therefore fail composition, which is earlier
-    /// than bootstrap and much earlier than the first join.
+    /// Built here, from the channels every module declared. Duplicate or
+    /// malformed topic patterns therefore fail composition, much earlier
+    /// than the first join.
     public let router: ChannelRouter
 
     /// What a socket route needs, as one injectable value — so a declared
@@ -61,8 +61,9 @@ public struct AlulaChannelsModule: AlulaModule {
     ///   - configuration: For `channels.*`.
     ///   - channels: Every declared channel, from every module that declares
     ///     any. The composer concatenates them — see `ChannelRegistration`
-    ///     for why they are values rather than container registrations, and
-    ///     what cycle that removes.
+    ///     for why they are values.
+    /// - Throws: ``ChannelsConfigurationError`` for a bad `channels.*` value,
+    ///   or ``ChannelsError`` for a duplicate or malformed topic pattern.
     public init(
         bus: any PubSub,
         configuration: Configuration,
@@ -78,6 +79,8 @@ public struct AlulaChannelsModule: AlulaModule {
             router: router, pubsub: bus, configuration: settings, broadcaster: broadcaster)
     }
 
+    /// Traps: this module needs its bus, configuration and channels.
+    /// Compose with `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaChannelsModule takes its bus, configuration and channels in "
@@ -87,8 +90,6 @@ public struct AlulaChannelsModule: AlulaModule {
                 + "taking module instances.")
     }
 
-    /// Projects what this module already holds. Nothing is built here, and in
-    /// particular the router is not: it was built at composition.
     /// This module's socket endpoint, as a route value.
     ///
     /// Nothing is looked up: the handler is built from what this module

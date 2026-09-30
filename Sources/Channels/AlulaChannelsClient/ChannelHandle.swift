@@ -4,6 +4,7 @@ import AlulaChannelsProtocol
 /// design's `Channel` noun. Thin value façade over `ChannelClient`;
 /// create as many as you like via `client.channel(_:)`.
 public struct ChannelHandle: Sendable {
+    /// The topic this handle joins, pushes to and listens on.
     public let topic: String
     private let client: ChannelClient
 

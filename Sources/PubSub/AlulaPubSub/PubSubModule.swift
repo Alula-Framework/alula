@@ -11,18 +11,11 @@ import ServiceLifecycle
 ///   core on a single node, a `ClusteredPubSub` wrapping it when an adapter
 ///   was supplied. Consumers never know which.
 ///
-/// **Composed by argument, not by presence.** This used to decide at
-/// `freeze()` by asking the container whether anyone had registered a
-/// `DistributedPubSubAdapter`, catching `.notRegistered` to mean "single
-/// node" — a runtime scan answering a question about how the application was
-/// assembled. An adapter module therefore had to depend on this one, and had
-/// to remember to expose `PubSubRelayService` itself; forgetting gave a
-/// cluster that silently never relayed.
-///
-/// Now an adapter module provides an adapter, and that is all it does. This
-/// module takes it, builds the bus around it, and owns the relay — so the
-/// direction is reversed: an adapter module is a *dependency* of this one.
-/// See `Docs/pubsub.md`, "Writing an adapter module".
+/// **Composed by argument, not by presence.** An adapter module provides a
+/// `DistributedPubSubAdapter`, and that is all it does. This module takes
+/// it, builds the bus around it, and owns the relay, so an adapter module
+/// cannot forget to run `PubSubRelayService` and leave a cluster that
+/// silently never relays. See `Docs/pubsub.md`, "Writing an adapter module".
 public struct AlulaPubSubModule: AlulaModule {
 
     /// The concrete local core.
@@ -38,17 +31,17 @@ public struct AlulaPubSubModule: AlulaModule {
     /// Buffering, node identity and the broadcast timeout come from
     /// `alula.yaml` (`pubsub.buffering`, `pubsub.node-id`,
     /// `pubsub.broadcast-timeout`); `Docs/pubsub.md` documents the keys.
-    ///
-    /// These used to be `init` parameters that could not exist: both public
-    /// entry points took `[any AlulaModule.Type]` and instantiated with
-    /// `init()`, so nothing a deployment wrote could reach them. Alula's own
-    /// worked adapter example smuggles its cluster in through a `@TaskLocal`
-    /// for the same reason.
+    /// The pre-0.60 snake_case spellings (`pubsub.node_id`,
+    /// `pubsub.broadcast_timeout`) are refused with ALU-CONFIG-5014.
     ///
     /// `adapter` nil means single node — the 90% case. A parameter rather
-    /// than a container lookup because "is there an adapter in this
+    /// than a runtime lookup because "is there an adapter in this
     /// deployment" is a fact about how the application was composed, which
-    /// the composition root knows and a runtime scan could only discover.
+    /// the composition root knows.
+    ///
+    /// - Throws: A configuration error for a bad `pubsub.*` value, or when
+    ///   configuration names an adapter (`pubsub.valkey.url`, say) that no
+    ///   included module provides.
     public init(
         configuration: Configuration,
         adapter: (any DistributedPubSubAdapter)? = nil

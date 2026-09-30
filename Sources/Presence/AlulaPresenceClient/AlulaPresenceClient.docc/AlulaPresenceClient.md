@@ -8,18 +8,20 @@ Presence for a Swift channel client: subscribe to a topic, get who is there.
 frames arriving on it into a maintained roster:
 
 ```swift
-let room = try await client.join("room:42")
+let room = client.channel("room:42")
 let presence = ChannelPresence(channel: room)
-await presence.start()
+await presence.start()      // before join, so the initial state is not missed
+try await room.join()
 
-for await change in presence.changes() {
-    render(change)
+for await change in await presence.changes() {
+    render(change.list)
 }
 ```
 
 ``ChannelPresence/start()`` begins consuming; ``ChannelPresence/stop()`` ends
-it. The stream yields changes rather than snapshots, because a UI updating a
-list wants to know what moved.
+it. Each change carries the whole maintained list and the net joins and
+leaves that produced it, because a UI updating a list wants to know what
+moved as well as what is there.
 
 ## It applies diffs, it does not poll
 

@@ -21,10 +21,13 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
     /// How the client proves its identity at the token endpoint: HTTP Basic
     /// (RFC 6749 §2.3.1's recommendation, and the default) or the form body.
     public enum ClientAuthentication: String, Sendable, Equatable {
+        /// `Authorization: Basic`, id and secret percent-encoded first.
         case basic
+        /// `client_id` and `client_secret` in the form body.
         case post
     }
 
+    /// Where tokens come from.
     public enum Endpoint: Sendable, Equatable {
         /// The token endpoint itself.
         case tokenURL(URL)
@@ -33,17 +36,24 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
         case issuer(URL)
     }
 
+    /// The token endpoint, or the issuer to discover it from.
     public var endpoint: Endpoint
+    /// The service account's client id.
     public var clientID: String
+    /// Its secret. Never logged, and not in any error's description.
     public var clientSecret: String
+    /// The `scope` form field, sent when set.
     public var scope: String?
+    /// The `audience` form field (Auth0 and others), sent when set.
     public var audience: String?
+    /// How the id and secret are presented.
     public var clientAuthentication: ClientAuthentication
     /// A token is renewed this long before it expires, so a request never
     /// leaves with one that lapses on the way. Fractions of a second count.
     /// Not read from configuration.
     public var renewBefore: Duration
 
+    /// Settings built in code. Nothing is checked or fetched here.
     public init(
         endpoint: Endpoint, clientID: String, clientSecret: String, scope: String? = nil,
         audience: String? = nil, clientAuthentication: ClientAuthentication = .basic,
@@ -109,9 +119,12 @@ public struct ClientCredentialsSettings: Sendable, Equatable {
     }
 }
 
+/// An `http-client.client-credentials.*` value that cannot be used. Thrown
+/// at composition.
 public struct ClientCredentialsConfigurationError: Error, Sendable, CustomStringConvertible,
     ModuleConfigurationError
 {
+    /// Names the key and what is wrong with it.
     public let description: String
     init(_ description: String) { self.description = description }
 }
@@ -132,6 +145,8 @@ public enum ClientCredentialsError: Error, Sendable, CustomStringConvertible, Te
     /// An answer that is not a token response.
     case malformed(endpoint: String, reason: String)
 
+    /// The endpoint (query and credentials removed), the client id, and
+    /// what went wrong. Never the secret.
     public var description: String {
         switch self {
         case .refused(let endpoint, let clientID, let status, let error, let errorDescription):
@@ -146,11 +161,13 @@ public enum ClientCredentialsError: Error, Sendable, CustomStringConvertible, Te
         }
     }
 
+    /// True only for ``unavailable(endpoint:reason:)``.
     public var isTemporarilyUnavailable: Bool {
         if case .unavailable = self { return true }
         return false
     }
 
+    /// Five seconds when temporarily unavailable; otherwise nil.
     public var retryAfter: Duration? { isTemporarilyUnavailable ? .seconds(5) : nil }
 }
 
@@ -169,6 +186,7 @@ public enum ClientCredentialsError: Error, Sendable, CustomStringConvertible, Te
 /// let response = try await core.send(OutboundRequest(url: invoicesURL))
 /// ```
 public actor ClientCredentialsTokenSource {
+    /// The service account and endpoint.
     public let settings: ClientCredentialsSettings
     private let http: OutboundHTTPClient
     private let now: @Sendable () -> Date
@@ -176,6 +194,8 @@ public actor ClientCredentialsTokenSource {
     private var inFlight: Task<(token: String, expires: Date), any Error>?
     private var tokenURL: URL?
 
+    /// A source that fetches through `http` on first use; nothing is fetched
+    /// here. `now` is the clock token expiry is judged by.
     public init(
         settings: ClientCredentialsSettings, http: OutboundHTTPClient,
         now: @escaping @Sendable () -> Date = Date.init
@@ -297,9 +317,12 @@ public actor ClientCredentialsTokenSource {
 /// reading that a request answered 401 was not acted on. It is separate
 /// from, and on top of, the client's own retries.
 public struct AuthorizedHTTPClient: Sendable {
+    /// The client requests go through, with its retry policy.
     public let http: OutboundHTTPClient
+    /// Where the bearer tokens come from.
     public let tokens: ClientCredentialsTokenSource
 
+    /// A client sending through `http` with tokens from `tokens`.
     public init(http: OutboundHTTPClient, tokens: ClientCredentialsTokenSource) {
         self.http = http
         self.tokens = tokens
@@ -327,9 +350,16 @@ public struct AuthorizedHTTPClient: Sendable {
 /// A service account's tokens and an authorized client, from
 /// `http-client.client-credentials.*`, over the application's HTTP client.
 public struct AlulaClientCredentialsModule: AlulaModule {
+    /// The service account's tokens, for a caller that attaches them itself.
     public let tokenSource: ClientCredentialsTokenSource
+    /// The application's HTTP client with the tokens attached.
     public let authorizedHTTPClient: AuthorizedHTTPClient
 
+    /// The composition root's initializer. `httpClient` is
+    /// `AlulaHTTPClientModule`'s.
+    ///
+    /// - Throws: ``ClientCredentialsConfigurationError``; nothing is fetched
+    ///   until the first token is asked for.
     public init(configuration: Configuration, httpClient: OutboundHTTPClient) throws {
         let tokens = ClientCredentialsTokenSource(
             settings: try ClientCredentialsSettings(configuration: configuration), http: httpClient)
@@ -337,6 +367,8 @@ public struct AlulaClientCredentialsModule: AlulaModule {
         self.authorizedHTTPClient = AuthorizedHTTPClient(http: httpClient, tokens: tokens)
     }
 
+    /// Traps: this module needs its configuration and the HTTP client.
+    /// Compose with `alulaComposeModules`.
     public init() {
         preconditionFailure(
             "AlulaClientCredentialsModule takes its configuration and the HTTP client in "

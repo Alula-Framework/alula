@@ -2,11 +2,16 @@
 /// with this meta. The `ref` is the client-visible meta identity and
 /// survives updates; the dot is the CRDT-internal identity and does not.
 public struct PresenceRecord: Sendable, Equatable, Codable {
+    /// The topic the presence is on.
     public let topic: String
+    /// The presence key, usually a user id.
     public let key: String
+    /// The meta's client-visible id, stable across updates.
     public let ref: String
+    /// The application's meta fields.
     public let payload: [String: String]
 
+    /// A record.
     public init(topic: String, key: String, ref: String, payload: [String: String]) {
         self.topic = topic
         self.key = key
@@ -18,9 +23,12 @@ public struct PresenceRecord: Sendable, Equatable, Codable {
 /// What applying a state changed — the tracker turns this into client
 /// diffs. Order within each list is not meaningful.
 public struct PresenceStateChanges: Sendable {
+    /// Entries that became present.
     public var added: [(PresenceDot, PresenceRecord)] = []
+    /// Entries that stopped being present.
     public var removed: [(PresenceDot, PresenceRecord)] = []
 
+    /// Whether nothing changed.
     public var isEmpty: Bool { added.isEmpty && removed.isEmpty }
 }
 
@@ -50,6 +58,7 @@ public struct PresenceCRDTState: Sendable {
     /// `evict`, and `dots(of:)`.
     private var byReplica: [PresenceReplicaID: Set<PresenceDot>]
 
+    /// The empty state.
     public init() {
         self.context = DotContext()
         self.entries = [:]

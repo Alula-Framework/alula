@@ -1,9 +1,10 @@
 import Foundation
 import Logging
 
-/// What happened to one firing — the unit the actuator and the tests both
-/// read.
+/// What happened to one firing — the unit ``SchedulerStatus`` and the tests
+/// both read.
 public enum JobOutcome: Sendable, Equatable {
+    /// The job ran and returned.
     case succeeded
     /// Another process claimed this firing.
     case notClaimed
@@ -14,13 +15,20 @@ public enum JobOutcome: Sendable, Equatable {
     case failed(String)
 }
 
-/// A job's history, kept small on purpose: enough for `/actuator/scheduled`
-/// to answer "is this thing running and did it work", not a metrics system.
+/// A job's history, kept small on purpose: enough for a status page to
+/// answer "is this thing running and did it work", not a metrics system.
 public struct JobStatus: Sendable, Equatable {
+    /// The job's name, as ``ScheduledJobRegistration/name``.
     public let name: String
+    /// The scheduled instant of the most recent firing, whatever its outcome
+    /// (not when the body started). Nil until the first firing.
     public var lastFired: Date?
+    /// How the most recent firing ended, whether or not it ran the body.
     public var lastOutcome: JobOutcome?
+    /// How long the last run took, sub-second precision included.
     public var lastDuration: Duration?
+    /// When the job fires next; nil when it never will (a cron expression
+    /// that cannot match again).
     public var nextFire: Date?
 
     /// How many firings actually ran the job's body — successes *and*
@@ -255,7 +263,7 @@ actor JobRunner {
             }
         }
         // Not truncated to whole seconds: a sub-second job reporting 0s is
-        // the one number `/actuator/scheduled` exists to show.
+        // the one number a status page exists to show.
         status.lastDuration = .seconds(clock.now.timeIntervalSince(started))
         publish()
 

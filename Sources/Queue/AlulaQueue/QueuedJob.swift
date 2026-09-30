@@ -36,8 +36,12 @@ public protocol QueuedJob: Codable, Sendable {
 }
 
 extension QueuedJob {
+    /// The type's unqualified name. Renaming the type changes it, so pin it
+    /// explicitly first when jobs of the old name may still be waiting.
     public static var kind: String { String(describing: Self.self) }
+    /// `"default"`.
     public static var queue: String { "default" }
+    /// ``RetryPolicy/default``: ten attempts over about two hours.
     public static var retry: RetryPolicy { .default }
 }
 
@@ -56,11 +60,17 @@ extension QueuedJob {
 public struct RetryPolicy: Sendable, Equatable {
     /// Total attempts, including the first. At least 1.
     public var maxAttempts: Int
+    /// The delay after the first failure, doubled after each one after it.
     public var base: Duration
+    /// The longest delay doubling reaches, before jitter.
     public var cap: Duration
     /// A fraction of the delay, `0...1`.
     public var jitter: Double
 
+    /// A policy. `jitter` is clamped to `0...1`.
+    ///
+    /// - Precondition: `maxAttempts` is at least 1; a policy that never tries
+    ///   is a programming error, and traps.
     public init(
         maxAttempts: Int = 10, base: Duration = .seconds(15), cap: Duration = .seconds(3600),
         jitter: Double = 0.1
@@ -72,6 +82,7 @@ public struct RetryPolicy: Sendable, Equatable {
         self.jitter = min(max(jitter, 0), 1)
     }
 
+    /// Ten attempts, 15 seconds doubling to at most an hour, ±10% jitter.
     public static let `default` = RetryPolicy()
 
     /// Try once; a failure is final.
@@ -97,7 +108,10 @@ public struct RetryPolicy: Sendable, Equatable {
 /// reason recorded, however many attempts it had left. For failures a retry
 /// cannot fix — the account it was about no longer exists.
 public struct DiscardJob: Error, Sendable, CustomStringConvertible {
+    /// Recorded as the discarded job's error, and logged.
     public let reason: String
+    /// Discards the job with `reason`.
     public init(_ reason: String) { self.reason = reason }
+    /// The reason.
     public var description: String { reason }
 }

@@ -1,9 +1,8 @@
 import AlulaWeb
 
 extension Request {
-    /// The bearer token from the `Authorization` header, per RFC 6750,
-    /// or `nil` when the header is absent, uses another scheme, or is
-    /// malformed.
+    /// The bearer token from the `Authorization` header, or `nil` when the
+    /// header is absent, uses another scheme, or is malformed.
     ///
     /// The scheme comparison is case-insensitive (`Bearer`, `bearer`, …);
     /// the credential itself is returned verbatim. A malformed value (empty

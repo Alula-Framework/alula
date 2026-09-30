@@ -39,6 +39,10 @@ public protocol AlulaModule {
 
     /// Present only if this module owns a long-running component. Handed to
     /// the app-wide ServiceLifecycle `ServiceGroup` at bootstrap.
+    ///
+    /// This is ServiceLifecycle's `Service` protocol — something with a
+    /// `run()` — and has nothing to do with the `@Service` macro, which
+    /// only puts a type in the graph and starts nothing.
     var service: (any Service)? { get }
 
     /// When this module's service is shut down, relative to the others.

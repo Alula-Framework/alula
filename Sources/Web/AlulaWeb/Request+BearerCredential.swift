@@ -1,5 +1,13 @@
 extension Request {
-    /// RFC 7235 credentials syntax: `Bearer 1*SP token68`.
+    /// The credential from an `Authorization` value of the form
+    /// `Bearer <credential>`, or `nil`.
+    ///
+    /// Surrounding whitespace is ignored, the scheme is matched
+    /// case-insensitively (RFC 9110 §11.1), and one or more spaces must
+    /// follow it. The credential is returned verbatim; it must be non-empty
+    /// and contain no whitespace, which is what refuses `Bearer a b`. Its
+    /// characters are not otherwise checked against RFC 6750's `token68`
+    /// grammar: whether the token is any good is the validator's question.
     ///
     /// The one parser for a bearer credential: `Request.bearerToken` in
     /// AlulaSecurityCore authenticates with it, and ``CSRFProtection`` exempts

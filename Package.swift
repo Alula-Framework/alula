@@ -144,9 +144,12 @@ let package = Package(
     traits: [
         // Opt-in: a consumer names what it wants, and resolves nothing else.
         //
-        //     traits: []                  container and lifecycle only
+        //     traits: []                  composition, configuration, lifecycle,
+        //                                 and every module no trait below gates
         //     traits: ["Web"]             + HTTP, WebSockets, Channels, Presence
         //     traits: ["Security"]        + authentication (implies Web)
+        //     traits: ["HTTPClient"], ["SMTP"], ["APNS"], ["Telemetry"]
+        //                                 + the client or bridges each names
         //
         // Requires Swift 6.3 or later. Through 6.2.x, SwiftPM did not resolve
         // the gated dependencies of a non-default trait enabled on a

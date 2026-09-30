@@ -17,6 +17,7 @@ public protocol Channel: Sendable {
 }
 
 extension Channel {
+    /// Does nothing.
     public func leave(_ topic: String, socket: Socket) async {}
 }
 
@@ -39,10 +40,16 @@ extension Channel {
 /// }
 /// ```
 public protocol PayloadJoinChannel: Channel {
+    /// Called when a client attempts to join, with the join frame's payload
+    /// (an empty object when the client sent none). The authorization
+    /// point, as ``Channel/join(_:socket:)`` is for a plain channel.
     func join(_ topic: String, payload: JSONValue, socket: Socket) async -> JoinResult
 }
 
 extension PayloadJoinChannel {
+    /// Calls ``join(_:payload:socket:)`` with an empty object. The server
+    /// calls the payload form directly; this exists so the type is a
+    /// ``Channel``.
     public func join(_ topic: String, socket: Socket) async -> JoinResult {
         await join(topic, payload: .object([:]), socket: socket)
     }
@@ -51,13 +58,17 @@ extension PayloadJoinChannel {
 /// Why a join was refused. The `reason` string travels to the client in the
 /// `alula:error` payload — keep it wire-safe.
 public struct JoinRejection: Sendable, Equatable {
+    /// The wire reason, as the client sees it.
     public let reason: String
 
+    /// A rejection with an application-defined `reason`.
     public init(_ reason: String) {
         self.reason = reason
     }
 
+    /// `unauthenticated`: the socket has no principal.
     public static let unauthenticated = JoinRejection(ChannelErrorReason.unauthenticated)
+    /// `forbidden`: the principal may not join this topic.
     public static let forbidden = JoinRejection(ChannelErrorReason.forbidden)
 }
 
@@ -82,6 +93,8 @@ public struct JoinResult: Sendable {
         JoinResult(outcome: .accepted(initialState: initialState))
     }
 
+    /// Refuse: the client gets `alula:error` with the rejection's reason,
+    /// and the channel instance is discarded.
     public static func reject(_ rejection: JoinRejection) -> JoinResult {
         JoinResult(outcome: .rejected(rejection))
     }
@@ -91,12 +104,17 @@ public struct JoinResult: Sendable {
 /// `topic` is included because one `Channel` registration may serve a
 /// wildcard pattern (`"room:*"`) — the instance knows which topic it holds.
 public struct InboundEvent: Sendable, Equatable {
+    /// The joined topic this event arrived on.
     public let topic: String
+    /// The application event name; never `alula:`-namespaced.
     public let event: String
+    /// The event's payload, as the client sent it.
     public let payload: JSONValue
     /// Present when the client wants a reply.
     public let ref: String?
 
+    /// An event; the server builds these, and a test calling `handle`
+    /// directly builds its own.
     public init(topic: String, event: String, payload: JSONValue, ref: String?) {
         self.topic = topic
         self.event = event

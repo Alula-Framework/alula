@@ -10,18 +10,23 @@ import AlulaWebTesting
 /// Not `Sendable`: it wraps the single-consumer frame iterator, so it
 /// belongs to one test task — the way tests use it anyway.
 public final class ChannelWireClient {
+    /// The in-process WebSocket underneath, for sending raw frames.
     public let socket: InMemoryWebSocket
     private var inbound: AsyncStream<WebSocketFrame>.Iterator
 
+    /// A driver over `socket`, from `TestClient.webSocket(_:)`.
     public init(socket: InMemoryWebSocket) {
         self.socket = socket
         self.inbound = socket.frames.makeAsyncIterator()
     }
 
+    /// Sends `envelope` as one text frame. Throws only if it does not
+    /// encode.
     public func send(_ envelope: Envelope) throws {
         socket.send(try envelope.encodedText())
     }
 
+    /// Sends an envelope built from the parts.
     public func send(ref: String?, topic: String, event: String, payload: JSONValue = .object([:])) throws {
         try send(Envelope(ref: ref, topic: topic, event: event, payload: payload))
     }
@@ -48,6 +53,8 @@ public final class ChannelWireClient {
         return nil
     }
 
+    /// Closes the WebSocket from the client side, as a peer close (not
+    /// `alula:close`).
     public func close() {
         socket.close()
     }

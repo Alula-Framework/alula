@@ -37,6 +37,8 @@ public struct ChannelSockets: Sendable {
     let configuration: ChannelsConfiguration
     let broadcaster: ChannelBroadcaster
 
+    /// The pieces every socket shares. ``AlulaChannelsModule`` builds the
+    /// application's.
     public init(
         router: ChannelRouter,
         pubsub: any PubSub,
@@ -57,6 +59,10 @@ public struct ChannelSockets: Sendable {
     }
 }
 
+/// Runs one upgraded connection as a channel socket: decodes frames, routes
+/// joins through the ``ChannelRouter``, fans broadcasts out, watches the
+/// heartbeat, and closes with the documented codes. Build one per
+/// connection with ``ChannelSockets/handler(principal:)``.
 public struct ChannelSocketHandler: WebSocketUpgradeHandler {
     private let router: ChannelRouter
     private let pubsub: any PubSub
@@ -64,6 +70,8 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
     private let broadcaster: ChannelBroadcaster
     private let principal: (any ChannelPrincipal)?
 
+    /// A handler for one connection whose identity is `principal` (nil for
+    /// an anonymous socket, which a channel's join may refuse).
     public init(
         router: ChannelRouter,
         pubsub: any PubSub,
@@ -77,6 +85,11 @@ public struct ChannelSocketHandler: WebSocketUpgradeHandler {
         self.broadcaster = broadcaster
         self.principal = principal
     }
+
+    /// Serves the connection until it closes: the peer's close, a client
+    /// `alula:close`, a protocol violation, a heartbeat or write timeout, an
+    /// outbound overflow, or server shutdown. Every joined channel's
+    /// `leave` runs exactly once on the way out.
 
 
     public func handle(upgraded connection: WebSocketConnection, context: RequestContext) async throws {

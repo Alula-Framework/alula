@@ -15,6 +15,8 @@ public struct Envelope: Sendable, Equatable {
     /// Client-generated message ref for reply correlation; nil on server
     /// pushes (encoded as an explicit JSON `null`).
     public var ref: String?
+    /// The topic the frame is about: a joined channel's, or
+    /// ``ChannelProtocol/controlTopic`` for socket-level events.
     public var topic: String
     /// Reserved lifecycle events are namespaced `alula:`; everything
     /// else is an application event.
@@ -22,6 +24,7 @@ public struct Envelope: Sendable, Equatable {
     /// Opaque to the framing layer.
     public var payload: JSONValue
 
+    /// An envelope; the payload defaults to an empty object.
     public init(ref: String?, topic: String, event: String, payload: JSONValue = .object([:])) {
         self.ref = ref
         self.topic = topic
@@ -37,6 +40,8 @@ extension Envelope: Codable {
         case ref, topic, event, payload
     }
 
+    /// Reads the four keys. An absent `ref` is nil and an absent `payload`
+    /// an empty object; `topic` and `event` are required.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // Tolerant on the way in (an absent ref reads as null; an absent
@@ -48,6 +53,7 @@ extension Envelope: Codable {
         self.payload = try container.decodeIfPresent(JSONValue.self, forKey: .payload) ?? .object([:])
     }
 
+    /// Writes all four keys, `ref` as an explicit `null` when nil.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         if let ref {
@@ -65,10 +71,14 @@ extension Envelope: Codable {
 
 /// A malformed inbound frame. Because Alula owns both clients, a frame
 /// that doesn't decode is a bug or an attack, never a compatibility case —
-/// the server responds by closing the socket (`CloseCode.protocolViolation`).
+/// the server responds by closing the socket
+/// (``ChannelCloseCode/protocolViolation``, 4400).
 public struct EnvelopeDecodingError: Error, Sendable, CustomStringConvertible {
+    /// The decoder's own account of what was wrong.
     public let detail: String
+    /// An error with `detail`.
     public init(_ detail: String) { self.detail = detail }
+    /// `Malformed envelope: <detail>`.
     public var description: String { "Malformed envelope: \(detail)" }
 }
 
@@ -90,6 +100,7 @@ public enum WireCoders {
         return encoder
     }()
 
+    /// Default settings: the wire has no dates and no key conversion.
     public static let decoder = JSONDecoder()
 }
 

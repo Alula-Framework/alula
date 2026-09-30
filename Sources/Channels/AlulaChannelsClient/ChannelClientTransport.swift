@@ -9,8 +9,9 @@ import struct Foundation.URL
 /// The client core is deliberately transport-free ("thin, protocol
 /// plumbing"): protocol logic — refs, replies, heartbeats, reconnection —
 /// is identical across transports and fully testable without a socket.
-/// `AlulaChannelsTesting` ships the in-memory transport; the E2E suite
-/// shows a real one over hummingbird's `WSClient` in a few lines.
+/// `AlulaChannelsTesting` ships the in-memory transport, and
+/// `AlulaChannelsTransport`'s `WebSocketChannelTransport` is a real one
+/// that can send headers with the upgrade.
 public protocol ChannelClientTransport: Sendable {
     /// Opens one WebSocket to `url`, protocol handshake included. Every
     /// call is a fresh connection — reconnection policy lives in
@@ -27,6 +28,8 @@ public struct ClientTransportConnection: Sendable {
     private let sendText: @Sendable (String) async throws -> Void
     private let closeConnection: @Sendable () async -> Void
 
+    /// A connection from a transport's own closures: `send` writes one text
+    /// frame, and `close` closes the socket (idempotently).
     public init(
         incoming: AsyncThrowingStream<String, any Error>,
         send: @escaping @Sendable (String) async throws -> Void,

@@ -22,11 +22,16 @@ public struct InMemoryChannelTransport: ChannelClientTransport {
     /// upgrade-time authentication ("token=..." etc.).
     private let query: String?
 
+    /// A transport dialling `testClient`'s routes. `query`, when set,
+    /// replaces the URL's own query on every upgrade.
     public init(testClient: TestClient, query: String? = nil) {
         self.testClient = testClient
         self.query = query
     }
 
+    /// Dispatches a fresh upgrade request for `url`'s path (default
+    /// `/socket`). Throws what `TestClient.webSocket` throws when the route
+    /// refuses the upgrade.
     public func connect(to url: URL) async throws -> ClientTransportConnection {
         var path = url.path.isEmpty ? "/socket" : url.path
         if let query = query ?? url.query {

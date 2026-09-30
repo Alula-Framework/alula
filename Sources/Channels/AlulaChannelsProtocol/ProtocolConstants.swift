@@ -2,8 +2,10 @@
 /// `alula:` so they never collide with application events. Everything else
 /// on the wire is an application event, passed to the `Channel`'s `handle`.
 public enum ReservedEvent: String, Sendable, CaseIterable {
-    /// Topic membership.
+    /// Joins a topic: client to server, answered with `alula:reply`
+    /// (carrying the channel's initial state) or `alula:error`.
     case join = "alula:join"
+    /// Leaves a topic: client to server, answered with `alula:reply`.
     case leave = "alula:leave"
     /// A successful reply to a client message carrying a `ref`.
     case reply = "alula:reply"
@@ -13,7 +15,14 @@ public enum ReservedEvent: String, Sendable, CaseIterable {
     case error = "alula:error"
     /// Keepalive, sent by the client on the control topic.
     case heartbeat = "alula:heartbeat"
-    /// Graceful channel/socket teardown.
+    /// Graceful socket teardown, **client to server only**, on the control
+    /// topic. The server answers a `ref`'d close with `alula:reply`, leaves
+    /// every joined channel, and closes the WebSocket with `1000`.
+    ///
+    /// The server never sends it. It ends a socket with a WebSocket close
+    /// frame instead: `1000`; `1001` when it is shutting down, or `1002`
+    /// when the stream ended abnormally; `1003` for a binary frame; or one of
+    /// ``ChannelCloseCode``'s 4000-range codes.
     case close = "alula:close"
 
     /// The namespace prefix. A client-sent application event may never start

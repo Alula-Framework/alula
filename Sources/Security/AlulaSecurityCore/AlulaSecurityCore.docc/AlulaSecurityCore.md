@@ -1,14 +1,17 @@
 # ``AlulaSecurityCore``
 
-Bring your own identity provider: configure OIDC, get a ``Principal`` on
-every request.
+Turn a credential into a ``Principal`` on every request: a token from an
+OIDC provider, an API key, or a browser session signed in with a password or
+through a provider.
 
 ## Overview
 
-Alula does not implement authentication, and that is the design rather than
-a gap. Rolling your own auth is how applications get broken. What a framework
-can usefully do is make a real identity provider a matter of configuration,
-and make the resulting identity available everywhere without ceremony.
+The boundary is the point: whatever proves who is calling, a handler sees one
+``Principal``, read off the request context with nothing to resolve. The
+common case is an identity provider you already run, and there it is
+configuration rather than code. When the application keeps its own accounts,
+the pieces it would otherwise hand-roll — password hashing, sign-in, one-time
+links, API keys — are here, behind the same seam.
 
 ``OIDCTokenValidator`` is the shipped validator, and for OIDC-compliant
 providers it is configuration rather than code — Descope, Keycloak, Auth0,
@@ -35,18 +38,25 @@ leeway, and `sub` is required.
 
 ## When your provider is not OIDC
 
-``TokenValidator`` is one method — token in, ``Principal`` out. Conform to it
-and provide your type instead, listing ``AlulaSecurityModule`` on its own
-rather than ``AlulaOIDCModule``:
+``TokenValidator`` is one method — token in, ``Principal`` out. Conform to it,
+have a module of your own hold the value as `any TokenValidator`, and list
+``AlulaSecurityModule`` rather than ``AlulaOIDCModule``; composition hands it
+over by type:
 
 ```swift
 struct OpaqueTokenValidator: TokenValidator {
+    let introspection: IntrospectionClient
+
     func validate(_ token: String) async throws -> Principal {
-        let session = try await sessions.lookup(token)
-        return Principal(subject: session.userID, roles: session.roles)
+        let grant = try await introspection.lookup(token)
+        return Principal(subject: grant.userID, issuer: "introspection", roles: grant.roles)
     }
 }
 ```
+
+A validator for one kind of token beside another, such as API keys beside
+OIDC, is a ``TokenStrategy``: it recognises its own tokens and the rest go to
+the validator. ``AlulaAPIKeyModule`` contributes one.
 
 ``JWKSSource`` is the narrower seam, for a provider that publishes keys
 somewhere non-standard: keep the OIDC claim policy, change only where keys
@@ -62,7 +72,7 @@ with nothing to resolve and nothing shared between requests:
 @GetRoute("/orders")
 func orders(_ context: RequestContext) async throws -> Response {
     let principal = try context.requirePrincipal()   // 401 when absent
-    return .json(try await orders.forOwner(principal.subject))
+    return try .json(await orders.forOwner(principal.subject))
 }
 ```
 
@@ -114,10 +124,10 @@ default; relaxing that is possible and deliberately awkward.
 
 ## What it does not do
 
-No session store, no password hashing, no login form, no token issuance, no
-refresh flow. Those belong to your identity provider. This module's job is
-the boundary: turn a credential into a `Principal` and make it available
-where the request runs.
+No login page, no OAuth authorization server, no access or refresh tokens
+of its own. ``PasswordSignIn`` checks a password your form posts and puts the
+principal in the session; issuing bearer tokens to other clients is your
+identity provider's job. The sessions themselves are `AlulaSessions`'.
 
 `AlulaChannels` reuses that boundary — a `Principal` established during a
 WebSocket's HTTP upgrade is what the channel's join sees.
@@ -127,6 +137,8 @@ WebSocket's HTTP upgrade is what the channel's join sees.
 ### Validating a token
 
 - ``TokenValidator``
+- ``TokenStrategy``
+- ``CompositeTokenValidator``
 - ``OIDCTokenValidator``
 - ``OIDCSecurityConfiguration``
 - ``TokenValidationError``
@@ -172,6 +184,7 @@ the whole story.
 
 - ``WebhookSignature``
 - ``VerifyWebhookSignature``
+- ``WebhookConfigurationError``
 
 ### API keys
 
@@ -179,6 +192,7 @@ the whole story.
 - ``APIKeyStore``
 - ``InMemoryAPIKeyStore``
 - ``APIKeyValidator``
+- ``AlulaAPIKeyModule``
 
 ### Where keys come from
 

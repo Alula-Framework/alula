@@ -24,12 +24,19 @@ much further from the cause.
 ## Environments
 
 ``AlulaEnvironment`` is the development/staging/production distinction that
-decides which files load and which defaults apply — the actuator's exposure
-level, for instance, is stricter outside development because of this type.
+decides which files load and which defaults apply. An unset `ALULA_ENV`
+resolves to ``AlulaEnvironment/dev`` for choosing the overlay, but
+developer-only surfaces — the OpenAPI document, the actuator dashboard, mail
+logged instead of sent — need the environment to have been *stated*: that is
+`AlulaConfig`'s `Configuration.isExplicitlyDevelopment()`, and
+``AlulaEnvironment/isDevelopment`` is the allowlist it applies.
 
 ``AlulaConfigFiles`` names the file layering convention so a deployment does
-not have to guess which of `application.yaml` and `application-production.yaml`
-wins.
+not have to guess which of `alula.yaml` and `alula-prod.yaml` wins.
+``ConfigPrefix`` changes the `alula` in those names and in `ALULA_*`
+variables, for two applications sharing one environment, and
+``ConfigKeyNaming`` is the camelCase-to-kebab-case rule `@Settings` uses to
+derive a key from a property name.
 
 ## Testing
 
@@ -54,6 +61,8 @@ leaking between tests.
 
 - ``AlulaEnvironment``
 - ``AlulaConfigFiles``
+- ``ConfigPrefix``
+- ``ConfigKeyNaming``
 - ``EnvironmentSubstitutionPolicy``
 
 ### Parsing

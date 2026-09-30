@@ -14,11 +14,12 @@ final class OrderController: Sendable {
     @Inject var orders: OrderService
 
     @GetRoute("/:id")
-    func show(_ request: Request) async throws -> Response {
-        guard let id = request.pathParam("id").flatMap(UUID.init) else {
-            throw HTTPError(status: .badRequest, detail: "id must be a UUID")
+    func show(_ context: RequestContext) async throws -> Order {
+        let id = try context.pathParam("id", as: UUID.self)   // 400 if it is not one
+        guard let order = try await orders.find(id) else {
+            throw HTTPError(.notFound, "no order \(id)")
         }
-        return try .json(await orders.find(id))
+        return order
     }
 }
 ```
@@ -32,29 +33,35 @@ handler whose dependencies aren't provided is a build error rather than a
 
 ## Requests and responses
 
-``Request`` is a value: method, path, headers, query, body, and the path
-parameters the match produced. It has no reference to a connection, which is
-what lets a test construct one.
+``Request`` is a value: method, path, headers, query and body. It has no
+reference to a connection, which is what lets a test construct one. A handler
+receives a ``RequestContext``, which carries the request beside the path
+parameters the match produced, the caller's ``RequestIdentity``, the session
+and the logger.
 
 ``Response`` is an enum rather than a builder, so the compiler knows which
 cases exist:
 
 ```swift
-.json(order)                     // encoded, with a content type
+try .json(order, status: .created)      // the application's encoder
 .text("ok")
 .status(.noContent)
-.stream { writer in ... }        // server-sent events
+.serverSentEvents { events in ... }     // a text/event-stream
 ```
 
 Anything conforming to ``ResponseEncodable`` can be returned directly, and
-``WebCoders`` decides how a body encodes and decodes.
+``WebCoders`` decides how a body encodes and decodes. `.json` and `.problem`
+default to the coders the application configured, through
+``WebCoders/current``, so answering with a status changes nothing else about
+the body.
 
 ## Errors are part of the contract
 
-Throwing ``HTTPError`` produces an [RFC 9457][] problem-details body:
+Throwing ``HTTPError`` produces an [RFC 9457][] problem-details body, unless
+`web.errors.format` chose another shape:
 
 ```swift
-throw HTTPError(status: .notFound, detail: "no order \(id)")
+throw HTTPError(.notFound, "no order \(id)")
 ```
 
 A domain error conforming to ``HTTPErrorRepresentable`` maps itself, so a
@@ -83,11 +90,13 @@ struct RequestTiming: Middleware {
 }
 ```
 
-Order is declared in one place, outermost first, and the chain is composed
-once at startup rather than per request:
+Order is declared in one place, outermost first, by the module that holds the
+middleware values, and the chain is composed once at startup rather than per
+request:
 
 ```swift
-MiddlewareRegistration.lane(.default, [RequestTiming(), Authentication()])
+// In a module whose initializer took `timing: RequestTiming`.
+let middleware = MiddlewareRegistration.lane(.default, [timing, authentication])
 ```
 
 A ``PipelineLane`` names an alternative stack that routes opt into with
@@ -95,10 +104,8 @@ A ``PipelineLane`` names an alternative stack that routes opt into with
 paying for authentication it can never use. Naming a lane alone runs *only*
 that lane; `[.default, "admin"]` concatenates.
 
-The older `registerMiddleware(_:order:)` closure API and its result-enum
-return type are gone with the container; conform a type to ``Middleware`` and
-hand it to `MiddlewareRegistration.lane(_:_:)`, returning early from `handle`
-rather than a result enum.
+A middleware that refuses a request returns its response from `handle`
+without calling `next`.
 
 ## WebSockets and streaming
 
@@ -130,7 +137,22 @@ whole application without binding a port.
 - ``DeleteRoute(_:maxBodyBytes:pipelines:roles:timeout:)``
 - ``WebSocketRoute(_:pipelines:roles:)``
 - ``RouteRole``
+- ``requireRoles(_:in:)``
 - ``PathParameterConvertible``
+- ``RequestTimeout``
+
+### Validation
+
+- ``Validatable``
+- ``Validation``
+- ``ValidationRule``
+- ``ValidationFailure``
+- ``FieldError``
+
+### Identity
+
+- ``RequestIdentity``
+- ``RequestPrincipal``
 
 ### Requests and responses
 
@@ -141,6 +163,7 @@ whole application without binding a port.
 - ``ResponseEncodable``
 - ``ContentType``
 - ``WebCoders``
+- ``WebRuntime``
 - ``MediaType``
 - ``FormDecoder``
 
@@ -172,6 +195,7 @@ whole application without binding a port.
 - ``CSRFProtection``
 - ``CSRFError``
 - ``SessionSettings``
+- ``SessionConfigKey``
 - ``SessionRuntime``
 - ``SessionReading``
 - ``RequestContext/requireSession()``
@@ -268,12 +292,18 @@ whole application without binding a port.
 - ``DispatchBuilder``
 - ``RouterError``
 - ``RoutingError``
+- ``compose(_:around:)``
+- ``errorResponse(for:context:)``
+- ``decodePathParameter(_:named:from:)``
+- ``decodeQuery(_:from:)``
 
 ### Streaming and upgrades
 
 - ``ServerSentEvent``
 - ``ServerSentEventWriter``
+- ``ResponseBodyWriter``
 - ``WebSocketConnection``
+- ``WebSocketOrigins``
 - ``UpgradeResponse``
 - ``WebSocketFrames``
 - ``WebSocketUpgrade``

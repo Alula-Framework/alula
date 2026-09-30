@@ -47,9 +47,6 @@ everything.
 
 - ``Configuration``
 
-### Errors
-
-
 ### Providers
 
 - ``AlulaYAMLProvider``

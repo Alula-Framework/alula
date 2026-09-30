@@ -15,8 +15,9 @@ dependency that silently never arrives.
 ## Fixes
 
 1. Drop the `?` if the dependency is required.
-2. If absence is meaningful, have a module provide an optional value and
-   pass it explicitly, or resolve it by hand.
+2. If absence is meaningful, let the module that knows decide: have it
+   provide a non-optional value in every case (a no-op implementation when
+   the real one is absent), and inject that.
 
 ## Related
 

@@ -17,6 +17,7 @@ public final class RecordingAdapter: DistributedPubSubAdapter, Sendable {
     private let incomingStream: AsyncStream<Message>
     private let incomingContinuation: AsyncStream<Message>.Continuation
 
+    /// An adapter that has recorded nothing and broadcasts without failing.
     public init() {
         (incomingStream, incomingContinuation) = AsyncStream.makeStream(
             of: Message.self,

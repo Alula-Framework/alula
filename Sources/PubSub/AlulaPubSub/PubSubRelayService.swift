@@ -24,14 +24,15 @@ public struct PubSubRelayService: Service, Sendable {
     private let source: Source
     private let logger: Logger
 
-    /// The module holds the `ClusteredPubSub` and hands it over — it used to
-    /// resolve `any PubSub` from a container and cast, which is gone with the
-    /// container.
+    /// A relay for `clustered`. ``AlulaPubSubModule`` builds it and runs it
+    /// as its service when an adapter is present.
     public init(clustered: ClusteredPubSub, logger: Logger = Logger(label: "alula.pubsub.relay")) {
         self.source = .clustered(clustered)
         self.logger = logger
     }
 
+    /// Drains the adapter's incoming stream into local fan-out until
+    /// graceful shutdown, or until the stream ends.
     public func run() async throws {
         let clustered: ClusteredPubSub
         switch source {

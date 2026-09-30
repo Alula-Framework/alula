@@ -19,6 +19,8 @@ public enum PubSubBufferingPolicy: Sendable, Equatable, ConfigDecodable {
     /// make room for the arriving one.
     case bufferingNewest(Int)
 
+    /// `unbounded`, `oldest:<n>` or `newest:<n>` with a positive `n`, in any
+    /// case; nil for anything else, which configuration reports as an error.
     public init?(configValue: String) {
         let trimmed = configValue.trimmingCharacters(in: .whitespaces).lowercased()
         if trimmed == "unbounded" {
@@ -59,6 +61,8 @@ public enum PubSubBroadcastTimeout: Sendable, Equatable, ConfigDecodable {
     /// happened; this only governs the remote hop.
     case never
 
+    /// `never`, or a duration as configuration writes one; nil for anything
+    /// else.
     public init?(configValue: String) {
         if configValue.trimmingCharacters(in: .whitespaces).lowercased() == "never" {
             self = .never

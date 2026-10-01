@@ -30,7 +30,7 @@ join/leave, routing to handlers, replies, heartbeats, reconnection.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.61.0", traits: ["Web"]),
+        from: "0.62.0", traits: ["Web"]),
 ],
 targets: [
     .executableTarget(

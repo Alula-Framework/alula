@@ -14,7 +14,7 @@ service, and nothing reads an unbounded response into memory.
 
 ```swift
 .package(url: "https://github.com/Alula-Framework/alula.git",
-         from: "0.61.0", traits: ["Web", "HTTPClient"]),
+         from: "0.62.0", traits: ["Web", "HTTPClient"]),
 ```
 
 ```yaml

@@ -27,7 +27,7 @@ Modeled on `Phoenix.PubSub`.
 dependencies: [
     .package(
         url: "https://github.com/Alula-Framework/alula.git",
-        from: "0.61.0"),
+        from: "0.62.0"),
 ],
 targets: [
     .executableTarget(

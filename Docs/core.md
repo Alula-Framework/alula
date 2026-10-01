@@ -36,7 +36,7 @@ long-running `run()` a module hands to that `ServiceGroup`: annotating a type
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.61.0")
+    .package(url: "https://github.com/Alula-Framework/alula.git", from: "0.62.0")
 ]
 ```
 
